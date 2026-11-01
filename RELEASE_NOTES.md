@@ -36,14 +36,17 @@ Run **`swifttab-setup.exe`**, pick your options, and Swift Tab appears in your t
 
 ## 🧩 What Swift Tab does
 
-- 🎵 **Media**: controls, album-colour accents, synced lyrics and an output-device switcher for Spotify, YouTube Music, Apple Music, Tidal, browsers and more
-- 🌤️ **Weather**: current conditions, hourly forecast and severe-weather alerts
-- ⬇️ **Downloads**: live progress, speed and ETA for Chrome, Edge, Brave, Opera and Firefox
-- 📁 **Shelf**: drop files on the pill, drag them out later; Share, OCR, Shrink and Zip in one click
-- 📋 **Clipboard history**: text, links and images, with pinning and plain-text paste
-- 🎧 **Earbuds**: battery for each bud and the case, plus ANC / Ambient / Off
-- ⏱️ **Timers**, ⚽ **live matches**, 🎮 **Steam & Epic activity**, 🧘 **screen time**, 🔋 **system moments**
-- 🤖 **Claude Code** permission requests in the pill, and a **local notifications API** for your own apps (off until you enable it)
+- 🎵 **Media**: controls, album-colour accents and an output-device switcher on a card that opens from the pill
+- 🌤️ **Weather**: live temperature and an hourly forecast
+- 📁 **Shelf**: drop files on the pill, drag them out later; Share, Copy text, Shrink and Zip in one click
+- 📋 **Clipboard history**: text, links and images
+- 🎧 **Earbuds & headphones**: battery level in the corner
+- ⬇️ **Downloads & file copies**: progress in the pill, even when Explorer is minimized
+- 📸 **Screenshots**: ShareX and Snipping Tool captures show in the pill and can go straight to the shelf
+- 🎮 **Game downloads**: Steam and Epic Games progress and speed, plus playtime
+- 🎙️ **Privacy indicators** for microphone and camera
+- 🐾 **Idle pets**: a tiny pixel cat or ghost keeps empty pills company
+- 🕹️ **Fullscreen friendly**: hides in games and videos, with per-app exceptions
 
 Turn on only the modules you want in the Control Center.
 

@@ -17,9 +17,8 @@ Media, weather, downloads, earbuds, clipboard and files, all in live pills that 
 
 [**⬇️ Download**](https://github.com/SeNsXD/Swift-Tab/releases/latest) &nbsp;·&nbsp;
 [Features](#features) &nbsp;·&nbsp;
-[Shortcuts](#controls--shortcuts) &nbsp;·&nbsp;
-[Claude Code](#claude-code) &nbsp;·&nbsp;
-[Notifications API](#notifications-api-for-developers) &nbsp;·&nbsp;
+[Controls](#controls) &nbsp;·&nbsp;
+[Install](#install) &nbsp;·&nbsp;
 [Build](#build-from-source)
 
 </div>
@@ -45,12 +44,12 @@ It's native Rust drawn with Direct2D and DirectWrite on an Acrylic backdrop, so 
 <td width="50%" valign="top">
 
 ### 🎵 Media, right in your taskbar
-Controls for Spotify, YouTube Music, Apple Music, Tidal, your browser, and anything that uses Windows media sessions.
+Controls for whatever is playing: Spotify, YouTube Music, your browser, and any app that uses Windows media sessions.
 
-- Album-art accent colours on the pill and card
-- Synced live lyrics (via [lrclib.net](https://lrclib.net))
-- Switch the output device (speakers, headphones, Bluetooth) from the card
-- Optional: keep the pill docked while paused
+- Pill and card pick up colours from the album art
+- Play, pause, skip, shuffle, repeat and a seek bar on the card
+- See and switch the output device from the card
+- Pin the card so it stays open
 
 </td>
 <td width="50%" valign="top">
@@ -68,10 +67,7 @@ Controls for Spotify, YouTube Music, Apple Music, Tidal, your browser, and anyth
 <td width="50%" valign="top">
 
 ### 🌤️ Weather and what's coming next
-Current conditions in the corner, with an hourly forecast one click away.
-
-- Alerts for rain, snow, storms, strong wind and sharp temperature changes
-- Auto-locates through Windows Location Services, or set a city yourself
+Live temperature and sky conditions in the corner of your taskbar, with an hourly forecast one click away.
 
 </td>
 </tr>
@@ -82,7 +78,7 @@ Current conditions in the corner, with an hourly forecast one click away.
 Drop files on the pill now, drag them out later.
 
 - New screenshots land on the shelf automatically
-- One-click **Share**, **Copy text** (OCR), **Shrink** (downscale) and **Zip**
+- One-click **Share**, **Copy text**, **Shrink** and **Zip**
 
 </td>
 <td width="50%" valign="top">
@@ -100,10 +96,7 @@ Drop files on the pill now, drag them out later.
 <td width="50%" valign="top">
 
 ### 📋 Clipboard history
-Text, links and images you copied, one click from your taskbar.
-
-- Pin the clips you keep reaching for
-- Paste as plain text, without the formatting
+Text, links and images you copied, one click from your taskbar. Clear it whenever you like.
 
 </td>
 </tr>
@@ -113,15 +106,14 @@ Text, links and images you copied, one click from your taskbar.
 
 | | |
 |---|---|
-| ⬇️ **Download monitor** | Live progress ring, speed, ETA and exact bytes for Chrome, Edge, Brave, Opera and Firefox. Open the browser or reveal the file in Explorer from the card. |
-| 🎧 **Earbuds & Bluetooth** | Battery for left bud, right bud and case (Galaxy Buds and standard Bluetooth headsets), plus ANC / Ambient / Off. |
-| ⏱️ **Timers** | Quick timer and stopwatch picker from the taskbar. |
-| ⚽ **Live matches** | Follow a football club or a EuroLeague / EuroCup basketball team: live score, minute or quarter, goals and cards. |
-| 🎮 **Games** | Detects running games and tracks Steam and Epic download / update progress and play time, read locally. |
-| 🧘 **Digital Wellbeing** | Screen time per app, today and over recent days, with limits. |
-| 🌙 **While you were away** | A short recap of what happened while your PC was locked. |
-| 🔋 **System moments** | Volume, charging, low battery, and active microphone / camera indicators. |
-| 🕹️ **Fullscreen friendly** | Hides in games, videos and presentations (with per-app exceptions). Urgent things drop in briefly from the top of the screen. |
+| 🎧 **Earbuds & headphones** | Battery of your connected Bluetooth earbuds and headphones, always in the corner. |
+| ⬇️ **Download progress** | Active downloads show in the pill. Click to open. |
+| 📂 **File copy progress** | Explorer file copies show in the pill, even when Explorer is minimized. |
+| 📸 **Screenshots** | New screenshots from ShareX and the Snipping Tool pop up in the pill and can go straight onto the shelf, ready to drag and drop later. |
+| 🎮 **Game downloads** | Progress and speed of Steam and Epic Games downloads in the pill, plus your playtime during and after a game. |
+| 🎙️ **Privacy indicators** | The pill shows when your microphone or camera is in use. |
+| 🐾 **Idle pets** | When a pill is empty (nothing copied, nothing on the shelf, nothing playing), a tiny pixel cat or ghost wanders in the free space. It leaves as soon as something real shows up. |
+| 🕹️ **Fullscreen friendly** | Hides in games, videos and presentations, with per-app exceptions. |
 
 <br>
 
@@ -133,27 +125,23 @@ Text, links and images you copied, one click from your taskbar.
 
 <br>
 
-The **Control Center** lets you switch on only the modules you want.
+The **Control Center** lets you switch on only the modules you want, and tune how Swift Tab looks and behaves.
 
-- **Appearance**: pill size (Compact, Standard, Large), card blur, Dark / Light / System theme
+- **Modules**: turn Media, Earbuds, Weather, Clipboard, Shelf and more on or off
+- **Appearance**: pill size, card blur, Dark / Light / System theme
 - **Behavior**: start with Windows, tray click action, alignment, animation speed
 - **Full screen**: choose which apps should or shouldn't hide the pill
-- **Search & command palette**: <kbd>Ctrl</kbd>+<kbd>F</kbd> to search settings, <kbd>Ctrl</kbd>+<kbd>K</kbd> for the command palette
 
 <br>
 
-## Controls & shortcuts
+## Controls
 
 | Action | What it does |
 |---|---|
 | **Click** a pill | Open or dismiss its card |
 | **Middle-click** a pill | Play / pause media |
 | **Scroll** over the pills | Cycle through everything that's active |
-| **Right-click** a pill | Context menu (open download folder, switch audio output, …) |
-| <kbd>Win</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> | Quick timer and stopwatch picker |
-| <kbd>Win</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> | Ask Claude a quick question |
-
-Both hotkeys can be changed in Settings.
+| **Right-click** a pill | Context menu |
 
 <br>
 
@@ -189,37 +177,6 @@ Compare the result with the matching line in `SHA256SUMS.txt`.
 
 <br>
 
-## Claude Code
-
-If you use [Claude Code](https://claude.com/product/claude-code), Swift Tab can show its permission requests and activity in the pill, so you can approve a command without switching windows.
-
-```powershell
-swifttab.exe claude-hooks install   # add the hooks
-swifttab.exe claude-hooks remove    # take them out again
-```
-
-You can also turn it on from the setup window or Settings. It only edits the `hooks` section of Claude Code's settings.
-
-<br>
-
-## Notifications API (for developers)
-
-Any app on your PC can put a notification or a live activity (a backup at 40%, a build, a download) in the pill with one local HTTP request:
-
-```bash
-curl -H "Content-Type: application/json" \
-     -d '{"app":"Backup","title":"Backup done","text":"12 files, 48 MB"}' \
-     http://127.0.0.1:20034/v1/notify
-```
-
-- **Off until you turn it on** (setup or Settings → System → App notifications)
-- **Local only**: listens on `127.0.0.1` / `[::1]`, never on your network
-- **You approve each app** the first time it asks
-
-Full reference: [**DOCS.md**](DOCS.md)
-
-<br>
-
 ## Build from source
 
 **You'll need:** the latest stable Rust toolchain (`x86_64-pc-windows-msvc`) and the Windows SDK (for `rc.exe`, which embeds the icon and manifest).
@@ -244,7 +201,6 @@ powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1
 
 - **Concept**: inspired by the original **Now Bar** taskbar-companion idea
 - **UI**: the settings window is built with [Slint](https://slint.dev/); type is Segoe UI Variable and [Inter](https://rsms.me/inter/) (SIL OFL)
-- **Data**: lyrics from [lrclib.net](https://lrclib.net)
 
 <br>
 
