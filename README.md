@@ -13,13 +13,12 @@ Media, weather, downloads, earbuds, clipboard and files, all in live pills that 
 [![Downloads](https://img.shields.io/github/downloads/SeNsXD/Swift-Tab/total?style=for-the-badge&color=6366f1&labelColor=0b1020)](https://github.com/SeNsXD/Swift-Tab/releases)
 [![Platform](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?style=for-the-badge&logo=windows&logoColor=white&labelColor=0b1020)](#install)
 [![Rust](https://img.shields.io/badge/built%20with-Rust-dea584?style=for-the-badge&logo=rust&logoColor=white&labelColor=0b1020)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-8b5cf6?style=for-the-badge&labelColor=0b1020)](LICENSE)
+![License](https://img.shields.io/badge/license-Freeware-8b5cf6?style=for-the-badge&labelColor=0b1020)
 
 [**Download**](https://github.com/SeNsXD/Swift-Tab/releases/latest) &nbsp;|&nbsp;
 [Features](#features) &nbsp;|&nbsp;
 [Controls](#controls) &nbsp;|&nbsp;
-[Install](#install) &nbsp;|&nbsp;
-[Build](#build-from-source)
+[Install](#install)
 
 </div>
 
@@ -104,7 +103,7 @@ Text, links and images you copied, one click from your taskbar. Clear it wheneve
 
 ### And more
 
-| | |
+| Feature | Details |
 |---|---|
 | **Earbuds & headphones** | Battery of your connected Bluetooth earbuds and headphones, always in the corner. |
 | **Download progress** | Active downloads show in the pill. Click to open. |
@@ -177,26 +176,6 @@ Compare the result with the matching line in `SHA256SUMS.txt`.
 
 <br>
 
-## Build from source
-
-**You'll need:** the latest stable Rust toolchain (`x86_64-pc-windows-msvc`) and the Windows SDK (for `rc.exe`, which embeds the icon and manifest).
-
-```powershell
-git clone https://github.com/SeNsXD/Swift-Tab.git
-cd Swift-Tab
-cargo build --profile quick --bin swifttab --bin swifttab-settings
-```
-
-Output: `target\quick\swifttab.exe` (the companion) and `target\quick\swifttab-settings.exe` (Control Center).
-
-Build the installer and release files into `dist\`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1
-```
-
-<br>
-
 ## Credits
 
 - **Concept**: inspired by the original **Now Bar** taskbar-companion idea
@@ -208,6 +187,6 @@ powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1
 
 **Made by [XDNOT Labs](https://github.com/SeNsXD)**
 
-Swift Tab is free software, licensed under the [GNU GPL v3.0](LICENSE).
+Swift Tab is free to use. All rights reserved.
 
 </div>
