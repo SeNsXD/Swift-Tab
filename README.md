@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 <img src="assets/readme/swifttab-banner.png" width="880" alt="Swift Tab - Everything you need, one glance away">
 
@@ -15,10 +15,10 @@ Media, weather, downloads, earbuds, clipboard and files, all in live pills that 
 [![Rust](https://img.shields.io/badge/built%20with-Rust-dea584?style=for-the-badge&logo=rust&logoColor=white&labelColor=0b1020)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-GPL--3.0-8b5cf6?style=for-the-badge&labelColor=0b1020)](LICENSE)
 
-[**â¬‡ï¸ Download**](https://github.com/SeNsXD/Swift-Tab/releases/latest) &nbsp;Â·&nbsp;
-[Features](#features) &nbsp;Â·&nbsp;
-[Controls](#controls) &nbsp;Â·&nbsp;
-[Install](#install) &nbsp;Â·&nbsp;
+[**?? Download**](https://github.com/SeNsXD/Swift-Tab/releases/latest) &nbsp;�&nbsp;
+[Features](#features) &nbsp;�&nbsp;
+[Controls](#controls) &nbsp;�&nbsp;
+[Install](#install) &nbsp;�&nbsp;
 [Build](#build-from-source)
 
 </div>
@@ -43,7 +43,7 @@ It's native Rust drawn with Direct2D and DirectWrite on an Acrylic backdrop, so 
 <tr>
 <td width="50%" valign="top">
 
-### ðŸŽµ Media, right in your taskbar
+### ?? Media, right in your taskbar
 Controls for whatever is playing: Spotify, YouTube Music, your browser, and any app that uses Windows media sessions.
 
 - Pill and card pick up colours from the album art
@@ -66,7 +66,7 @@ Controls for whatever is playing: Spotify, YouTube Music, your browser, and any 
 </td>
 <td width="50%" valign="top">
 
-### ðŸŒ¤ï¸ Weather and what's coming next
+### ??? Weather and what's coming next
 Live temperature and sky conditions in the corner of your taskbar, with an hourly forecast one click away.
 
 </td>
@@ -74,7 +74,7 @@ Live temperature and sky conditions in the corner of your taskbar, with an hourl
 <tr>
 <td width="50%" valign="top">
 
-### ðŸ“ A shelf for your files
+### ?? A shelf for your files
 Drop files on the pill now, drag them out later.
 
 - New screenshots land on the shelf automatically
@@ -95,7 +95,7 @@ Drop files on the pill now, drag them out later.
 </td>
 <td width="50%" valign="top">
 
-### ðŸ“‹ Clipboard history
+### ?? Clipboard history
 Text, links and images you copied, one click from your taskbar. Clear it whenever you like.
 
 </td>
@@ -106,14 +106,14 @@ Text, links and images you copied, one click from your taskbar. Clear it wheneve
 
 | | |
 |---|---|
-| ðŸŽ§ **Earbuds & headphones** | Battery of your connected Bluetooth earbuds and headphones, always in the corner. |
-| â¬‡ï¸ **Download progress** | Active downloads show in the pill. Click to open. |
-| ðŸ“‚ **File copy progress** | Explorer file copies show in the pill, even when Explorer is minimized. |
-| ðŸ“¸ **Screenshots** | New screenshots from ShareX and the Snipping Tool pop up in the pill and can go straight onto the shelf, ready to drag and drop later. |
-| ðŸŽ® **Game downloads** | Progress and speed of Steam and Epic Games downloads in the pill, plus your playtime during and after a game. |
-| ðŸŽ™ï¸ **Privacy indicators** | The pill shows when your microphone or camera is in use. |
-| ðŸ¾ **Idle pets** | When a pill is empty (nothing copied, nothing on the shelf, nothing playing), a tiny pixel cat or ghost wanders in the free space. It leaves as soon as something real shows up. |
-| ðŸ•¹ï¸ **Fullscreen friendly** | Hides in games, videos and presentations, with per-app exceptions. |
+| ?? **Earbuds & headphones** | Battery of your connected Bluetooth earbuds and headphones, always in the corner. |
+| ?? **Download progress** | Active downloads show in the pill. Click to open. |
+| ?? **File copy progress** | Explorer file copies show in the pill, even when Explorer is minimized. |
+| ?? **Screenshots** | New screenshots from ShareX and the Snipping Tool pop up in the pill and can go straight onto the shelf, ready to drag and drop later. |
+| ?? **Game downloads** | Progress and speed of Steam and Epic Games downloads in the pill, plus your playtime during and after a game. |
+| ??? **Privacy indicators** | The pill shows when your microphone or camera is in use. |
+| ?? **Idle pets** | When a pill is empty (nothing copied, nothing on the shelf, nothing playing), a tiny pixel cat or ghost wanders in the free space. It leaves as soon as something real shows up. |
+| ??? **Fullscreen friendly** | Hides in games, videos and presentations, with per-app exceptions. |
 
 <br>
 
