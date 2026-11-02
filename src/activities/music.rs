@@ -167,7 +167,7 @@ impl MusicLog {
     }
 }
 
-/// `%LOCALAPPDATA%\NowBar\music.json`, beside the screen time's.
+/// `%LOCALAPPDATA%\SwiftTab\music.json`, beside the screen time's.
 pub fn path() -> std::path::PathBuf {
     super::wellbeing_worker::usage_path().with_file_name("music.json")
 }
@@ -298,12 +298,8 @@ mod tests {
 
     #[test]
     fn words() {
-        assert_eq!((plays_text(1), plays_text(12)), ("1 kez".to_string(), "12 kez".to_string()));
-        assert_eq!(week_caption(142, Some("Tarkan")), "142 parça · en çok Tarkan");
-        assert_eq!(week_caption(1, None), "1 parça");
-        crate::i18n::in_language(crate::i18n::Language::English, || {
-            assert_eq!(plays_text(12), "12 plays");
-            assert_eq!(week_caption(142, Some("Tarkan")), "142 tracks · mostly Tarkan");
-        });
+        assert_eq!((plays_text(1), plays_text(12)), ("1 play".to_string(), "12 plays".to_string()));
+        assert_eq!(week_caption(142, Some("Tarkan")), "142 tracks · mostly Tarkan");
+        assert_eq!(week_caption(1, None), "1 track");
     }
 }

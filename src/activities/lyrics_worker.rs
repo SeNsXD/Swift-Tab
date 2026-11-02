@@ -1,5 +1,5 @@
 ﻿//! Fetches synced lyrics from lrclib.net on its own thread, cached on disk under
-//! %LOCALAPPDATA%\NowBar\lyrics2 (a track lrclib doesn't have is cached as such, so it isn't
+//! %LOCALAPPDATA%\SwiftTab\lyrics2 (a track lrclib doesn't have is cached as such, so it isn't
 //! asked again; a busy or unreachable server isn't cached: the worker asks again a few times,
 //! as the app asks only once per track). Each track: lrclib's exact match first, then a search
 //! for its cleaned title and first artist (players and YouTube decorate both).
@@ -101,7 +101,7 @@ fn client() -> Option<HttpClient> {
         let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
     }
     let client = HttpClient::new().ok()?;
-    let _ = client.DefaultRequestHeaders().and_then(|h| h.UserAgent()).and_then(|u| u.TryParseAdd(&HSTRING::from("NowBar/0.1 (Windows)")));
+    let _ = client.DefaultRequestHeaders().and_then(|h| h.UserAgent()).and_then(|u| u.TryParseAdd(&HSTRING::from("SwiftTab/0.1 (Windows)")));
     Some(client)
 }
 

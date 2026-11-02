@@ -1,12 +1,23 @@
 [package]
 name = "nowbar"
-version = "0.4.0"
+version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0-only"
 publish = false
+default-run = "swifttab"
 
 [workspace]
 members = ["ui", "setup"]
+
+# The programs are called Swift Tab: what Task Manager, Startup apps and the installed apps list
+# show is the exe name, so the exes are swifttab, swifttab-settings (and swifttab-setup).
+[[bin]]
+name = "swifttab"
+path = "src/main.rs"
+
+[[bin]]
+name = "swifttab-settings"
+path = "src/bin/nowbar-settings.rs"
 
 [dependencies]
 nowbar-ui = { path = "ui" }

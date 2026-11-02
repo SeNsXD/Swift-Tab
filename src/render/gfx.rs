@@ -1,4 +1,4 @@
-﻿//! Graphics devices and drawing helpers. Every surface is drawn at its native pixel size with
+//! Graphics devices and drawing helpers. Every surface is drawn at its native pixel size with
 //! D2D at 96 DPI, so nothing is ever resampled; DirectWrite draws all text and icons.
 
 use std::path::{Path, PathBuf};
@@ -219,27 +219,13 @@ impl Fonts {
         }
     }
 
-    fn load(dwrite: &IDWriteFactory5, dir: &Path) -> Self {
-        let files: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
-            .unwrap_or_default();
-        let pick = |prefix: &str| -> Vec<PathBuf> {
-            files
-                .iter()
-                .filter(|p| {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_ascii_lowercase();
-                    name.starts_with(prefix) && (name.ends_with(".ttf") || name.ends_with(".otf"))
-                })
-                .cloned()
-                .collect()
-        };
-        let chosen = [pick("oneuisans"), pick("inter")].into_iter().find(|v| !v.is_empty());
-        match chosen.map(|paths| Self::custom(dwrite, &paths)) {
-            Some(Ok(fonts)) => fonts,
-            _ => Self::system(dwrite),
-        }
+    fn load(dwrite: &IDWriteFactory5, _dir: &Path) -> Self {
+        // Windows 11 Fluent typography: Segoe UI Variable (fallback Segoe UI) and
+        // Segoe Fluent Icons (fallback Segoe MDL2 Assets).
+        Self::system(dwrite)
     }
 
+    #[allow(dead_code)]
     fn custom(dwrite: &IDWriteFactory5, paths: &[PathBuf]) -> Result<Self> {
         unsafe {
             let builder = dwrite.CreateFontSetBuilder()?;
@@ -342,6 +328,20 @@ pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> [f32; 4] {
 
 pub fn white(a: f32) -> [f32; 4] {
     [1.0, 1.0, 1.0, a]
+}
+
+/// Secondary text colour: white at 65% (`#FFFFFFA6`), or `#D6D6D6` in solid fallback mode for ≥ 4.5:1 contrast.
+pub fn sec_text() -> [f32; 4] {
+    if crate::platform::os::solid_fallback() {
+        rgba(0xD6, 0xD6, 0xD6, 1.0)
+    } else {
+        white(0.65)
+    }
+}
+
+/// Neutral non-interactive icon colour (`#D6D6D6`).
+pub fn neutral_icon() -> [f32; 4] {
+    rgba(0xD6, 0xD6, 0xD6, 1.0)
 }
 
 fn color(c: [f32; 4]) -> D2D1_COLOR_F {
@@ -487,6 +487,54 @@ impl Ink<'_> {
             },
         };
         unsafe {
+            let factory = self.dc.GetFactory()?;
+            let clip = factory.CreateRoundedRectangleGeometry(&D2D1_ROUNDED_RECT { rect: dst, radiusX: radius, radiusY: radius })?;
+            let layer = D2D1_LAYER_PARAMETERS1 {
+                contentBounds: D2D_RECT_F { left: -1e6, top: -1e6, right: 1e6, bottom: 1e6 },
+                geometricMask: std::mem::ManuallyDrop::new(Some(clip.cast()?)),
+                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                maskTransform: Matrix3x2::identity(),
+                opacity: 1.0,
+                opacityBrush: std::mem::ManuallyDrop::new(None),
+                layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+            };
+            self.dc.PushLayer(&layer, None);
+            self.dc.DrawBitmap(&bitmap, Some(&dst), 1.0, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, Some(&src), None);
+            self.dc.PopLayer();
+            std::mem::ManuallyDrop::into_inner(layer.geometricMask);
+        }
+        Ok(())
+    }
+
+    /// Draws premultiplied BGRA pixels cover-cropped (`object-fit: cover`) into `dst`, clipped to
+    /// a rounded rect with `radius`.
+    pub fn image_cover_rounded(&self, px: &[u8], size: (u32, u32), dst: D2D_RECT_F, radius: f32) -> Result<()> {
+        if size.0 == 0 || size.1 == 0 {
+            return Ok(());
+        }
+        let (sw, sh) = (size.0 as f32, size.1 as f32);
+        let (dw, dh) = ((dst.right - dst.left).max(1.0), (dst.bottom - dst.top).max(1.0));
+        let dst_ratio = dw / dh;
+        let src_ratio = sw / sh;
+        let src = if src_ratio > dst_ratio {
+            let crop_w = sh * dst_ratio;
+            D2D_RECT_F { left: (sw - crop_w) / 2.0, top: 0.0, right: (sw + crop_w) / 2.0, bottom: sh }
+        } else {
+            let crop_h = sw / dst_ratio;
+            D2D_RECT_F { left: 0.0, top: (sh - crop_h) / 2.0, right: sw, bottom: (sh + crop_h) / 2.0 }
+        };
+        unsafe {
+            let props = D2D1_BITMAP_PROPERTIES1 {
+                pixelFormat: windows::Win32::Graphics::Direct2D::Common::D2D1_PIXEL_FORMAT {
+                    format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                dpiX: 96.0,
+                dpiY: 96.0,
+                ..Default::default()
+            };
+            let size_u = windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_U { width: size.0, height: size.1 };
+            let bitmap = self.dc.CreateBitmap(size_u, Some(px.as_ptr() as *const _), size.0 * 4, &props)?;
             let factory = self.dc.GetFactory()?;
             let clip = factory.CreateRoundedRectangleGeometry(&D2D1_ROUNDED_RECT { rect: dst, radiusX: radius, radiusY: radius })?;
             let layer = D2D1_LAYER_PARAMETERS1 {

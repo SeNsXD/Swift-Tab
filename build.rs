@@ -19,7 +19,7 @@ fn main() {
     std::fs::copy(root.join("nowbar.manifest"), &manifest).expect("nowbar.manifest");
     println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}", manifest.display());
-    embed_icon(&root.join("assets").join("nowbar.ico"), &out);
+    embed_icon(&root.join("assets").join("nowbar.ico"), &root.join("assets").join("nowbar-nobg.ico"), &out);
     english_table(root, &out);
 }
 
@@ -35,19 +35,58 @@ fn english_table(root: &Path, out: &Path) {
     std::fs::write(out.join("en.rs"), table).expect("en.rs");
 }
 
-/// Compiles a one-line resource script with the Windows SDK's rc.exe and links it into every
+/// Compiles a resource script with the Windows SDK's rc.exe and links it into every
 /// exe; without the SDK the exes keep Windows' default icon (a warning, not an error).
-fn embed_icon(source: &Path, out: &Path) {
+/// Resource 1 = Main app logo (with background); Resource 2 = No-background logo (tray & taskbar).
+fn embed_icon(source: &Path, nobg_source: &Path, out: &Path) {
     println!("cargo:rerun-if-changed={}", source.display());
+    println!("cargo:rerun-if-changed={}", nobg_source.display());
     let Some(rc) = find_rc() else {
         println!("cargo:warning=rc.exe (Windows SDK) not found: the exes keep the default icon");
         return;
     };
     let ico = out.join("nowbar.ico");
     std::fs::copy(source, &ico).expect("nowbar.ico");
+    let nobg_ico = out.join("nowbar-nobg.ico");
+    let _ = std::fs::copy(nobg_source, &nobg_ico);
     let script = out.join("nowbar.rc");
     let path = ico.display().to_string().replace('\\', "\\\\");
-    std::fs::write(&script, format!("1 ICON \"{path}\"\n")).expect("nowbar.rc");
+    let nobg_path = nobg_ico.display().to_string().replace('\\', "\\\\");
+    let rc_body = if nobg_ico.exists() {
+        format!(
+            "1 ICON \"{path}\"\n2 ICON \"{nobg_path}\"\n\
+1 VERSIONINFO\n\
+FILEVERSION 1,0,0,0\n\
+PRODUCTVERSION 1,0,0,0\n\
+FILEFLAGSMASK 0x3fL\n\
+FILEFLAGS 0x0L\n\
+FILEOS 0x40004L\n\
+FILETYPE 0x1L\n\
+FILESUBTYPE 0x0L\n\
+BEGIN\n\
+    BLOCK \"StringFileInfo\"\n\
+    BEGIN\n\
+        BLOCK \"040904b0\"\n\
+        BEGIN\n\
+            VALUE \"CompanyName\", \"XDNOT Labs\"\n\
+            VALUE \"FileDescription\", \"Swift Tab\"\n\
+            VALUE \"FileVersion\", \"1.0.0.0\"\n\
+            VALUE \"InternalName\", \"Swift Tab\"\n\
+            VALUE \"OriginalFilename\", \"swifttab.exe\"\n\
+            VALUE \"ProductName\", \"Swift Tab\"\n\
+            VALUE \"ProductVersion\", \"1.0.0.0\"\n\
+        END\n\
+    END\n\
+    BLOCK \"VarFileInfo\"\n\
+    BEGIN\n\
+        VALUE \"Translation\", 0x409, 1200\n\
+    END\n\
+END\n"
+        )
+    } else {
+        format!("1 ICON \"{path}\"\n")
+    };
+    std::fs::write(&script, rc_body).expect("nowbar.rc");
     let res = out.join("nowbar.res");
     let built = Command::new(rc).arg("/nologo").arg("/fo").arg(&res).arg(&script).status().is_ok_and(|s| s.success());
     if built {

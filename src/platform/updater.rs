@@ -1,5 +1,5 @@
 //! The update thread: asks GitHub for the latest release once a day, and on demand downloads it,
-//! checks the exes against SHA256SUMS.txt, swaps them in and starts the new Now Bar.
+//! checks the exes against SHA256SUMS.txt, swaps them in and starts the new Swift Tab.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
@@ -20,7 +20,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The first ask waits for the start to settle; then one a day (GitHub allows 60 an hour).
 const FIRST: Duration = Duration::from_secs(60);
 const EVERY: Duration = Duration::from_secs(24 * 3600);
-const EXES: [&str; 2] = ["nowbar.exe", "nowbar-settings.exe"];
+const EXES: [&str; 2] = ["swifttab.exe", "swifttab-settings.exe"];
 
 /// What the thread tells the app.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,7 +111,7 @@ impl Updater {
     }
 }
 
-/// `%LOCALAPPDATA%\NowBar\update.json`.
+/// `%LOCALAPPDATA%\SwiftTab\update.json`.
 fn state_path() -> PathBuf {
     log_path().with_file_name("update.json")
 }
@@ -142,7 +142,7 @@ fn check() -> Option<(Release, UpdateState)> {
     Some((r, state))
 }
 
-/// The release's files into `%LOCALAPPDATA%\NowBar\update\<tag>\`, checked.
+/// The release's files into `%LOCALAPPDATA%\SwiftTab\update\<tag>\`, checked.
 fn download(r: &Release) -> Result<PathBuf, String> {
     let dir = log_path().with_file_name("update").join(&r.tag);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -184,7 +184,7 @@ type Renames = Vec<(PathBuf, PathBuf)>;
 /// A swap waiting for the app to quit: the folder and the renames, to undo if the new exe dies.
 static PENDING: Mutex<Option<(PathBuf, Renames)>> = Mutex::new(None);
 
-/// Swaps the exes in the running one's folder for those in `staged`; the new Now Bar starts once
+/// Swaps the exes in the running one's folder for those in `staged`; the new Swift Tab starts once
 /// this one has quit (`restart_after_update`). A folder it may not write (Program Files) opens
 /// `page` instead.
 fn install(staged: &Path, page: &str) -> Result<(), String> {
@@ -216,13 +216,13 @@ fn undo(done: &[(PathBuf, PathBuf)]) {
 }
 
 /// After the message loop of an update's quit (main calls it, still holding the mutex): starts the
-/// new Now Bar and watches it 2 s. One that dies at once (blocked, broken) gets the old exes put
-/// back, and the old Now Bar starts again in its place: never no Now Bar at all.
+/// new Swift Tab and watches it 2 s. One that dies at once (blocked, broken) gets the old exes put
+/// back, and the old Swift Tab starts again in its place: never no Swift Tab at all.
 pub fn restart_after_update() {
     let Some((dir, done)) = PENDING.lock().ok().and_then(|mut p| p.take()) else { return };
-    let exe = dir.join("nowbar.exe");
+    let exe = dir.join("swifttab.exe");
     if !start_and_watch(&exe, &["--after-update"], Duration::from_secs(2)) {
-        log("update: the new Now Bar died at start; the old exes are back");
+        log("update: the new Swift Tab died at start; the old exes are back");
         undo(&done);
         let _ = std::process::Command::new(&exe).arg("--after-update").spawn();
     }
@@ -262,7 +262,7 @@ fn start_and_watch(exe: &Path, args: &[&str], watch: Duration) -> bool {
 /// The old exes a swap left beside the new ones (one may still be open: next time, then).
 pub fn cleanup_old() {
     let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) else { return };
-    for old in ["nowbar.old.exe", "nowbar-settings.old.exe"] {
+    for old in ["swifttab.old.exe", "swifttab-settings.old.exe"] {
         let _ = std::fs::remove_file(dir.join(old));
     }
 }
@@ -304,25 +304,25 @@ mod tests {
 
     #[test]
     fn swap_puts_the_new_exes_in_and_the_old_aside() {
-        let app = folder("app", &[("nowbar.exe", "old"), ("nowbar-settings.exe", "old settings")]);
-        let staged = folder("staged", &[("nowbar.exe", "new"), ("nowbar-settings.exe", "new settings")]);
+        let app = folder("app", &[("swifttab.exe", "old"), ("swifttab-settings.exe", "old settings")]);
+        let staged = folder("staged", &[("swifttab.exe", "new"), ("swifttab-settings.exe", "new settings")]);
         assert!(swap(&app, &staged).is_ok());
-        assert_eq!((read(app.join("nowbar.exe")), read(app.join("nowbar-settings.exe"))), ("new".into(), "new settings".into()));
-        assert_eq!(read(app.join("nowbar.old.exe")), "old");
+        assert_eq!((read(app.join("swifttab.exe")), read(app.join("swifttab-settings.exe"))), ("new".into(), "new settings".into()));
+        assert_eq!(read(app.join("swifttab.old.exe")), "old");
         let _ = (std::fs::remove_dir_all(&app), std::fs::remove_dir_all(&staged));
     }
 
     #[test]
     fn a_locked_exe_leaves_the_old_ones_in_place() {
         use std::os::windows::fs::OpenOptionsExt;
-        let app = folder("locked", &[("nowbar.exe", "old"), ("nowbar-settings.exe", "old settings")]);
-        let staged = folder("locked-staged", &[("nowbar.exe", "new"), ("nowbar-settings.exe", "new settings")]);
+        let app = folder("locked", &[("swifttab.exe", "old"), ("swifttab-settings.exe", "old settings")]);
+        let staged = folder("locked-staged", &[("swifttab.exe", "new"), ("swifttab-settings.exe", "new settings")]);
         // An open settings window of an older build: no sharing, so it can't be renamed.
-        let lock = std::fs::OpenOptions::new().read(true).share_mode(0).open(app.join("nowbar-settings.exe")).unwrap();
+        let lock = std::fs::OpenOptions::new().read(true).share_mode(0).open(app.join("swifttab-settings.exe")).unwrap();
         assert!(swap(&app, &staged).is_err());
         drop(lock);
-        assert_eq!((read(app.join("nowbar.exe")), read(app.join("nowbar-settings.exe"))), ("old".into(), "old settings".into()), "rolled back");
-        assert!(!app.join("nowbar.old.exe").exists());
+        assert_eq!((read(app.join("swifttab.exe")), read(app.join("swifttab-settings.exe"))), ("old".into(), "old settings".into()), "rolled back");
+        assert!(!app.join("swifttab.old.exe").exists());
         let _ = (std::fs::remove_dir_all(&app), std::fs::remove_dir_all(&staged));
     }
 

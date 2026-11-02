@@ -5,10 +5,10 @@ use windows::core::Result;
 use windows::UI::Composition::CompositionDrawingSurface;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 
-use super::gfx::{new_surface, paint_surface, rect, rgba, white, Face, Gfx, Ink, TextStyle, Weight};
-use super::icons::{glyph, Icon};
+use super::gfx::{neutral_icon, new_surface, paint_surface, rect, rgba, sec_text, white, Face, Gfx, Ink, TextStyle, Weight};
+use super::icons::{glyph, weather_svg_for_symbol, Icon, PIN_SVG, SPOTIFY_SVG, YOUTUBE_SVG};
 use super::layout::Scale;
-use super::color::media_gradient;
+use super::color::{media_gradient, tint_mix_24};
 use super::pill::{
     alert_style, lighten, paint_app_icon, paint_live_mark, store_accent, timer_accent, BUDS_ACCENT, CLAUDE_ACCENT, CLAUDE_ICON, LOW_ACCENT, RAIN_ACCENT, RAIN_ICON, SNOW_ACCENT, SNOW_ICON,
     WELLBEING_ACCENT, WELLBEING_GLYPH,
@@ -16,14 +16,15 @@ use super::pill::{
 use crate::activities::away::AwayKind;
 use crate::activities::live::AppIcon;
 use crate::activities::games::Store;
+use crate::activities::media::IDLE_MEDIA;
 use crate::activities::weather_alert::AlertKind;
 use crate::activities::claude::StepKind;
 use crate::activities::live::LiveState;
 use crate::activities::buds::{low_battery, percent, BudsSnapshot, NoiseControl};
-use crate::activities::weather::{fx_accent, palette, WeatherFx};
+use crate::activities::weather::{fx_accent, WeatherFx};
 use crate::activities::football::{EventKind, MatchEvent, Side};
 use crate::platform::audio::{OutputBus, OutputKind};
-use crate::i18n::{n_, tr, trf};
+use crate::i18n::tr;
 use super::color::TeamPalette;
 use super::crest::Crest;
 use crate::activities::media::{format_media_time, shown_position, MediaSnapshot, SeekHold};
@@ -81,7 +82,7 @@ impl PickerState {
 
 
 /// The media card: the snapshot, the position to draw (interpolated by the app), the output
-/// device name, a seek preview while the thumb is dragged, and (index, count) of the Now Bar
+/// device name, a seek preview while the thumb is dragged, and (index, count) of the Swift Tab
 /// items for the page dots.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MediaCard {
@@ -97,6 +98,8 @@ pub struct MediaCard {
     pub show_lyrics: bool,
     /// Pinned: the card stays open until the pin or the pill is pressed.
     pub pinned: bool,
+    /// Per-app volume (level 0.0..1.0, muted bool)
+    pub app_volume: Option<(f32, bool)>,
 }
 
 /// The lyric lines around the position: the one before (dim), the one on, the next (dim), and
@@ -166,11 +169,11 @@ pub fn output_subline(bus: OutputBus, buds: Option<&BudsSnapshot>) -> String {
     let attached = match bus {
         OutputBus::Bluetooth => "Bluetooth",
         OutputBus::Usb => "USB",
-        OutputBus::Internal => tr("Dahili"),
-        OutputBus::Virtual => tr("Sanal"),
+        OutputBus::Internal => "Built-in",
+        OutputBus::Virtual => "Virtual",
     };
     match buds {
-        Some(b) => trf("{} · Sol {} · Sağ {}", &[&attached, &percent(b.left), &percent(b.right)]),
+        Some(b) => format!("{} · Left {} · Right {}", attached, percent(b.left), percent(b.right)),
         None => attached.to_string(),
     }
 }
@@ -189,7 +192,7 @@ fn output_icon(kind: OutputKind, earbuds: bool) -> Icon {
 impl MediaCard {
     pub fn new(m: MediaSnapshot, now_filetime: i64, output: Option<String>, seeking: Option<f32>, pages: (usize, usize), hold: Option<SeekHold>) -> Self {
         let position = m.timeline.as_ref().and_then(|t| shown_position(t, hold, now_filetime));
-        MediaCard { m, position, output, seeking, pages, page: MediaPage::Player, lyrics: None, show_lyrics: false, pinned: false }
+        MediaCard { m, position, output, seeking, pages, page: MediaPage::Player, lyrics: None, show_lyrics: false, pinned: false, app_volume: None }
     }
 }
 
@@ -253,6 +256,18 @@ pub fn app_text_lines(text: &str) -> u8 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct DownloadCard {
+    pub name: String,
+    pub path: std::path::PathBuf,
+    pub speed: String,
+    pub status: String,
+    pub size_text: String,
+    pub progress: Option<f32>,
+    pub done: bool,
+    pub app_name: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CardContent {
     Claude(Box<ClaudeCard>),
     App(Box<AppCard>),
@@ -272,6 +287,7 @@ pub enum CardContent {
     Away(Box<AwayCard>),
     Music(Box<MusicCard>),
     Question(Box<QuestionCard>),
+    Download(DownloadCard),
 }
 
 /// "Sen yokken": what happened while the PC was locked.
@@ -462,6 +478,7 @@ pub struct ShelfCard {
     pub said: Option<ShelfOp>,
     /// The pin is on: the shelf stays in the stack while it is empty.
     pub pinned: bool,
+    pub scroll: f32,
 }
 
 /// One clipboard stash item on the card.
@@ -475,6 +492,7 @@ pub struct ClipboardTile {
     pub is_url: bool,
     pub is_image: bool,
     pub has_html: bool,
+    pub pinned: bool,
 }
 
 /// The clipboard stash card.
@@ -483,6 +501,13 @@ pub struct ClipboardCard {
     pub tiles: Vec<ClipboardTile>,
     pub hover: Option<usize>,
     pub toast: Option<String>,
+    pub scroll: f32,
+}
+
+/// Maximum vertical scroll in DIP when there are more than 9 clipboard items (3 rows).
+pub fn clipboard_max_scroll_dip(n: usize) -> f32 {
+    let rows = n.min(crate::activities::clipboard_stash::MAX_STASH_ITEMS).div_ceil(3);
+    ((rows.saturating_sub(3)) as f32 * 82.0).max(0.0)
 }
 
 /// A footer chip's glyph.
@@ -495,11 +520,10 @@ pub fn op_icon(op: ShelfOp) -> Icon {
     }
 }
 
-/// The shelf footer's chips, left to right from the tiles' edge, 12 DIP under the last row:
+/// The shelf footer's chips, left to right in the 44 DIP footer band under the last row:
 /// 12 DIP in, the glyph (14), 6, the label (`label_px` wide), 12 out; 8 DIP apart.
-pub fn shelf_chips(label_px: &[f32], rows: usize, s: &Scale) -> Vec<D2D_RECT_F> {
+pub fn shelf_chips_at(label_px: &[f32], top: f32, s: &Scale) -> Vec<D2D_RECT_F> {
     let d = |v: f32| (v * s.0).round();
-    let top = d(44.0 + 85.0 * rows as f32 + crate::activities::shelf::FOOTER_GAP_DIP);
     let mut x = d(20.0);
     label_px
         .iter()
@@ -511,22 +535,28 @@ pub fn shelf_chips(label_px: &[f32], rows: usize, s: &Scale) -> Vec<D2D_RECT_F> 
         .collect()
 }
 
-/// A tile's colour and glyph when it has no preview (One UI's My Files hues).
+pub fn shelf_chips(label_px: &[f32], rows: usize, s: &Scale) -> Vec<D2D_RECT_F> {
+    let d = |v: f32| (v * s.0).round();
+    let top = d(48.0 + 106.0 * rows as f32 + crate::activities::shelf::FOOTER_GAP_DIP + 8.0);
+    shelf_chips_at(label_px, top, s)
+}
+
+/// A tile's colour and glyph when it has no preview (Fluent neutral or semantic PDF red).
 pub fn kind_style(kind: FileKind) -> ((u8, u8, u8), Icon) {
     match kind {
-        FileKind::Image => ((0x2E, 0xC4, 0xB6), Icon::Image),
-        FileKind::Video => ((0x9B, 0x6B, 0xFF), Icon::Video),
-        FileKind::Audio => ((0xFF, 0x5E, 0x8A), Icon::Music),
-        FileKind::Pdf => ((0xFF, 0x4D, 0x4F), Icon::Pdf),
-        FileKind::Archive => ((0xFF, 0xB0, 0x20), Icon::Archive),
-        FileKind::Document => ((0x3E, 0x91, 0xFF), Icon::TextDoc),
-        FileKind::Code => ((0x34, 0xC7, 0x59), Icon::Code),
-        FileKind::Folder => ((0xFF, 0xC5, 0x3D), Icon::Folder),
-        FileKind::Other => ((0x9A, 0x9A, 0xA0), Icon::Document),
+        FileKind::Image => ((0xD6, 0xD6, 0xD6), Icon::Image),
+        FileKind::Video => ((0xD6, 0xD6, 0xD6), Icon::Video),
+        FileKind::Audio => ((0xD6, 0xD6, 0xD6), Icon::Music),
+        FileKind::Pdf => ((0xFF, 0x99, 0xA4), Icon::Pdf),
+        FileKind::Archive => ((0xD6, 0xD6, 0xD6), Icon::Archive),
+        FileKind::Document => ((0xD6, 0xD6, 0xD6), Icon::TextDoc),
+        FileKind::Code => ((0xD6, 0xD6, 0xD6), Icon::Code),
+        FileKind::Folder => ((0xD6, 0xD6, 0xD6), Icon::Folder),
+        FileKind::Other => ((0xD6, 0xD6, 0xD6), Icon::Document),
     }
 }
 
-/// Where the shelf card's parts are, in px: the tiles, their close buttons, the "Temizle" chip.
+/// Where the shelf card's parts are, in px: the tiles, their close buttons, the "Clear" chip.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShelfLayout {
     pub tiles: Vec<D2D_RECT_F>,
@@ -534,20 +564,233 @@ pub struct ShelfLayout {
     pub clear: D2D_RECT_F,
 }
 
-/// Four 75 DIP tiles a row, 10 DIP apart, flush with the header's 20 DIP padding, from 54 DIP
-/// down; the close button 5 DIP inside the top-right corner. Whole pixels, so previews stay sharp.
+/// Three 104×98 DIP square file tiles a row (min 88px), 9 DIP apart horizontally and 8 DIP
+/// vertically, flush with the header's 20 DIP padding, from 48 DIP down; the close button 5 DIP
+/// inside the top-right corner.
 pub fn shelf_layout(n: usize, s: &Scale) -> ShelfLayout {
     let d = |v: f32| v * s.0;
-    let (side, close) = (d(75.0).round(), d(20.0).round());
+    let (tile_w, tile_h, close) = (d(104.0).round(), d(98.0).round(), d(20.0).round());
     let (mut tiles, mut closes) = (Vec::new(), Vec::new());
     for i in 0..n.min(crate::activities::shelf::SHELF_MAX) {
-        let (col, row) = ((i % 4) as f32, (i / 4) as f32);
-        let tile = rect(d(20.0 + col * 85.0).round(), d(54.0 + row * 85.0).round(), side, side);
+        let (col, row) = ((i % 3) as f32, (i / 3) as f32);
+        let tile = rect(d(20.0 + col * 113.0).round(), d(48.0 + row * 106.0).round(), tile_w, tile_h);
         closes.push(rect(tile.right - d(5.0).round() - close, tile.top + d(5.0).round(), close, close));
         tiles.push(tile);
     }
-    let clear = rect(d(350.0 - 78.0), d(16.0), d(78.0), d(26.0));
+    let clear = rect(d(350.0 - 78.0), d(14.0), d(78.0), d(26.0));
     ShelfLayout { tiles, closes, clear }
+}
+
+/// Three 104×74 DIP (4:3) clipboard tiles a row, 9 DIP apart horizontally and 8 DIP vertically,
+/// flush with the header's 20 DIP padding, from 48 DIP down.
+pub fn clipboard_layout(n: usize, s: &Scale) -> ShelfLayout {
+    let d = |v: f32| v * s.0;
+    let (tile_w, tile_h, close) = (d(104.0).round(), d(74.0).round(), d(20.0).round());
+    let (mut tiles, mut closes) = (Vec::new(), Vec::new());
+    for i in 0..n.min(crate::activities::clipboard_stash::MAX_STASH_ITEMS) {
+        let (col, row) = ((i % 3) as f32, (i / 3) as f32);
+        let tile = rect(d(20.0 + col * 113.0).round(), d(48.0 + row * 82.0).round(), tile_w, tile_h);
+        closes.push(rect(tile.right - d(5.0).round() - close, tile.top + d(5.0).round(), close, close));
+        tiles.push(tile);
+    }
+    let clear = rect(d(350.0 - 78.0), d(14.0), d(78.0), d(26.0));
+    ShelfLayout { tiles, closes, clear }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShelfSectionHeader {
+    pub title: &'static str,
+    pub top_dip: f32,
+    pub is_pinned: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CategorizedShelfLayout {
+    pub tiles: Vec<D2D_RECT_F>,
+    pub closes: Vec<D2D_RECT_F>,
+    pub headers: Vec<ShelfSectionHeader>,
+    pub max_scroll_dip: f32,
+    pub clear: D2D_RECT_F,
+}
+
+pub fn shelf_categorized_layout(c: &ShelfCard, s: &Scale) -> CategorizedShelfLayout {
+    let d = |v: f32| v * s.0;
+    let (tile_w, tile_h, close) = (d(96.0).round(), d(88.0).round(), d(18.0).round());
+    let mut tiles = vec![D2D_RECT_F::default(); c.tiles.len()];
+    let mut closes = vec![D2D_RECT_F::default(); c.tiles.len()];
+    let mut headers = Vec::new();
+
+    let pinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| c.tiles[i].selected).collect();
+    let unpinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| !c.tiles[i].selected).collect();
+
+    let mut y = 48.0;
+    if !pinned_indices.is_empty() {
+        headers.push(ShelfSectionHeader { title: "PINNED", top_dip: y, is_pinned: true });
+        y += 24.0;
+
+        for (local_i, &orig_idx) in pinned_indices.iter().enumerate() {
+            let (col, row) = ((local_i % 3) as f32, (local_i / 3) as f32);
+            let t = rect(d(16.0 + col * 106.0).round(), d(y + row * 98.0).round(), tile_w, tile_h);
+            let cl = rect(t.right - d(4.0).round() - close, t.top + d(4.0).round(), close, close);
+            tiles[orig_idx] = t;
+            closes[orig_idx] = cl;
+        }
+        let pinned_rows = pinned_indices.len().div_ceil(3);
+        y += pinned_rows as f32 * 98.0 - 10.0 + 14.0;
+    }
+
+    if !unpinned_indices.is_empty() {
+        headers.push(ShelfSectionHeader { title: "RECENT", top_dip: y, is_pinned: false });
+        y += 24.0;
+
+        for (local_i, &orig_idx) in unpinned_indices.iter().enumerate() {
+            let (col, row) = ((local_i % 3) as f32, (local_i / 3) as f32);
+            let t = rect(d(16.0 + col * 106.0).round(), d(y + row * 98.0).round(), tile_w, tile_h);
+            let cl = rect(t.right - d(4.0).round() - close, t.top + d(4.0).round(), close, close);
+            tiles[orig_idx] = t;
+            closes[orig_idx] = cl;
+        }
+    }
+
+    let card_h = shelf_card_height_dip(c);
+    let needed_h = shelf_content_height(pinned_indices.len(), unpinned_indices.len());
+    let max_scroll_dip = (needed_h - card_h).max(0.0);
+    let clear = rect(d(340.0 - 16.0 - 68.0), d(14.0), d(68.0), d(26.0));
+    CategorizedShelfLayout { tiles, closes, headers, max_scroll_dip, clear }
+}
+
+pub fn shelf_categorized_card_height(pinned: usize, unpinned: usize) -> f32 {
+    if pinned == 0 && unpinned == 0 {
+        return 204.0;
+    }
+    shelf_content_height(pinned, unpinned).clamp(204.0, 390.0)
+}
+
+pub fn shelf_card_height_dip(c: &ShelfCard) -> f32 {
+    let pinned = c.tiles.iter().filter(|t| t.selected).count();
+    let unpinned = c.tiles.len().saturating_sub(pinned);
+    shelf_categorized_card_height(pinned, unpinned)
+}
+
+pub fn shelf_content_height(pinned: usize, unpinned: usize) -> f32 {
+    if pinned == 0 && unpinned == 0 {
+        return 204.0;
+    }
+    let mut h = 48.0;
+    if pinned > 0 {
+        h += 24.0 + (pinned.div_ceil(3) as f32 * 98.0 - 10.0);
+    }
+    if unpinned > 0 {
+        if pinned > 0 {
+            h += 14.0;
+        }
+        h += 24.0 + (unpinned.div_ceil(3) as f32 * 98.0 - 10.0);
+    }
+    h + 8.0 + crate::activities::shelf::FOOTER_BAND_DIP
+}
+
+pub fn shelf_categorized_max_scroll(pinned: usize, unpinned: usize) -> f32 {
+    let card_h = shelf_categorized_card_height(pinned, unpinned);
+    let needed_h = shelf_content_height(pinned, unpinned);
+    (needed_h - card_h).max(0.0)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipboardSectionHeader {
+    pub title: &'static str,
+    pub top_dip: f32,
+    pub is_pinned: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CategorizedClipboardLayout {
+    pub tiles: Vec<D2D_RECT_F>,
+    pub closes: Vec<D2D_RECT_F>,
+    pub headers: Vec<ClipboardSectionHeader>,
+    pub max_scroll_dip: f32,
+    pub clear: D2D_RECT_F,
+}
+
+pub fn clipboard_categorized_layout(c: &ClipboardCard, s: &Scale) -> CategorizedClipboardLayout {
+    let d = |v: f32| v * s.0;
+    let (tile_w, tile_h, close) = (d(96.0).round(), d(72.0).round(), d(18.0).round());
+    let mut tiles = vec![D2D_RECT_F::default(); c.tiles.len()];
+    let mut closes = vec![D2D_RECT_F::default(); c.tiles.len()];
+    let mut headers = Vec::new();
+
+    let pinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| c.tiles[i].pinned).collect();
+    let unpinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| !c.tiles[i].pinned).collect();
+
+    let mut y = 48.0;
+    if !pinned_indices.is_empty() {
+        headers.push(ClipboardSectionHeader { title: "PINNED", top_dip: y, is_pinned: true });
+        y += 24.0;
+
+        for (local_i, &orig_idx) in pinned_indices.iter().enumerate() {
+            let (col, row) = ((local_i % 3) as f32, (local_i / 3) as f32);
+            let t = rect(d(16.0 + col * 106.0).round(), d(y + row * 80.0).round(), tile_w, tile_h);
+            let cl = rect(t.right - d(4.0).round() - close, t.top + d(4.0).round(), close, close);
+            tiles[orig_idx] = t;
+            closes[orig_idx] = cl;
+        }
+        let pinned_rows = pinned_indices.len().div_ceil(3);
+        y += pinned_rows as f32 * 80.0 - 8.0 + 14.0;
+    }
+
+    if !unpinned_indices.is_empty() {
+        headers.push(ClipboardSectionHeader { title: "RECENT", top_dip: y, is_pinned: false });
+        y += 24.0;
+
+        for (local_i, &orig_idx) in unpinned_indices.iter().enumerate() {
+            let (col, row) = ((local_i % 3) as f32, (local_i / 3) as f32);
+            let t = rect(d(16.0 + col * 106.0).round(), d(y + row * 80.0).round(), tile_w, tile_h);
+            let cl = rect(t.right - d(4.0).round() - close, t.top + d(4.0).round(), close, close);
+            tiles[orig_idx] = t;
+            closes[orig_idx] = cl;
+        }
+    }
+
+    let card_h = clipboard_card_height_dip(c);
+    let needed_h = clipboard_content_height(pinned_indices.len(), unpinned_indices.len());
+    let max_scroll_dip = (needed_h - card_h).max(0.0);
+    let clear = rect(d(340.0 - 16.0 - 68.0), d(14.0), d(68.0), d(26.0));
+    CategorizedClipboardLayout { tiles, closes, headers, max_scroll_dip, clear }
+}
+
+pub fn clipboard_categorized_card_height(pinned: usize, unpinned: usize) -> f32 {
+    if pinned == 0 && unpinned == 0 {
+        return 204.0;
+    }
+    clipboard_content_height(pinned, unpinned).clamp(204.0, 390.0)
+}
+
+pub fn clipboard_card_height_dip(c: &ClipboardCard) -> f32 {
+    let pinned = c.tiles.iter().filter(|t| t.pinned).count();
+    let unpinned = c.tiles.len().saturating_sub(pinned);
+    clipboard_categorized_card_height(pinned, unpinned)
+}
+
+pub fn clipboard_content_height(pinned: usize, unpinned: usize) -> f32 {
+    if pinned == 0 && unpinned == 0 {
+        return 204.0;
+    }
+    let mut h = 48.0;
+    if pinned > 0 {
+        h += 24.0 + (pinned.div_ceil(3) as f32 * 80.0 - 8.0);
+    }
+    if unpinned > 0 {
+        if pinned > 0 {
+            h += 14.0;
+        }
+        h += 24.0 + (unpinned.div_ceil(3) as f32 * 80.0 - 8.0);
+    }
+    h + 16.0
+}
+
+pub fn clipboard_categorized_max_scroll(pinned: usize, unpinned: usize) -> f32 {
+    let card_h = clipboard_categorized_card_height(pinned, unpinned);
+    let needed_h = clipboard_content_height(pinned, unpinned);
+    (needed_h - card_h).max(0.0)
 }
 
 /// A live item's card: the timer card's one-row pill with the item's title and last line.
@@ -728,6 +971,9 @@ pub enum CardAction {
     OutputPick(usize),
     OutputMute,
     OutputSettings,
+    LaunchSpotify,
+    LaunchYouTube,
+    MediaAppMute,
     /// The match card's ↗: the match page in the browser.
     MatchOpen,
     /// The media card's "Sözler" / "Kapak" chip.
@@ -738,6 +984,8 @@ pub enum CardAction {
     BudsNoise(u8),
     /// A shelf tile's close button (its index, newest first).
     ShelfRemove(usize),
+    /// Pin / unpin a specific shelf item.
+    ShelfItemPin(usize),
     /// The shelf card's "Temizle".
     ShelfClear,
     /// Keeps the shelf in the stack while it is empty (and lets go of it again).
@@ -773,15 +1021,22 @@ pub enum CardAction {
     ClipboardClear,
     /// Clipboard stash item removal.
     ClipboardRemove(usize),
+    /// Pin / unpin a clipboard item.
+    ClipboardPin(usize),
     /// Re-paste item from clipboard stash.
     ClipboardPaste(usize),
     /// Re-paste item stripped of formatting (plain text only).
     ClipboardPastePlain(usize),
+    /// Open the downloading application or the completed file.
+    DownloadOpen,
+    /// Open the downloads folder in File Explorer.
+    DownloadFolder,
 }
 
 /// Card size in DIP.
 pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
     match c {
+        CardContent::Download(_) => (370.0, 164.0),
         CardContent::Timer(_) | CardContent::Stopwatch(_) | CardContent::Live(_) => (370.0, 77.0),
         // The footer only with a button in it.
         CardContent::Claude(c) if c.can_focus || c.ask.as_ref().is_some_and(|a| a.answerable) => (370.0, 236.0),
@@ -796,7 +1051,9 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
             (370.0, APP_BODY_TOP + text + if a.progress.is_some() { 14.0 } else { 0.0 } + 14.0 + 34.0 + 12.0)
         }
         CardContent::Picker(_) => (370.0, 260.0),
-        CardContent::Media(_) => (340.0, 350.0),
+        CardContent::Media(m) if m.m.id == IDLE_MEDIA => (340.0, 204.0),
+        CardContent::Media(m) if matches!(m.page, MediaPage::Output(_)) => (340.0, 350.0),
+        CardContent::Media(_) => (340.0, 320.0),
         // The noise control row once the Buds have said their mode.
         CardContent::Buds(b) if b.noise.is_some() => (370.0, 238.0),
         CardContent::Buds(_) => (370.0, 150.0),
@@ -806,8 +1063,8 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
         // Without the stat rows (ESPN only has them in the heavy summary): 296; pre-match 290.
         CardContent::Match(m) if m.score.is_none() => (340.0, 290.0),
         CardContent::Match(_) => (340.0, 296.0),
-        CardContent::Shelf(c) => (370.0, crate::activities::shelf::card_height_dip(c.tiles.len())),
-        CardContent::Clipboard(c) => (370.0, crate::activities::clipboard_stash::card_height_dip(c.tiles.len())),
+        CardContent::Shelf(c) => (340.0, shelf_card_height_dip(c)),
+        CardContent::Clipboard(c) => (340.0, clipboard_card_height_dip(c)),
         CardContent::Game(_) => (370.0, GAME_COVER_DIP.1 + 48.0),
         CardContent::Wellbeing(c) => (370.0, wellbeing_height_dip(c)),
         CardContent::Away(c) => (370.0, BRIEF_HEADER + BRIEF_GAP + away_panel_dip(c) + 12.0),
@@ -857,54 +1114,21 @@ const WEATHER_ALERT_ROW: f32 = 34.0;
 const APP_BODY_TOP: f32 = 74.0;
 const APP_LINE: f32 = 18.0;
 
-/// Corner radius in DIP: one-row cards are full pills (One UI), taller cards use 36 DIP.
-pub fn card_radius_dip(c: &CardContent) -> f32 {
-    match c {
-        CardContent::Timer(_) | CardContent::Stopwatch(_) | CardContent::Live(_) => card_size_dip(c).1 / 2.0,
-        CardContent::Claude(_) | CardContent::App(_) | CardContent::Question(_) => 36.0,
-        CardContent::Picker(_)
-        | CardContent::Buds(_)
-        | CardContent::Weather(_)
-        | CardContent::Shelf(_)
-        | CardContent::Clipboard(_)
-        | CardContent::Brief(_)
-        | CardContent::Game(_)
-        | CardContent::Wellbeing(_)
-        | CardContent::Away(_)
-        | CardContent::Music(_) => 36.0,
-        CardContent::Media(_) | CardContent::Match(_) => 32.0,
-    }
+/// Corner radius in DIP: Windows 11 floating panels and rows use 8 DIP.
+pub fn card_radius_dip(_c: &CardContent) -> f32 {
+    8.0
 }
 
-/// Album tint (top, bottom) laid over the media card's blur.
+/// Subtle dark Acrylic base for cards; Media and Weather paint a localized top-left radial tint
+/// over the `#202020` base so the card stays dark and crisp like the Windows 11 mockup.
 pub fn card_tint(c: &CardContent) -> Option<(windows::UI::Color, windows::UI::Color)> {
-    let color = |a, r, g, b| windows::UI::Color { A: a, R: r, G: g, B: b };
-    if matches!(c, CardContent::Shelf(_) | CardContent::Clipboard(_)) {
-        // Shelf and clipboard: a plain dark grey card, no wallpaper showing through.
-        return Some((color(238, 0x1F, 0x1F, 0x21), color(246, 0x18, 0x18, 0x1A)));
+    let alpha = if crate::platform::os::solid_fallback() { 255 } else { 64 };
+    let base = windows::UI::Color { A: alpha, R: 0x20, G: 0x20, B: 0x20 };
+    let _ = tint_mix_24([0, 0, 0]);
+    if let CardContent::Media(card) = c {
+        let _ = media_gradient(card.m.accent);
     }
-    if let CardContent::Match(_) = c {
-        // A neutral dark veil: the team glows carry the colour.
-        return Some((color(215, 0x14, 0x14, 0x16), color(235, 0x10, 0x10, 0x12)));
-    }
-    if let CardContent::Weather(w) = c {
-        let ([r0, g0, b0], [r1, g1, b1]) = palette(w.fx);
-        return Some((color(225, r0, g0, b0), color(240, r1, g1, b1)));
-    }
-    if let CardContent::Brief(b) = c {
-        return Some(match &b.weather {
-            Some(w) => {
-                let ([r0, g0, b0], [r1, g1, b1]) = palette(w.fx);
-                (color(225, r0, g0, b0), color(240, r1, g1, b1))
-            }
-            // No weather: the match card's neutral veil.
-            None => (color(215, 0x14, 0x14, 0x16), color(235, 0x10, 0x10, 0x12)),
-        });
-    }
-    let CardContent::Media(card) = c else { return None };
-    let ([r0, g0, b0], [r1, g1, b1]) = media_gradient(card.m.accent);
-    let color = |a, r, g, b| windows::UI::Color { A: a, R: r, G: g, B: b };
-    Some((color(215, r0, g0, b0), color(235, r1, g1, b1)))
+    Some((base, base))
 }
 
 pub fn card_accent(c: &CardContent) -> (u8, u8, u8) {
@@ -922,6 +1146,7 @@ pub fn card_accent(c: &CardContent) -> (u8, u8, u8) {
         CardContent::Game(g) => store_accent(g.store),
         CardContent::Wellbeing(_) => WELLBEING_ACCENT,
         CardContent::Music(c) => c.accent,
+        CardContent::Download(_) => (0x00, 0x78, 0xD4),
     }
 }
 
@@ -932,7 +1157,11 @@ pub struct CardVisual {
     seek: Option<(D2D_RECT_F, f32, f32)>,
     /// Output page volume slider, the same way.
     volume: Option<(D2D_RECT_F, f32, f32)>,
-    /// Shelf tiles: where a drag-out can start.
+    /// Active media card per-app volume slider.
+    app_volume: Option<(D2D_RECT_F, f32, f32)>,
+    /// Clipboard vertical scrollbar track: hit area and vertical y0..y1 thumb center range.
+    clipboard_scroll: Option<(D2D_RECT_F, f32, f32)>,
+    /// Shelf / clipboard tiles: where a drag-out or hover can happen.
     tiles: Vec<D2D_RECT_F>,
     answer_overflow: f32,
     size_px: (i32, i32),
@@ -940,7 +1169,17 @@ pub struct CardVisual {
 
 impl CardVisual {
     pub fn new(g: &Gfx) -> Result<Self> {
-        Ok(CardVisual { surface: new_surface(g, 1, 1)?, hits: Vec::new(), seek: None, volume: None, tiles: Vec::new(), answer_overflow: 0.0, size_px: (1, 1) })
+        Ok(CardVisual {
+            surface: new_surface(g, 1, 1)?,
+            hits: Vec::new(),
+            seek: None,
+            volume: None,
+            app_volume: None,
+            clipboard_scroll: None,
+            tiles: Vec::new(),
+            answer_overflow: 0.0,
+            size_px: (1, 1),
+        })
     }
 
     pub fn size_px(&self) -> (i32, i32) {
@@ -958,6 +1197,8 @@ impl CardVisual {
         self.hits = painted.hits;
         self.seek = painted.seek;
         self.volume = painted.volume;
+        self.app_volume = painted.app_volume;
+        self.clipboard_scroll = painted.clipboard_scroll;
         self.tiles = painted.tiles;
         self.answer_overflow = painted.answer.unwrap_or(0.0);
         self.size_px = (w, h);
@@ -988,6 +1229,26 @@ impl CardVisual {
         self.volume.map(|(_, x0, x1)| fraction_on(x as f32, x0, x1))
     }
 
+    /// Media card: app volume fraction under (x, y), if the point is on the slider.
+    pub fn app_volume_fraction(&self, x: i32, y: i32) -> Option<f32> {
+        track_fraction(self.app_volume, x, y)
+    }
+
+    pub fn app_volume_drag(&self, x: i32) -> Option<f32> {
+        self.app_volume.map(|(_, x0, x1)| fraction_on(x as f32, x0, x1))
+    }
+
+    /// Clipboard vertical scrollbar fraction (0–1) under (x, y), if the point is on the scrollbar.
+    pub fn clipboard_scroll_fraction(&self, x: i32, y: i32) -> Option<f32> {
+        let (area, y0, y1) = self.clipboard_scroll?;
+        let (fx, fy) = (x as f32, y as f32);
+        (fx >= area.left && fx < area.right && fy >= area.top && fy < area.bottom).then(|| fraction_on(fy, y0, y1))
+    }
+
+    pub fn clipboard_scroll_drag(&self, y: i32) -> Option<f32> {
+        self.clipboard_scroll.map(|(_, y0, y1)| fraction_on(y as f32, y0, y1))
+    }
+
     /// The shelf tile under (x, y), if any.
     pub fn tile_at(&self, x: i32, y: i32) -> Option<usize> {
         let (x, y) = (x as f32, y as f32);
@@ -1007,6 +1268,8 @@ pub struct Painted {
     hits: Vec<(D2D_RECT_F, CardAction)>,
     seek: Option<(D2D_RECT_F, f32, f32)>,
     volume: Option<(D2D_RECT_F, f32, f32)>,
+    app_volume: Option<(D2D_RECT_F, f32, f32)>,
+    clipboard_scroll: Option<(D2D_RECT_F, f32, f32)>,
     tiles: Vec<D2D_RECT_F>,
     /// The question card's answer: how far past its area it runs (px).
     answer: Option<f32>,
@@ -1015,7 +1278,17 @@ pub struct Painted {
 /// Paints `c` into a `w`×`h` px area; dev tools render cards to PNG with it.
 pub fn paint_card(ink: &Ink, c: &CardContent, s: &Scale, w: f32, h: f32) -> Result<Painted> {
     let mut out = Painted::default();
-    let mut p = Painter { ink, s, w, h, hits: &mut out.hits, seek: &mut out.seek, volume: &mut out.volume };
+    let mut p = Painter {
+        ink,
+        s,
+        w,
+        h,
+        hits: &mut out.hits,
+        seek: &mut out.seek,
+        volume: &mut out.volume,
+        app_volume: &mut out.app_volume,
+        clipboard_scroll: &mut out.clipboard_scroll,
+    };
     match c {
         CardContent::Timer(t) => p.timer(t),
         CardContent::Stopwatch(t) => p.stopwatch(t),
@@ -1032,11 +1305,47 @@ pub fn paint_card(ink: &Ink, c: &CardContent, s: &Scale, w: f32, h: f32) -> Resu
         CardContent::App(a) => p.app(a),
         CardContent::Match(m) => p.match_card(m),
         CardContent::Shelf(c) => {
-            out.tiles = shelf_layout(c.tiles.len(), s).tiles;
+            let l = shelf_categorized_layout(c, s);
+            let scroll_px = (c.scroll.clamp(0.0, l.max_scroll_dip) * s.0).round();
+            let clip_top = (46.0 * s.0).round();
+            let clip_bottom = ((shelf_card_height_dip(c) - crate::activities::shelf::FOOTER_BAND_DIP) * s.0).round();
+            out.tiles = l
+                .tiles
+                .into_iter()
+                .map(|mut r| {
+                    r.top -= scroll_px;
+                    r.bottom -= scroll_px;
+                    let top = r.top.max(clip_top);
+                    let bottom = r.bottom.min(clip_bottom);
+                    if bottom <= top {
+                        D2D_RECT_F::default()
+                    } else {
+                        D2D_RECT_F { top, bottom, ..r }
+                    }
+                })
+                .collect();
             p.shelf(c)
         }
         CardContent::Clipboard(c) => {
-            out.tiles = shelf_layout(c.tiles.len(), s).tiles;
+            let l = clipboard_categorized_layout(c, s);
+            let scroll_px = (c.scroll.clamp(0.0, l.max_scroll_dip) * s.0).round();
+            let clip_top = (46.0 * s.0).round();
+            let clip_bottom = (clipboard_card_height_dip(c) * s.0 - 6.0 * s.0).round();
+            out.tiles = l
+                .tiles
+                .into_iter()
+                .map(|mut r| {
+                    r.top -= scroll_px;
+                    r.bottom -= scroll_px;
+                    let top = r.top.max(clip_top);
+                    let bottom = r.bottom.min(clip_bottom);
+                    if bottom <= top {
+                        D2D_RECT_F::default()
+                    } else {
+                        D2D_RECT_F { top, bottom, ..r }
+                    }
+                })
+                .collect();
             p.clipboard(c)
         }
         CardContent::Game(g) => p.game(g),
@@ -1044,6 +1353,7 @@ pub fn paint_card(ink: &Ink, c: &CardContent, s: &Scale, w: f32, h: f32) -> Resu
         CardContent::Away(c) => p.away(c),
         CardContent::Music(c) => p.music(c),
         CardContent::Question(c) => p.question(c, &mut out.answer),
+        CardContent::Download(d) => p.download(d),
     }?;
     Ok(out)
 }
@@ -1087,6 +1397,8 @@ struct Painter<'a, 'b> {
     hits: &'a mut Vec<(D2D_RECT_F, CardAction)>,
     seek: &'a mut Option<(D2D_RECT_F, f32, f32)>,
     volume: &'a mut Option<(D2D_RECT_F, f32, f32)>,
+    app_volume: &'a mut Option<(D2D_RECT_F, f32, f32)>,
+    clipboard_scroll: &'a mut Option<(D2D_RECT_F, f32, f32)>,
 }
 
 impl Painter<'_, '_> {
@@ -1096,34 +1408,35 @@ impl Painter<'_, '_> {
 
     fn accent_circle(&self, icon: Icon) -> Result<()> {
         let (r, g, b) = timer_accent();
-        let circle = self.d(46.0);
+        let circle = self.d(42.0);
         let cy = ((self.h - circle) / 2.0).round();
         let area = rect(self.d(15.0), cy, circle, circle);
-        self.ink.rrect(area, circle / 2.0, rgba(r, g, b, 1.0))?;
-        let st = TextStyle::new(Face::Icons, Weight::Regular, self.d(24.0), white(1.0)).centered();
+        self.ink.rrect(area, self.d(4.0), rgba(r, g, b, 1.0))?;
+        let st = TextStyle::new(Face::Icons, Weight::Regular, self.d(20.0), rgba(0x00, 0x00, 0x00, 1.0)).centered();
         self.ink.text(&glyph(icon).to_string(), area, &st)
     }
 
     fn big_time(&self, text: &str, label: &str) -> Result<()> {
-        let time = TextStyle::new(Face::Display, Weight::Medium, self.d(28.0), white(1.0)).tabular().top();
-        self.ink.text(text, rect(self.d(73.0), self.d(9.0), self.d(180.0), self.d(38.0)), &time)?;
-        let st = TextStyle::new(Face::Text, Weight::Regular, self.d(13.0), white(0.8)).top();
-        self.ink.text(label, rect(self.d(74.0), self.d(46.0), self.d(200.0), self.d(20.0)), &st)
+        let time = TextStyle::new(Face::Display, Weight::SemiBold, self.d(26.0), white(1.0)).tabular().top();
+        self.ink.text(text, rect(self.d(73.0), self.d(10.0), self.d(180.0), self.d(36.0)), &time)?;
+        let st = TextStyle::new(Face::Text, Weight::Regular, self.d(13.0), sec_text()).top();
+        self.ink.text(label, rect(self.d(74.0), self.d(44.0), self.d(200.0), self.d(20.0)), &st)
     }
 
     /// An icon button centred `from_right` DIP from the right edge.
     fn icon_button(&mut self, icon: Icon, from_right: f32, action: CardAction) -> Result<()> {
-        let area = rect(self.w - self.d(from_right + 20.0), 0.0, self.d(40.0), self.h);
-        let st = TextStyle::new(Face::Icons, Weight::Regular, self.d(22.0), white(1.0)).centered();
+        let area = rect(self.w - self.d(from_right + 20.0), (self.h - self.d(32.0)) / 2.0, self.d(32.0), self.d(32.0));
+        self.ink.rrect(area, self.d(4.0), white(0.06))?;
+        let st = TextStyle::new(Face::Icons, Weight::Regular, self.d(16.0), white(1.0)).centered();
         self.ink.text(&glyph(icon).to_string(), area, &st)?;
         self.hits.push((area, action));
         Ok(())
     }
 
     fn chip(&mut self, area: D2D_RECT_F, text: &str, fill: [f32; 4], action: CardAction) -> Result<()> {
-        let radius = (area.bottom - area.top) / 2.0;
+        let radius = self.d(4.0);
         self.ink.rrect(area, radius, fill)?;
-        let st = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.5), white(1.0)).centered();
+        let st = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.0), white(1.0)).centered();
         self.ink.text(text, area, &st)?;
         self.hits.push((area, action));
         Ok(())
@@ -1135,10 +1448,10 @@ impl Painter<'_, '_> {
         if t.done {
             let y = (self.h - self.d(34.0)) / 2.0;
             let add = rect(self.w - self.d(148.0), y, self.d(64.0), self.d(34.0));
-            let add_label = trf("+{} dk", &[&crate::settings::current().timer_add_minutes]);
+            let add_label = format!("+{} min", crate::settings::current().timer_add_minutes);
             self.chip(add, &add_label, white(0.14), CardAction::TimerAddMinute)?;
             let close = rect(self.w - self.d(78.0), y, self.d(64.0), self.d(34.0));
-            self.chip(close, "Kapat", white(0.14), CardAction::TimerClose)
+            self.chip(close, "Dismiss", white(0.14), CardAction::TimerClose)
         } else {
             self.icon_button(Icon::Close, 77.0, CardAction::TimerClose)?;
             let (icon, action) = if t.paused { (Icon::Play, CardAction::TimerResume) } else { (Icon::Pause, CardAction::TimerPause) };
@@ -1182,14 +1495,14 @@ impl Painter<'_, '_> {
             _ => false,
         };
         if let Some(ask) = &c.ask {
-            self.ink.text(&trf("İzin istiyor · {}", &[&ask.tool]), rect(px, panel.top + d(14.0), pw, d(18.0)), &line(13.0, Weight::SemiBold, 1.0))?;
+            self.ink.text(&format!("Permission request · {}", ask.tool), rect(px, panel.top + d(14.0), pw, d(18.0)), &line(13.0, Weight::SemiBold, 1.0))?;
             if answerable {
                 self.ink.text(&ask.detail, rect(px, panel.top + d(38.0), pw, d(52.0)), &detail)?;
             } else {
                 self.ink.text(&ask.detail, rect(px, panel.top + d(38.0), pw, d(34.0)), &detail.ellipsis())?;
             }
             if !answerable {
-                self.ink.text(tr("Claude'un penceresinde yanıtla"), rect(px, panel.top + d(76.0), pw, d(16.0)), &line(12.0, Weight::Regular, 0.55))?;
+                self.ink.text("Reply in Claude's window", rect(px, panel.top + d(76.0), pw, d(16.0)), &line(12.0, Weight::Regular, 0.55))?;
             }
         } else if let (LiveState::Done, Some(summary)) = (c.state, &c.summary) {
             let wrap = TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.9)).top().wrap();
@@ -1206,7 +1519,7 @@ impl Painter<'_, '_> {
             };
             match c.steps.first() {
                 Some((k, label)) => row(self, y, Some(*k), label, 13.0, Weight::SemiBold, 1.0)?,
-                None => row(self, y, None, tr("Düşünüyor"), 13.0, Weight::SemiBold, 1.0)?,
+                None => row(self, y, None, "Thinking…", 13.0, Weight::SemiBold, 1.0)?,
             }
             y += d(26.0);
             if let Some((done, total, current)) = &c.tasks {
@@ -1232,16 +1545,16 @@ impl Painter<'_, '_> {
             }
         }
 
-        // The footer: "Pencereye git" on the left, the ask's answers on the right.
+        // The footer: "Go to window" on the left, the ask's answers on the right.
         let fy = panel.bottom + d(14.0);
         if c.can_focus {
-            self.chip(rect(d(16.0), fy, d(124.0), d(34.0)), tr("Pencereye git"), white(0.12), CardAction::ClaudeFocus)?;
+            self.chip(rect(d(16.0), fy, d(124.0), d(34.0)), "Go to window", white(0.12), CardAction::ClaudeFocus)?;
         }
         if let Some(ClaudeAsk { key, .. }) = c.ask.as_ref().filter(|_| answerable) {
             let allow = rect(self.w - d(16.0) - d(96.0), fy, d(96.0), d(34.0));
             let deny = rect(allow.left - d(8.0) - d(84.0), fy, d(84.0), d(34.0));
-            self.chip(deny, tr("Reddet"), white(0.12), CardAction::ClaudeDeny(*key))?;
-            self.chip(allow, tr("İzin ver"), rgba(r, g, b, 1.0), CardAction::ClaudeAllow(*key))?;
+            self.chip(deny, "Deny", white(0.12), CardAction::ClaudeDeny(*key))?;
+            self.chip(allow, "Allow", rgba(r, g, b, 1.0), CardAction::ClaudeAllow(*key))?;
         }
         Ok(())
     }
@@ -1260,7 +1573,7 @@ impl Painter<'_, '_> {
         let line = rect(text_x, d(40.0), text_w, d(18.0));
         if c.prompt {
             let asks = TextStyle::new(Face::Text, Weight::SemiBold, d(12.5), lighten(c.accent)).top().ellipsis();
-            self.ink.text(tr("Bildirim göstermek istiyor"), line, &asks)?;
+            self.ink.text("wants to show notifications", line, &asks)?;
         } else {
             self.sender(c, &c.status, line, &TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).top().tabular())?;
         }
@@ -1278,12 +1591,12 @@ impl Painter<'_, '_> {
             let path = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.85)).top();
             let shown = self.end_kept(&c.text, pw, &path)?;
             self.ink.text(&shown, rect(px, panel.top + d(40.0), pw, d(18.0)), &path)?;
-            self.ink.text(tr("Yalnızca güvendiğin uygulamalara izin ver."), rect(px, panel.top + d(76.0), pw, d(16.0)), &TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.55)).top().ellipsis())?;
+            self.ink.text("Only allow apps you trust.", rect(px, panel.top + d(76.0), pw, d(16.0)), &TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.55)).top().ellipsis())?;
             let fy = panel.bottom + d(14.0);
             let allow = rect(self.w - d(16.0) - d(96.0), fy, d(96.0), d(34.0));
             let deny = rect(allow.left - d(8.0) - d(84.0), fy, d(84.0), d(34.0));
-            self.chip(deny, tr("Reddet"), white(0.12), CardAction::AppDeny(c.key))?;
-            return self.chip(allow, tr("İzin ver"), rgba(r, g, b, 1.0), CardAction::AppAllow(c.key));
+            self.chip(deny, "Deny", white(0.12), CardAction::AppDeny(c.key))?;
+            return self.chip(allow, "Allow", rgba(r, g, b, 1.0), CardAction::AppAllow(c.key));
         }
 
         let mut y = d(APP_BODY_TOP);
@@ -1301,7 +1614,7 @@ impl Painter<'_, '_> {
             y += d(14.0);
         }
         let fy = y + d(14.0);
-        self.chip(rect(d(16.0), fy, d(84.0), d(34.0)), tr("Sustur"), white(0.12), CardAction::AppMute(c.key))?;
+        self.chip(rect(d(16.0), fy, d(84.0), d(34.0)), "Mute", white(0.12), CardAction::AppMute(c.key))?;
         // The last button is the one in the accent; long labels are cut, never over "Sustur".
         let chip_text = TextStyle::new(Face::Text, Weight::SemiBold, d(13.5), white(1.0)).centered().ellipsis();
         let widths = c.buttons.iter().map(|l| self.ink.measure(l, &chip_text)).collect::<Result<Vec<f32>>>()?;
@@ -1560,7 +1873,7 @@ impl Painter<'_, '_> {
         }
         let shown: Vec<&MatchEvent> = m.events.iter().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect();
         if shown.is_empty() {
-            self.ink.text(tr("Henüz gol yok"), panel, &TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.55)).centered())?;
+            self.ink.text("No goals yet", panel, &TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.55)).centered())?;
             return Ok(());
         }
         let top = panel.top + (panel.bottom - panel.top - shown.len() as f32 * d(20.0)) / 2.0;
@@ -1642,7 +1955,7 @@ impl Painter<'_, '_> {
     fn match_pre(&mut self, m: &MatchCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         if let Some((home_form, away_form)) = &m.form {
-            self.ink.text(tr("Son 5 maç"), rect(d(16.0), d(154.0), d(200.0), d(16.0)), &TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.62)).top())?;
+            self.ink.text("Last 5 matches", rect(d(16.0), d(154.0), d(200.0), d(16.0)), &TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.62)).top())?;
             let panel = rect(d(12.0), d(174.0), d(316.0), d(68.0));
             self.ink.rrect(panel, d(20.0), white(0.06))?;
             for (row, (team, form)) in [(&m.home, home_form), (&m.away, away_form)].into_iter().enumerate() {
@@ -1655,9 +1968,9 @@ impl Painter<'_, '_> {
                 for (i, r) in results.iter().enumerate() {
                     let x = d(316.0) - (results.len() - i) as f32 * d(24.0);
                     let (fill, letter) = match r {
-                        'W' => (rgba(0x2E, 0x9E, 0x4F, 1.0), "G"),
-                        'L' => (rgba(0xD9, 0x3A, 0x3A, 1.0), "M"),
-                        _ => (white(0.18), "B"),
+                        'W' => (rgba(0x2E, 0x9E, 0x4F, 1.0), "W"),
+                        'L' => (rgba(0xD9, 0x3A, 0x3A, 1.0), "L"),
+                        _ => (white(0.18), "D"),
                     };
                     let chip = rect(x, y + d(4.0), d(20.0), d(20.0));
                     self.ink.rrect(chip, d(6.0), fill)?;
@@ -1673,7 +1986,7 @@ impl Painter<'_, '_> {
         Ok(())
     }
 
-    /// "Galaxy Buds2 / Bu bilgisayara bağlı", then a ring per bud and, while known, the case.
+    /// "Galaxy Buds2 / Connected to this PC", then a ring per bud and, while known, the case.
     fn buds(&mut self, b: &BudsSnapshot) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         let (r, g, bl) = BUDS_ACCENT;
@@ -1684,11 +1997,11 @@ impl Painter<'_, '_> {
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top();
         self.ink.text("Galaxy Buds2", rect(d(73.0), d(17.0), d(280.0), d(22.0)), &title)?;
         let sub = TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.8)).top();
-        self.ink.text(tr("Bu bilgisayara bağlı"), rect(d(73.0), d(40.0), d(280.0), d(20.0)), &sub)?;
+        self.ink.text("Connected to this PC", rect(d(73.0), d(40.0), d(280.0), d(20.0)), &sub)?;
 
-        let mut rings = vec![(tr("Sol"), b.left), (tr("Sağ"), b.right)];
+        let mut rings = vec![("Left", b.left), ("Right", b.right)];
         if let Some(case) = b.case {
-            rings.push((tr("Kutu"), case));
+            rings.push(("Case", case));
         }
         let (radius, cy, step) = (d(22.0), d(96.0), d(110.0));
         let n = rings.len() as f32;
@@ -1713,95 +2026,153 @@ impl Painter<'_, '_> {
     /// close button.
     fn shelf(&mut self, c: &ShelfCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let l = shelf_layout(c.tiles.len(), self.s);
+        let l = shelf_categorized_layout(c, self.s);
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top();
-        let title_text = tr("Raf");
-        self.ink.text(title_text, rect(d(20.0), d(18.0), d(120.0), d(22.0)), &title)?;
-        let count = TextStyle::new(Face::Text, Weight::Regular, d(16.0), white(0.4)).top();
-        let count_x = d(20.0) + self.ink.measure(title_text, &title)? + d(6.0);
-        self.ink.text(&c.tiles.len().to_string(), rect(count_x, d(18.0), d(40.0), d(22.0)), &count)?;
+        let title_text = "Shelf";
+        self.ink.text(title_text, rect(d(16.0), d(16.0), d(120.0), d(22.0)), &title)?;
+        let count = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).top();
+        let count_x = d(16.0) + self.ink.measure(title_text, &title)? + d(8.0);
+        self.ink.text(&c.tiles.len().to_string(), rect(count_x, d(19.0), d(60.0), d(18.0)), &count)?;
+
         let chip = l.clear;
-        self.ink.rrect(chip, (chip.bottom - chip.top) / 2.0, white(0.09))?;
-        self.ink.text(tr("Temizle"), chip, &TextStyle::new(Face::Text, Weight::Medium, d(12.0), white(0.85)).centered())?;
+        let btn_r = d(4.0);
+        self.ink.rrect(chip, btn_r, white(0.05))?;
+        self.ink.text("Clear", chip, &TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).centered())?;
         self.hits.push((chip, CardAction::ShelfClear));
-        // The pin, left of "Temizle": a pinned shelf stays in the stack even with nothing on it.
+
+        // Quiet pin button left of Clear: same upright pushpin SVG as Media.
         let pinned = c.pinned;
-        let pin = rect(chip.left - d(34.0), chip.top, d(26.0), chip.bottom - chip.top);
+        let pin = rect(chip.left - d(36.0), chip.top, d(28.0), chip.bottom - chip.top);
         let (pr, pg, pb) = timer_accent();
-        self.ink.rrect(pin, (pin.bottom - pin.top) / 2.0, if pinned { rgba(pr, pg, pb, 1.0) } else { white(0.09) })?;
-        let pin_glyph = if pinned { '\u{E840}' } else { '\u{E718}' };
-        self.ink.text(&pin_glyph.to_string(), pin, &TextStyle::new(Face::Icons, Weight::Regular, d(11.0), white(if pinned { 1.0 } else { 0.85 })).centered())?;
+        self.ink.rrect(pin, btn_r, if pinned { white(0.09) } else { white(0.04) })?;
+        let pin_color = if pinned { rgba(pr, pg, pb, 1.0) } else { neutral_icon() };
+        let pin_sz = d(15.0).round();
+        let pin_icon = rect(
+            (pin.left + (pin.right - pin.left - pin_sz) / 2.0).round(),
+            (pin.top + (pin.bottom - pin.top - pin_sz) / 2.0).round(),
+            pin_sz,
+            pin_sz,
+        );
+        self.ink.svg(PIN_SVG, pin_icon, pin_color)?;
         self.hits.push((pin, CardAction::ShelfPin));
+
+        let band_h = d(crate::activities::shelf::FOOTER_BAND_DIP);
+
         if c.tiles.is_empty() {
-            let hint = TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.5)).centered();
-            self.ink.text(tr("Dosyaları buraya bırak"), rect(d(20.0), d(80.0), d(330.0), d(40.0)), &hint)?;
-        }
-        let radius = d(18.0);
-        let name = TextStyle::new(Face::Text, Weight::Medium, d(11.0), white(0.95)).ellipsis();
-        for (i, tile) in c.tiles.iter().enumerate().take(l.tiles.len()) {
-            let t = l.tiles[i];
-            let (tw, th) = (t.right - t.left, t.bottom - t.top);
-            match &tile.thumb {
-                Some(img) => {
-                    let src = rect(0.0, 0.0, img.size.0 as f32, img.size.1 as f32);
-                    self.ink.image_rounded(&img.px, img.size, src, t, radius)?;
-                    // The name stays readable on any photo.
-                    self.ink.vgradient(t, radius, [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.62])?;
-                    // A selected tile's tick takes the corner.
-                    if let Some(ext) = crate::activities::shelf::extension_label(&tile.name).filter(|_| !tile.selected) {
-                        let st = TextStyle::new(Face::Text, Weight::SemiBold, d(8.5), white(0.95)).centered();
-                        let w = self.ink.measure(&ext, &st)? + d(10.0);
-                        let badge = rect(t.left + d(6.0), t.top + d(6.0), w.round(), d(14.0).round());
-                        self.ink.rrect(badge, d(5.0), [0.0, 0.0, 0.0, 0.5])?;
-                        self.ink.text(&ext, badge, &st)?;
+            let hint = TextStyle::new(Face::Text, Weight::Regular, d(13.0), sec_text()).centered();
+            let empty_y = (d(48.0) + (self.h - band_h - d(48.0) - d(40.0)) / 2.0).round();
+            self.ink.text("Drop files here", rect(d(16.0), empty_y, self.w - d(32.0), d(40.0)), &hint)?;
+        } else {
+            let scroll_dip = c.scroll.clamp(0.0, l.max_scroll_dip);
+            let scroll_px = d(scroll_dip).round();
+            let grid_clip = rect(0.0, d(46.0).round(), self.w, (self.h - band_h).round());
+
+            unsafe {
+                self.ink.dc.PushAxisAlignedClip(&grid_clip, windows::Win32::Graphics::Direct2D::D2D1_ANTIALIAS_MODE_ALIASED);
+            }
+
+            let header_style = TextStyle::new(Face::Text, Weight::SemiBold, d(11.0), sec_text()).top();
+            for h in &l.headers {
+                let hy = d(h.top_dip).round() - scroll_px;
+                let h_bottom = hy + d(18.0);
+                if h_bottom > grid_clip.top && hy < grid_clip.bottom {
+                    if h.is_pinned {
+                        let ir = rect(d(16.0), hy + d(2.0), d(12.0), d(12.0));
+                        self.ink.svg(PIN_SVG, ir, rgba(pr, pg, pb, 1.0))?;
+                        let hr = rect(d(32.0), hy, d(120.0), d(18.0));
+                        self.ink.text(h.title, hr, &header_style)?;
+                    } else {
+                        let hr = rect(d(16.0), hy, d(120.0), d(18.0));
+                        self.ink.text(h.title, hr, &header_style)?;
                     }
                 }
-                None => {
-                    let ((r, g, b), icon) = kind_style(tile.kind);
-                    self.ink.rrect(t, radius, white(0.07))?;
-                    self.ink.rrect(t, radius, rgba(r, g, b, 0.16))?;
-                    let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(24.0), rgba(r, g, b, 1.0)).centered();
-                    self.ink.text(&glyph(icon).to_string(), rect(t.left, t.top + d(8.0), tw, th * 0.5), &glyph_style)?;
+            }
+
+            let radius = d(4.0);
+            let name_style = TextStyle::new(Face::Text, Weight::Regular, d(11.5), white(0.95)).centered().wrap().ellipsis();
+            for orig_idx in 0..c.tiles.len() {
+                let tile = &c.tiles[orig_idx];
+                let mut t = l.tiles[orig_idx];
+                t.top -= scroll_px;
+                t.bottom -= scroll_px;
+                if t.bottom <= grid_clip.top || t.top >= grid_clip.bottom {
+                    continue;
+                }
+                let (tw, th) = (t.right - t.left, t.bottom - t.top);
+                let hovered = c.hover == Some(orig_idx);
+
+                let tile_fill = if tile.selected {
+                    white(0.09)
+                } else if hovered {
+                    white(0.07)
+                } else {
+                    white(0.05)
+                };
+                self.ink.rrect(t, radius, tile_fill)?;
+                let border_rect = rect(t.left + 0.5, t.top + 0.5, tw - 1.0, th - 1.0);
+                self.ink.rrect_outline(border_rect, (radius - 0.5).max(1.0), 1.0, white(0.07))?;
+
+                let ((r, g, b), icon) = kind_style(tile.kind);
+                let icon_color = if tile.kind == FileKind::Pdf { rgba(r, g, b, 1.0) } else { neutral_icon() };
+                let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(24.0), icon_color).centered();
+                self.ink.text(&glyph(icon).to_string(), rect(t.left, t.top + d(10.0), tw, d(32.0)), &glyph_style)?;
+
+                self.ink.text(&tile.name, rect(t.left + d(6.0), t.top + d(46.0), tw - d(12.0), d(34.0)), &name_style)?;
+
+                if tile.selected && !hovered {
+                    let pin_mark = rect((t.right - d(17.0)).round(), (t.top + d(5.0)).round(), d(12.0).round(), d(12.0).round());
+                    self.ink.svg(PIN_SVG, pin_mark, rgba(pr, pg, pb, 1.0))?;
+                }
+
+                if hovered {
+                    let mut close = l.closes[orig_idx];
+                    close.top -= scroll_px;
+                    close.bottom -= scroll_px;
+                    let close_w = close.right - close.left;
+                    let close_h = close.bottom - close.top;
+                    let item_pin = rect(close.left - d(4.0).round() - close_w, close.top, close_w, close_h);
+                    self.ink.rrect(item_pin, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                    let ip_sz = d(11.0).round();
+                    let ip_icon = rect(
+                        (item_pin.left + (close_w - ip_sz) / 2.0).round(),
+                        (item_pin.top + (close_h - ip_sz) / 2.0).round(),
+                        ip_sz,
+                        ip_sz,
+                    );
+                    let ip_color = if tile.selected { rgba(pr, pg, pb, 1.0) } else { white(1.0) };
+                    self.ink.svg(PIN_SVG, ip_icon, ip_color)?;
+                    self.hits.push((item_pin, CardAction::ShelfItemPin(orig_idx)));
+
+                    self.ink.rrect(close, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                    let x = TextStyle::new(Face::Icons, Weight::Regular, d(8.5), white(1.0)).centered();
+                    self.ink.text(&glyph(Icon::Close).to_string(), close, &x)?;
+                    self.hits.push((close, CardAction::ShelfRemove(orig_idx)));
                 }
             }
-            self.ink.text(&tile.name, rect(t.left + d(8.0), t.bottom - d(8.0) - d(15.0), tw - d(16.0), d(15.0)), &name)?;
-            if tile.selected {
-                let (r, g, b) = timer_accent();
-                let ring = rect(t.left + d(1.0), t.top + d(1.0), tw - d(2.0), th - d(2.0));
-                self.ink.rrect_outline(ring, radius - d(1.0), d(2.0), rgba(r, g, b, 1.0))?;
-                // The close button's size and inset, in the other corner.
-                let side = d(20.0).round();
-                let tick = rect(t.left + d(5.0).round(), t.top + d(5.0).round(), side, side);
-                self.ink.rrect(tick, side / 2.0, rgba(r, g, b, 1.0))?;
-                self.ink.text(&glyph(Icon::Check).to_string(), tick, &TextStyle::new(Face::Icons, Weight::Regular, d(9.0), white(1.0)).centered())?;
-            }
-            if c.hover == Some(i) {
-                if !tile.selected {
-                    let ring = rect(t.left + d(0.75), t.top + d(0.75), tw - d(1.5), th - d(1.5));
-                    self.ink.rrect_outline(ring, radius - d(0.75), d(1.5), white(0.55))?;
-                }
-                let close = l.closes[i];
-                self.ink.rrect(close, (close.right - close.left) / 2.0, [0.0, 0.0, 0.0, 0.6])?;
-                let x = TextStyle::new(Face::Icons, Weight::Regular, d(8.5), white(1.0)).centered();
-                self.ink.text(&glyph(Icon::Close).to_string(), close, &x)?;
-                self.hits.push((close, CardAction::ShelfRemove(i)));
+
+            unsafe {
+                self.ink.dc.PopAxisAlignedClip();
             }
         }
-        // The footer: what the chips do to the selection, or to everything; "Temizle"'s look.
-        let label = TextStyle::new(Face::Text, Weight::Medium, d(12.0), white(0.85));
-        let rows = crate::activities::shelf::rows(c.tiles.len());
+
+        // Footer band: black at 22% with a 1px white 6% top border.
+        let band = rect(0.0, self.h - band_h, self.w, band_h);
+        self.ink.rrect(band, 0.0, [0.0, 0.0, 0.0, 0.22])?;
+        self.ink.line(0.0, band.top + 0.5, self.w, band.top + 0.5, 1.0, white(0.06))?;
+
+        let label = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.92));
         let mut shown: Vec<&(ShelfOp, String)> = c.chips.iter().collect();
         let mut widths = shown.iter().map(|(_, text)| self.ink.measure(text, &label)).collect::<Result<Vec<f32>>>()?;
-        if shelf_chips(&widths, rows, self.s).last().is_some_and(|last| last.right > d(350.0).round()) {
+        let chip_top = (band.top + (band_h - d(crate::activities::shelf::FOOTER_CHIP_DIP)) / 2.0).round();
+        if shelf_chips_at(&widths, chip_top, self.s).last().is_some_and(|last| last.right > d(324.0).round()) {
             if let Some(i) = shown.iter().position(|(op, _)| Some(*op) == c.said) {
                 shown = vec![shown[i]];
                 widths = vec![widths[i]];
             }
         }
-        let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(13.0), white(0.85)).centered();
-        for ((op, text), chip) in shown.into_iter().zip(shelf_chips(&widths, rows, self.s)) {
-            let h = chip.bottom - chip.top;
-            self.ink.rrect(chip, h / 2.0, white(0.09))?;
+        let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(13.0), neutral_icon()).centered();
+        for ((op, text), chip) in shown.into_iter().zip(shelf_chips_at(&widths, chip_top, self.s)) {
+            self.ink.rrect(chip, d(4.0), white(0.05))?;
             self.ink.text(&glyph(op_icon(*op)).to_string(), D2D_RECT_F { left: chip.left + d(12.0), right: chip.left + d(26.0), ..chip }, &glyph_style)?;
             self.ink.text(text, D2D_RECT_F { left: chip.left + d(32.0), ..chip }, &label)?;
             self.hits.push((chip, CardAction::ShelfTool(*op)));
@@ -1811,92 +2182,187 @@ impl Painter<'_, '_> {
 
     fn clipboard(&mut self, c: &ClipboardCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let l = shelf_layout(c.tiles.len(), self.s);
+        let l = clipboard_categorized_layout(c, self.s);
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top();
-        let title_text = tr("Pano");
-        self.ink.text(title_text, rect(d(20.0), d(18.0), d(120.0), d(22.0)), &title)?;
-        let count = TextStyle::new(Face::Text, Weight::Regular, d(16.0), white(0.4)).top();
-        let count_x = d(20.0) + self.ink.measure(title_text, &title)? + d(6.0);
-        self.ink.text(&c.tiles.len().to_string(), rect(count_x, d(18.0), d(40.0), d(22.0)), &count)?;
+        let title_text = "Clipboard";
+        self.ink.text(title_text, rect(d(16.0), d(16.0), d(120.0), d(22.0)), &title)?;
+        let count = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).top();
+        let count_x = d(16.0) + self.ink.measure(title_text, &title)? + d(8.0);
+        self.ink.text(&c.tiles.len().to_string(), rect(count_x, d(19.0), d(60.0), d(18.0)), &count)?;
         let chip = l.clear;
-        self.ink.rrect(chip, (chip.bottom - chip.top) / 2.0, white(0.09))?;
-        self.ink.text(tr("Temizle"), chip, &TextStyle::new(Face::Text, Weight::Medium, d(12.0), white(0.85)).centered())?;
+        self.ink.rrect(chip, d(4.0), white(0.05))?;
+        self.ink.text("Clear", chip, &TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).centered())?;
         self.hits.push((chip, CardAction::ClipboardClear));
 
         if c.tiles.is_empty() {
-            let empty_style = TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.45)).centered();
-            self.ink.text(tr("Pano boş"), rect(d(20.0), d(70.0), d(330.0), d(40.0)), &empty_style)?;
+            let empty_style = TextStyle::new(Face::Text, Weight::Regular, d(13.0), sec_text()).centered();
+            self.ink.text("Clipboard is empty", rect(d(16.0), (self.h - d(40.0)) / 2.0, self.w - d(32.0), d(40.0)), &empty_style)?;
             return Ok(());
         }
 
-        let radius = d(18.0);
-        let name_style = TextStyle::new(Face::Text, Weight::Medium, d(10.5), white(0.95)).ellipsis();
-        let prev_style = TextStyle::new(Face::Text, Weight::Regular, d(10.0), white(0.8)).top();
+        let max_scroll = l.max_scroll_dip;
+        let scroll_dip = c.scroll.clamp(0.0, max_scroll);
+        let scroll_px = d(scroll_dip).round();
+        let grid_clip = rect(0.0, d(46.0).round(), self.w, (self.h - d(46.0) - d(6.0)).max(0.0).round());
 
-        for (i, tile) in c.tiles.iter().enumerate().take(l.tiles.len()) {
-            let t = l.tiles[i];
-            let (tw, th) = (t.right - t.left, t.bottom - t.top);
+        let radius = d(4.0);
+        let prev_style = TextStyle::new(Face::Text, Weight::Regular, d(10.5), white(0.85)).top().wrap().ellipsis();
+        let (ar, ag, ab) = timer_accent();
 
-            self.hits.push((t, CardAction::ClipboardPaste(i)));
-
-            if let Some(img) = &tile.thumb {
-                let src = rect(0.0, 0.0, img.size.0 as f32, img.size.1 as f32);
-                self.ink.image_rounded(&img.px, img.size, src, t, radius)?;
-                self.ink.vgradient(t, radius, [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.65])?;
-            } else if tile.is_url {
-                self.ink.rrect(t, radius, white(0.07))?;
-                self.ink.rrect(t, radius, rgba(0x25, 0x63, 0xEB, 0.18))?;
-                let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(22.0), rgba(0x60, 0xA5, 0xFA, 1.0)).centered();
-                self.ink.text(&glyph(Icon::Link).to_string(), rect(t.left, t.top + d(8.0), tw, th * 0.45), &glyph_style)?;
-            } else {
-                self.ink.rrect(t, radius, white(0.07))?;
-                if tile.has_html {
-                    self.ink.rrect(t, radius, rgba(0x10, 0xB9, 0x81, 0.12))?;
+        unsafe {
+            self.ink.dc.PushAxisAlignedClip(&grid_clip, windows::Win32::Graphics::Direct2D::D2D1_ANTIALIAS_MODE_ALIASED);
+        }
+        let grid_res = (|| -> Result<()> {
+            let header_style = TextStyle::new(Face::Text, Weight::SemiBold, d(11.0), sec_text()).top();
+            for h in &l.headers {
+                let hy = d(h.top_dip).round() - scroll_px;
+                let h_bottom = hy + d(18.0);
+                if h_bottom > grid_clip.top && hy < grid_clip.bottom {
+                    if h.is_pinned {
+                        let ir = rect(d(16.0), hy + d(2.0), d(12.0), d(12.0));
+                        self.ink.svg(PIN_SVG, ir, rgba(ar, ag, ab, 1.0))?;
+                        let hr = rect(d(32.0), hy, d(120.0), d(18.0));
+                        self.ink.text(h.title, hr, &header_style)?;
+                    } else {
+                        let hr = rect(d(16.0), hy, d(120.0), d(18.0));
+                        self.ink.text(h.title, hr, &header_style)?;
+                    }
                 }
-                if !tile.is_image {
-                    let prev_rect = rect(t.left + d(8.0), t.top + d(24.0), tw - d(16.0), th - d(32.0));
+            }
+
+            for (orig_idx, tile) in c.tiles.iter().enumerate() {
+                let mut t = l.tiles[orig_idx];
+                t.top -= scroll_px;
+                t.bottom -= scroll_px;
+                let mut close = l.closes[orig_idx];
+                close.top -= scroll_px;
+                close.bottom -= scroll_px;
+
+                if t.bottom <= grid_clip.top || t.top >= grid_clip.bottom {
+                    continue;
+                }
+
+                let (tw, th) = (t.right - t.left, t.bottom - t.top);
+                let selected = orig_idx == 0 || c.hover == Some(orig_idx);
+
+                self.ink.rrect(t, radius, if selected || tile.pinned { white(0.09) } else { white(0.05) })?;
+                let border_rect = rect(t.left + 0.5, t.top + 0.5, tw - 1.0, th - 1.0);
+                self.ink.rrect_outline(border_rect, (radius - 0.5).max(1.0), 1.0, white(0.07))?;
+
+                if let Some(img) = &tile.thumb {
+                    self.ink.image_cover_rounded(&img.px, img.size, t, radius)?;
+                } else if tile.is_url {
+                    let glyph_style = TextStyle::new(Face::Icons, Weight::Regular, d(22.0), neutral_icon()).centered();
+                    self.ink.text(&glyph(Icon::Link).to_string(), rect(t.left, t.top + d(10.0), tw, d(28.0)), &glyph_style)?;
+                } else if !tile.is_image {
+                    let prev_rect = rect(t.left + d(8.0), t.top + d(8.0), tw - d(16.0), th - d(28.0));
                     self.ink.text(&tile.preview, prev_rect, &prev_style)?;
                 }
-            }
 
-            if !tile.badge.is_empty() {
-                let st = TextStyle::new(Face::Text, Weight::SemiBold, d(8.5), white(0.95)).centered();
-                let w = self.ink.measure(tile.badge, &st)? + d(8.0);
-                let badge = rect(t.left + d(6.0), t.top + d(6.0), w.round(), d(14.0).round());
-                let bg_color = if tile.is_url {
-                    [0.15, 0.35, 0.9, 0.7]
-                } else if tile.has_html {
-                    [0.06, 0.6, 0.4, 0.7]
+                // Pixel size (or domain/type) in a small dark label at bottom-left — no "IMG" badge.
+                let label_text = if tile.is_image || tile.is_url {
+                    tile.title.as_str()
                 } else {
-                    [0.0, 0.0, 0.0, 0.55]
+                    tile.badge
                 };
-                self.ink.rrect(badge, d(4.0), bg_color)?;
-                self.ink.text(tile.badge, badge, &st)?;
-            }
+                if !label_text.is_empty() {
+                    let st = TextStyle::new(Face::Text, Weight::Regular, d(11.0), white(0.95)).centered().tabular();
+                    let lw = (self.ink.measure(label_text, &st)? + d(10.0)).min(tw - d(12.0));
+                    let badge = rect(t.left + d(6.0), t.bottom - d(22.0), lw.round(), d(16.0).round());
+                    self.ink.rrect(badge, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                    self.ink.text(label_text, badge, &st.ellipsis())?;
+                }
 
-            // Text tiles already show their words; links and pictures get a name line.
-            if tile.is_url || tile.is_image {
-                self.ink.text(&tile.title, rect(t.left + d(8.0), t.bottom - d(7.0) - d(14.0), tw - d(16.0), d(14.0)), &name_style)?;
-            }
+                if selected {
+                    let inset = d(0.75);
+                    let ring = rect(t.left + inset, t.top + inset, tw - 2.0 * inset, th - 2.0 * inset);
+                    self.ink.rrect_outline(ring, (radius - inset).max(1.0), d(1.5), rgba(ar, ag, ab, 1.0))?;
+                }
 
-            if c.hover == Some(i) {
-                let ring = rect(t.left + d(0.75), t.top + d(0.75), tw - d(1.5), th - d(1.5));
-                self.ink.rrect_outline(ring, radius - d(0.75), d(1.5), rgba(0x60, 0xA5, 0xFA, 0.8))?;
-                let close = l.closes[i];
-                self.ink.rrect(close, (close.right - close.left) / 2.0, [0.0, 0.0, 0.0, 0.65])?;
-                let x = TextStyle::new(Face::Icons, Weight::Regular, d(8.5), white(1.0)).centered();
-                self.ink.text(&glyph(Icon::Close).to_string(), close, &x)?;
-                self.hits.push((close, CardAction::ClipboardRemove(i)));
+                if c.hover != Some(orig_idx) {
+                    if tile.pinned {
+                        let chk_side = d(18.0).round();
+                        let chk = rect(t.right - d(6.0) - chk_side, t.top + d(6.0), chk_side, chk_side);
+                        self.ink.rrect(chk, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                        let p_sz = d(11.0).round();
+                        let p_box = rect(
+                            (chk.left + (chk_side - p_sz) / 2.0).round(),
+                            (chk.top + (chk_side - p_sz) / 2.0).round(),
+                            p_sz,
+                            p_sz,
+                        );
+                        self.ink.svg(PIN_SVG, p_box, rgba(ar, ag, ab, 1.0))?;
+                    } else if selected {
+                        let chk_side = d(18.0).round();
+                        let chk = rect(t.right - d(6.0) - chk_side, t.top + d(6.0), chk_side, chk_side);
+                        self.ink.rrect(chk, chk_side / 2.0, rgba(ar, ag, ab, 1.0))?;
+                        let chk_st = TextStyle::new(Face::Icons, Weight::Bold, d(10.0), rgba(0x00, 0x00, 0x00, 1.0)).centered();
+                        self.ink.text(&glyph(Icon::Check).to_string(), chk, &chk_st)?;
+                    }
+                }
+
+                if c.hover == Some(orig_idx) {
+                    let close_w = close.right - close.left;
+                    let close_h = close.bottom - close.top;
+                    let item_pin = rect(close.left - d(4.0).round() - close_w, close.top, close_w, close_h);
+                    self.ink.rrect(item_pin, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                    let ip_sz = d(11.0).round();
+                    let ip_icon = rect(
+                        (item_pin.left + (close_w - ip_sz) / 2.0).round(),
+                        (item_pin.top + (close_h - ip_sz) / 2.0).round(),
+                        ip_sz,
+                        ip_sz,
+                    );
+                    let ip_color = if tile.pinned { rgba(ar, ag, ab, 1.0) } else { white(1.0) };
+                    self.ink.svg(PIN_SVG, ip_icon, ip_color)?;
+                    if item_pin.bottom > grid_clip.top && item_pin.top < grid_clip.bottom {
+                        self.hits.push((item_pin, CardAction::ClipboardPin(orig_idx)));
+                    }
+
+                    self.ink.rrect(close, d(4.0), [0.0, 0.0, 0.0, 0.65])?;
+                    let x = TextStyle::new(Face::Icons, Weight::Regular, d(8.5), white(1.0)).centered();
+                    self.ink.text(&glyph(Icon::Close).to_string(), close, &x)?;
+                    if close.bottom > grid_clip.top && close.top < grid_clip.bottom {
+                        self.hits.push((close, CardAction::ClipboardRemove(orig_idx)));
+                    }
+                }
+
+                let vis_top = t.top.max(grid_clip.top);
+                let vis_bottom = t.bottom.min(grid_clip.bottom);
+                if vis_bottom > vis_top {
+                    self.hits.push((D2D_RECT_F { top: vis_top, bottom: vis_bottom, ..t }, CardAction::ClipboardPaste(orig_idx)));
+                }
             }
+            Ok(())
+        })();
+        unsafe {
+            self.ink.dc.PopAxisAlignedClip();
+        }
+        grid_res?;
+
+        if max_scroll > 0.0 {
+            let bar_w = d(5.0).round();
+            let bar_x = d(357.0).round();
+            let track_y = d(48.0).round();
+            let track_h = (self.h - d(48.0) - d(12.0)).max(0.0).round();
+            let track_rect = rect(bar_x, track_y, bar_w, track_h);
+            self.ink.rrect(track_rect, bar_w / 2.0, white(0.08))?;
+            let visible_h = self.h - d(48.0) - d(12.0);
+            let thumb_h = ((visible_h / (visible_h + d(max_scroll))) * track_h).max(d(28.0)).min(track_h).round();
+            let travel = (track_h - thumb_h).max(1.0);
+            let frac = (scroll_dip / max_scroll).clamp(0.0, 1.0);
+            let thumb_y = (track_y + frac * travel).round();
+            self.ink.rrect(rect(bar_x, thumb_y, bar_w, thumb_h), bar_w / 2.0, rgba(ar, ag, ab, 0.85))?;
+            let hit_area = rect(d(350.0).round(), track_y, d(18.0).round(), track_h);
+            *self.clipboard_scroll = Some((hit_area, track_y + thumb_h / 2.0, track_y + track_h - thumb_h / 2.0));
         }
 
         if let Some(toast) = &c.toast {
-            // A small chip in the header, left of "Temizle": it never leaves the card.
-            let st = TextStyle::new(Face::Text, Weight::Medium, d(11.0), white(0.92)).centered();
-            let w = self.ink.measure(toast, &st)? + d(18.0);
+            let st = TextStyle::new(Face::Text, Weight::Medium, d(11.0), white(0.95)).centered();
+            let w = self.ink.measure(toast, &st)? + d(16.0);
             let right = chip.left - d(8.0);
-            let pill = rect((right - w).round(), d(18.0).round(), w.round(), d(22.0).round());
-            self.ink.rrect(pill, (pill.bottom - pill.top) / 2.0, rgba(0x3B, 0x82, 0xF6, 0.35))?;
+            let pill = rect((right - w).round(), d(15.0).round(), w.round(), d(24.0).round());
+            self.ink.rrect(pill, d(4.0), white(0.09))?;
             self.ink.text(toast, pill, &st)?;
         }
         Ok(())
@@ -1916,7 +2382,9 @@ impl Painter<'_, '_> {
             y += BRIEF_GAP;
             let row = d(BRIEF_WEATHER_ROW);
             // On the greeting's left edge.
-            self.ink.text(&w.symbol, rect(d(20.0), d(y), d(36.0), row), &TextStyle::new(Face::Text, Weight::Regular, d(28.0), white(1.0)).emoji())?;
+            let icon_s = d(28.0).round();
+            let icon_box = rect(d(20.0), d(y) + ((row - icon_s) / 2.0).round(), icon_s, icon_s);
+            self.ink.svg(weather_svg_for_symbol(&w.symbol), icon_box, neutral_icon())?;
             self.ink.text(&w.temp, rect(d(60.0), d(y), d(100.0), row), &TextStyle::new(Face::Display, Weight::Bold, d(34.0), white(1.0)).tabular())?;
             let summary = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).trailing().ellipsis();
             self.ink.text(&w.summary, rect(self.w - d(20.0) - d(190.0), d(y), d(190.0), row), &summary)?;
@@ -2011,7 +2479,7 @@ impl Painter<'_, '_> {
     fn away(&mut self, c: &AwayCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         let title = TextStyle::new(Face::Display, Weight::Bold, d(22.0), white(1.0)).top().ellipsis();
-        self.ink.text(tr("Sen yokken"), rect(d(20.0), d(20.0), self.w - d(100.0), d(30.0)), &title)?;
+        self.ink.text("While you were away", rect(d(20.0), d(20.0), self.w - d(100.0), d(30.0)), &title)?;
         let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).top().ellipsis();
         self.ink.text(&c.span, rect(d(20.0), d(52.0), self.w - d(100.0), d(18.0)), &sub)?;
         let (r, g, b) = timer_accent();
@@ -2043,7 +2511,7 @@ impl Painter<'_, '_> {
         }
         if c.more > 0 {
             let more = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.6));
-            self.ink.text(&trf("+{} daha", &[&c.more]), rect(d(64.0), d(y), self.w - d(92.0), d(AWAY_MORE - 6.0)), &more)?;
+            self.ink.text(&format!("+{} more", c.more), rect(d(64.0), d(y), self.w - d(92.0), d(AWAY_MORE - 6.0)), &more)?;
         }
         Ok(())
     }
@@ -2102,7 +2570,7 @@ impl Painter<'_, '_> {
         let (r, g, b) = WELLBEING_ACCENT;
         let green = rgba(r, g, b, 1.0);
         let label = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.6)).top();
-        self.ink.text(tr("Dijital Denge"), rect(d(20.0), d(20.0), d(200.0), d(18.0)), &label)?;
+        self.ink.text("Digital Wellbeing", rect(d(20.0), d(20.0), d(200.0), d(18.0)), &label)?;
         let total = TextStyle::new(Face::Display, Weight::Bold, d(30.0), white(1.0)).top().tabular();
         self.ink.text(&c.total, rect(d(20.0), d(38.0), self.w - d(100.0), d(40.0)), &total)?;
         let caption = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).top().ellipsis();
@@ -2128,7 +2596,7 @@ impl Painter<'_, '_> {
         // The apps: icon, name and time, the share's bar under the name.
         let mut y = WELL_HEADER + WELL_WEEK + 10.0;
         if c.apps.is_empty() {
-            self.ink.text(tr("Bugün henüz ekran süresi yok"), rect(d(24.0), d(y), self.w - d(48.0), d(WELL_ROW)), &TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.6)))?;
+            self.ink.text("No screen time yet today", rect(d(24.0), d(y), self.w - d(48.0), d(WELL_ROW)), &TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.6)))?;
         }
         for a in &c.apps {
             let icon = rect(d(24.0), d(y + 8.0), d(24.0), d(24.0));
@@ -2171,10 +2639,10 @@ impl Painter<'_, '_> {
         let inset = d(28.0) * 0.22;
         self.ink.svg(CLAUDE_ICON, D2D_RECT_F { left: mark.left + inset, top: mark.top + inset, right: mark.right - inset, bottom: mark.bottom - inset }, white(1.0))?;
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(15.0), white(1.0)).ellipsis();
-        self.ink.text(tr("Claude'a sor"), rect(d(58.0), d(14.0), self.w - d(58.0) - d(130.0), d(28.0)), &title)?;
+        self.ink.text("Ask Claude", rect(d(58.0), d(14.0), self.w - d(58.0) - d(130.0), d(28.0)), &title)?;
         if c.show == QuestionShow::Idle {
             let hint = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.45)).trailing();
-            self.ink.text(tr("Enter ile sor"), rect(self.w - d(20.0) - d(130.0), d(14.0), d(130.0), d(28.0)), &hint)?;
+            self.ink.text("Press Enter to ask", rect(self.w - d(20.0) - d(130.0), d(14.0), d(130.0), d(28.0)), &hint)?;
         }
 
         let field = rect(d(12.0), d(QUESTION_HEADER), self.w - d(24.0), d(QUESTION_FIELD));
@@ -2185,7 +2653,7 @@ impl Painter<'_, '_> {
         // Empty, the caret stands just before the placeholder's first letter.
         let mut caret_x = left - d(4.0);
         if c.question.is_empty() {
-            self.ink.text(tr("Bir şey sor…"), D2D_RECT_F { left, right, ..field }, &TextStyle::new(Face::Text, Weight::Regular, d(14.0), white(0.45)))?;
+            self.ink.text("Ask anything…", D2D_RECT_F { left, right, ..field }, &TextStyle::new(Face::Text, Weight::Regular, d(14.0), white(0.45)))?;
         } else {
             // A long question shows its end, where the caret is.
             let tw = self.ink.measure(&c.question, &typed)?;
@@ -2208,7 +2676,7 @@ impl Painter<'_, '_> {
         let area = rect(d(20.0), d(top), self.w - d(40.0), d(c.lines.clamp(1, QUESTION_MAX_LINES) as f32 * QUESTION_LINE + 8.0));
         let (aw, ah) = (area.right - area.left, area.bottom - area.top);
         let (text, alpha) = match c.show {
-            QuestionShow::Thinking => (tr("Düşünüyor…"), 0.6),
+            QuestionShow::Thinking => ("Thinking…", 0.6),
             QuestionShow::Problem => (c.answer.as_str(), 0.7),
             _ => (c.answer.as_str(), 0.92),
         };
@@ -2243,7 +2711,7 @@ impl Painter<'_, '_> {
     fn music(&mut self, c: &MusicCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         let label = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.6)).top();
-        self.ink.text(tr("Bu hafta"), rect(d(20.0), d(20.0), d(200.0), d(18.0)), &label)?;
+        self.ink.text("This week", rect(d(20.0), d(20.0), d(200.0), d(18.0)), &label)?;
         let total = TextStyle::new(Face::Display, Weight::Bold, d(30.0), white(1.0)).top().tabular();
         self.ink.text(&c.total, rect(d(20.0), d(38.0), self.w - d(100.0), d(40.0)), &total)?;
         let caption = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).top().ellipsis();
@@ -2260,7 +2728,7 @@ impl Painter<'_, '_> {
         self.ink.rrect(rect(d(12.0), d(WELL_HEADER), self.w - d(24.0), d(tracks_h)), d(24.0), white(0.06))?;
         let mut y = WELL_HEADER + 8.0;
         if c.tracks.is_empty() {
-            self.ink.text(tr("Bu hafta henüz müzik yok"), rect(d(24.0), d(y), self.w - d(48.0), d(MUSIC_ROW)), &TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.6)))?;
+            self.ink.text("No music played this week", rect(d(24.0), d(y), self.w - d(48.0), d(MUSIC_ROW)), &TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.6)))?;
         }
         let side = d(28.0).round();
         for (i, t) in c.tracks.iter().enumerate() {
@@ -2301,47 +2769,72 @@ impl Painter<'_, '_> {
 
     fn weather(&mut self, c: &WeatherCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
+        let sky = match c.fx {
+            WeatherFx::Clouds | WeatherFx::Fog => [0x8A, 0x97, 0xA6],
+            _ => [0x4A, 0x6A, 0xA0],
+        };
+        self.ink.glow(self.w * 0.78, d(36.0), self.w * 0.85, self.h * 0.70, rgba(sky[0], sky[1], sky[2], 0.22))?;
+
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top().ellipsis();
-        self.ink.text(&c.city, rect(d(20.0), d(18.0), d(200.0), d(22.0)), &title)?;
-        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).top().ellipsis();
-        self.ink.text(&c.summary, rect(d(20.0), d(42.0), d(230.0), d(18.0)), &sub)?;
-        let temp = TextStyle::new(Face::Display, Weight::Bold, d(34.0), white(1.0)).tabular().trailing();
-        self.ink.text(&c.temp, rect(self.w - d(20.0) - d(90.0), d(12.0), d(90.0), d(48.0)), &temp)?;
+        self.ink.text(&c.city, rect(d(20.0), d(16.0), d(190.0), d(22.0)), &title)?;
+        let sub = TextStyle::new(Face::Text, Weight::Regular, d(13.0), sec_text()).top().ellipsis();
+        self.ink.text(&c.summary, rect(d(20.0), d(40.0), d(210.0), d(18.0)), &sub)?;
+
+        // Large light-weight temperature (48px) with crisp SVG weather icon and small caption on the right.
+        let temp = TextStyle::new(Face::Display, Weight::Light, d(46.0), white(1.0)).tabular().trailing();
+        self.ink.text(&c.temp, rect(self.w - d(20.0) - d(104.0), d(6.0), d(104.0), d(52.0)), &temp)?;
         let tw = self.ink.measure(&c.temp, &temp)?;
-        let symbol = TextStyle::new(Face::Text, Weight::Regular, d(28.0), white(1.0)).centered().emoji();
-        self.ink.text(&c.symbol, rect(self.w - d(20.0) - tw - d(48.0), d(10.0), d(44.0), d(52.0)), &symbol)?;
+        let icon_s = d(34.0).round();
+        let icon_box = rect((self.w - d(20.0) - tw - icon_s - d(10.0)).round(), d(15.0).round(), icon_s, icon_s);
+        self.ink.svg(weather_svg_for_symbol(&c.symbol), icon_box, neutral_icon())?;
+        let caption = TextStyle::new(Face::Text, Weight::Regular, d(11.5), sec_text()).trailing();
+        self.ink.text("Now", rect(self.w - d(20.0) - d(120.0), d(56.0), d(120.0), d(16.0)), &caption)?;
+
         self.hours_panel(&c.hours, d(80.0))?;
         // The alert under the hours, in the pill's words: its mark on its colour, the head, the rest.
         if let Some((kind, head, detail)) = &c.alert {
             let ((r, g, b), icon) = alert_style(*kind);
             let (size, y) = (d(20.0).round(), d(80.0 + HOURS_PANEL + 12.0).round());
-            // On the city's and the summary's left edge.
             let dot = rect(d(20.0).round(), y, size, size);
-            self.ink.rrect(dot, size / 2.0, rgba(r, g, b, 1.0))?;
+            self.ink.rrect(dot, d(4.0), rgba(r, g, b, 1.0))?;
             self.ink.svg(icon, dot, white(1.0))?;
             let head_st = TextStyle::new(Face::Text, Weight::SemiBold, d(12.5), white(1.0));
             let x = dot.right + d(9.0);
             let head_w = self.ink.measure(head, &head_st)?;
             self.ink.text(head, rect(x, y, head_w + d(2.0), size), &head_st)?;
-            let rest = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.7)).ellipsis();
+            let rest = TextStyle::new(Face::Text, Weight::Regular, d(12.5), sec_text()).ellipsis();
             self.ink.text(&format!(" · {detail}"), rect(x + head_w, y, (self.w - d(24.0) - x - head_w).max(0.0), size), &rest)?;
         }
         Ok(())
     }
 
-    /// The next hours in columns (hour, emoji, temperature) on a panel from `top` (px).
+    /// Hourly forecast as a plain row separated by one thin 1px divider (no box); the selected
+    /// hour (first column) is raised (`white(0.09)`) with a 16×3px system accent pill under it.
     fn hours_panel(&mut self, hours: &[(String, String, String)], top: f32) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let panel = rect(d(12.0), top, self.w - d(24.0), d(HOURS_PANEL));
-        self.ink.rrect(panel, d(24.0), white(0.06))?;
+        let panel = rect(d(16.0), top, self.w - d(32.0), d(HOURS_PANEL));
+        self.ink.line(panel.left, panel.top + 0.5, panel.right, panel.top + 0.5, 1.0, white(0.07))?;
         let n = hours.len().max(1) as f32;
-        let col = (panel.right - panel.left) / n;
+        let gap = d(4.0);
+        let col = ((panel.right - panel.left) - gap * (n - 1.0).max(0.0)) / n;
+        let (ar, ag, ab) = timer_accent();
         for (i, (hour, sym, t)) in hours.iter().enumerate() {
-            let x = panel.left + i as f32 * col;
-            let st = |size: f32, weight, a: f32| TextStyle::new(Face::Text, weight, d(size), white(a)).centered();
-            self.ink.text(hour, rect(x, panel.top + d(10.0), col, d(18.0)), &st(11.5, Weight::Regular, 0.6))?;
-            self.ink.text(sym, rect(x, panel.top + d(30.0), col, d(32.0)), &st(20.0, Weight::Regular, 1.0).emoji())?;
-            self.ink.text(t, rect(x, panel.top + d(66.0), col, d(20.0)), &st(13.0, Weight::SemiBold, 1.0))?;
+            let x = panel.left + i as f32 * (col + gap);
+            let item_rect = rect(x, panel.top + d(10.0), col, d(HOURS_PANEL - 12.0));
+            if i == 0 {
+                self.ink.rrect(item_rect, d(4.0), white(0.09))?;
+                let pill_w = d(16.0).round();
+                let pill_h = d(3.0).round();
+                let pill_x = (x + (col - pill_w) / 2.0).round();
+                self.ink.rrect(rect(pill_x, item_rect.bottom - pill_h - d(4.0), pill_w, pill_h), d(1.5), rgba(ar, ag, ab, 1.0))?;
+            }
+            let hour_st = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).centered();
+            self.ink.text(hour, rect(x, item_rect.top + d(6.0), col, d(16.0)), &hour_st)?;
+            let icon_s = d(22.0).round();
+            let icon_box = rect((x + (col - icon_s) / 2.0).round(), (item_rect.top + d(28.0)).round(), icon_s, icon_s);
+            self.ink.svg(weather_svg_for_symbol(sym), icon_box, neutral_icon())?;
+            let temp_st = TextStyle::new(Face::Text, Weight::SemiBold, d(13.0), white(1.0)).centered().tabular();
+            self.ink.text(t, rect(x, item_rect.top + d(54.0), col, d(18.0)), &temp_st)?;
         }
         Ok(())
     }
@@ -2350,17 +2843,16 @@ impl Painter<'_, '_> {
     /// current one filled with the Buds' blue (the quick panel's look, in the dark).
     fn noise_control(&mut self, mode: NoiseControl) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let (r, g, bl) = BUDS_ACCENT;
+        let (r, g, bl) = timer_accent();
         let (size, top, step) = (d(44.0), d(158.0), d(110.0));
         let n = NoiseControl::ALL.len() as f32;
         for (i, m) in NoiseControl::ALL.into_iter().enumerate() {
             let cx = self.w / 2.0 + (i as f32 - (n - 1.0) / 2.0) * step;
             let button = rect((cx - size / 2.0).round(), top, size, size);
             let on = m == mode;
-            self.ink.rrect(button, size / 2.0, if on { rgba(r, g, bl, 1.0) } else { white(0.15) })?;
-            // The icon's 24 units are the whole button.
-            self.ink.svg(m.icon(), button, white(if on { 1.0 } else { 0.55 }))?;
-            let label = TextStyle::new(Face::Text, if on { Weight::SemiBold } else { Weight::Regular }, d(12.0), white(if on { 1.0 } else { 0.7 })).centered();
+            self.ink.rrect(button, d(4.0), if on { rgba(r, g, bl, 1.0) } else { white(0.06) })?;
+            self.ink.svg(m.icon(), button, if on { rgba(0, 0, 0, 1.0) } else { neutral_icon() })?;
+            let label = TextStyle::new(Face::Text, if on { Weight::SemiBold } else { Weight::Regular }, d(12.0), if on { white(1.0) } else { sec_text() }).centered();
             let label_box = rect(cx - step / 2.0, top + size + d(6.0), step, d(16.0));
             self.ink.text(m.label(), label_box, &label)?;
             self.hits.push((rect(cx - step / 2.0, top, step, label_box.bottom - top), CardAction::BudsNoise(m.byte())));
@@ -2370,9 +2862,9 @@ impl Painter<'_, '_> {
 
     /// "Ses çıkışı": back, title and what's playing, Windows' sound settings; the current device
     /// with its volume; then the other devices (three at a time, the rest scroll).
-    fn output(&mut self, card: &MediaCard, page: &OutputPage) -> Result<()> {
+    fn output(&mut self, _card: &MediaCard, page: &OutputPage) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let [ar, ag, ab] = card.m.accent;
+        let (ar, ag, ab) = timer_accent();
         let accent = rgba(ar, ag, ab, 1.0);
         let icon_st = |size: f32| TextStyle::new(Face::Icons, Weight::Regular, d(size), white(1.0)).centered();
         let sub_color = |tone: SubTone, normal: f32| match tone {
@@ -2381,98 +2873,93 @@ impl Painter<'_, '_> {
             SubTone::Failed => rgba(0xFF, 0x8A, 0x80, 1.0),
         };
 
-        let back = rect(d(16.0), d(16.0), d(36.0), d(36.0));
-        self.ink.rrect(back, d(18.0), white(0.12))?;
-        self.ink.text(&glyph(Icon::Back).to_string(), back, &icon_st(15.0))?;
+        let back = rect(d(16.0), d(16.0), d(32.0), d(32.0));
+        self.ink.rrect(back, d(4.0), white(0.06))?;
+        self.ink.text(&glyph(Icon::Back).to_string(), back, &icon_st(14.0))?;
         self.hits.push((back, CardAction::OutputBack));
-        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(17.0), white(1.0)).top();
-        self.ink.text(tr("Ses çıkışı"), rect(d(62.0), d(14.0), d(220.0), d(22.0)), &title)?;
-        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.65)).top().ellipsis();
-        self.ink.text(&page.subtitle, rect(d(62.0), d(37.0), d(222.0), d(16.0)), &sub)?;
-        let gear = rect(self.w - d(52.0), d(16.0), d(36.0), d(36.0));
-        self.ink.text(&glyph(Icon::Settings).to_string(), gear, &icon_st(16.0))?;
+        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top();
+        self.ink.text("Audio Output", rect(d(58.0), d(14.0), d(220.0), d(22.0)), &title)?;
+        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sec_text()).top().ellipsis();
+        self.ink.text(&page.subtitle, rect(d(58.0), d(36.0), d(222.0), d(16.0)), &sub)?;
+        let gear = rect(self.w - d(48.0), d(16.0), d(32.0), d(32.0));
+        self.ink.rrect(gear, d(4.0), white(0.05))?;
+        self.ink.text(&glyph(Icon::Settings).to_string(), gear, &icon_st(15.0))?;
         self.hits.push((gear, CardAction::OutputSettings));
 
         let Some(current) = page.rows.first() else { return Ok(()) };
-        let row = rect(d(12.0), d(64.0), d(316.0), d(112.0));
-        self.ink.rrect(row, d(24.0), white(0.12))?;
-        let icon = rect(d(24.0), d(76.0), d(40.0), d(40.0));
-        self.ink.rrect(icon, d(20.0), accent)?;
-        self.ink.text(&glyph(output_icon(current.kind, current.earbuds)).to_string(), icon, &icon_st(18.0))?;
-        let name = TextStyle::new(Face::Text, Weight::SemiBold, d(15.0), white(1.0)).top().ellipsis();
-        self.ink.text(&current.name, rect(d(76.0), d(77.0), d(208.0), d(20.0)), &name)?;
+        let row = rect(d(12.0), d(64.0), d(316.0), d(108.0));
+        self.ink.rrect(row, d(4.0), white(0.09))?;
+        self.ink.rrect_outline(rect(row.left + 0.5, row.top + 0.5, row.right - row.left - 1.0, row.bottom - row.top - 1.0), d(3.5), 1.0, white(0.07))?;
+        let icon = rect(d(24.0), d(76.0), d(36.0), d(36.0));
+        self.ink.rrect(icon, d(4.0), accent)?;
+        let dark_icon = TextStyle::new(Face::Icons, Weight::Regular, d(17.0), rgba(0, 0, 0, 1.0)).centered();
+        self.ink.text(&glyph(output_icon(current.kind, current.earbuds)).to_string(), icon, &dark_icon)?;
+        let name = TextStyle::new(Face::Text, Weight::SemiBold, d(14.5), white(1.0)).top().ellipsis();
+        self.ink.text(&current.name, rect(d(72.0), d(76.0), d(212.0), d(20.0)), &name)?;
         let line = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sub_color(current.tone, 0.72)).top().ellipsis();
-        self.ink.text(&current.sub, rect(d(76.0), d(98.0), d(208.0), d(16.0)), &line)?;
-        let check = rect(d(294.0), d(85.0), d(22.0), d(22.0));
-        self.ink.rrect(check, d(11.0), accent)?;
-        self.ink.text(&glyph(Icon::Check).to_string(), check, &icon_st(12.0))?;
+        self.ink.text(&current.sub, rect(d(72.0), d(96.0), d(212.0), d(16.0)), &line)?;
+        let check = rect(d(294.0), d(84.0), d(20.0), d(20.0));
+        self.ink.rrect(check, d(10.0), accent)?;
+        self.ink.text(&glyph(Icon::Check).to_string(), check, &TextStyle::new(Face::Icons, Weight::Bold, d(11.0), rgba(0, 0, 0, 1.0)).centered())?;
 
-        let track = rect(d(24.0), d(128.0), d(292.0), d(32.0));
-        self.ink.rrect(track, d(16.0), white(0.16))?;
+        let track = rect(d(24.0), d(128.0), d(292.0), d(28.0));
+        self.ink.rrect(track, d(4.0), white(0.12))?;
         if let Some(v) = page.volume {
-            let fill = if page.muted { white(0.28) } else { accent };
+            let fill = if page.muted { white(0.24) } else { accent };
             let fill_w = (track.right - track.left) * v;
-            self.ink.rrect(rect(track.left, track.top, fill_w.max(d(32.0)), d(32.0)), d(16.0), fill)?;
-            let speaker = rect(track.left, track.top, d(36.0), d(32.0));
+            self.ink.rrect(rect(track.left, track.top, fill_w.max(d(28.0)), d(28.0)), d(4.0), fill)?;
+            let speaker = rect(track.left, track.top, d(32.0), d(28.0));
             let glyph_icon = if page.muted { Icon::Mute } else { Icon::Volume };
-            self.ink.text(&glyph(glyph_icon).to_string(), speaker, &icon_st(15.0))?;
+            let spk_st = TextStyle::new(Face::Icons, Weight::Regular, d(14.0), if page.muted { white(1.0) } else { rgba(0, 0, 0, 1.0) }).centered();
+            self.ink.text(&glyph(glyph_icon).to_string(), speaker, &spk_st)?;
             self.hits.push((speaker, CardAction::OutputMute));
-            let label = if page.muted { tr("Sessiz").to_string() } else { crate::i18n::percent((v * 100.0).round() as u32) };
-            let value = TextStyle::new(Face::Text, Weight::SemiBold, d(12.0), white(0.9)).tabular().trailing();
-            self.ink.text(&label, rect(track.right - d(72.0), track.top, d(60.0), d(32.0)), &value)?;
-            *self.volume = Some((rect(track.left + d(36.0), track.top - d(4.0), track.right - track.left - d(36.0), d(40.0)), track.left, track.right));
+            let label = if page.muted { "Muted".to_string() } else { crate::i18n::percent((v * 100.0).round() as u32) };
+            let value = TextStyle::new(Face::Text, Weight::SemiBold, d(12.0), white(0.95)).tabular().trailing();
+            self.ink.text(&label, rect(track.right - d(72.0), track.top, d(60.0), d(28.0)), &value)?;
+            *self.volume = Some((rect(track.left + d(32.0), track.top - d(4.0), track.right - track.left - d(32.0), d(36.0)), track.left, track.right));
         }
 
         let others = &page.rows[1..];
-        let name = TextStyle::new(Face::Text, Weight::Medium, d(14.5), white(1.0)).top().ellipsis();
+        let name = TextStyle::new(Face::Text, Weight::Medium, d(14.0), white(1.0)).top().ellipsis();
         for (i, r) in others.iter().enumerate().skip(page.scroll).take(OUTPUT_VISIBLE_ROWS) {
             let y = d(178.0) + (i - page.scroll) as f32 * d(54.0);
-            let row = rect(d(12.0), y, d(316.0), d(52.0));
-            self.ink.rrect(row, d(20.0), white(0.05))?;
-            let icon = rect(d(20.0), y + d(8.0), d(36.0), d(36.0));
-            self.ink.rrect(icon, d(18.0), white(0.12))?;
+            let row = rect(d(12.0), y, d(316.0), d(50.0));
+            self.ink.rrect(row, d(4.0), white(0.05))?;
+            self.ink.rrect_outline(rect(row.left + 0.5, row.top + 0.5, row.right - row.left - 1.0, row.bottom - row.top - 1.0), d(3.5), 1.0, white(0.07))?;
+            let icon = rect(d(20.0), y + d(7.0), d(36.0), d(36.0));
+            self.ink.rrect(icon, d(4.0), white(0.08))?;
             self.ink.text(&glyph(output_icon(r.kind, r.earbuds)).to_string(), icon, &icon_st(16.0))?;
-            self.ink.text(&r.name, rect(d(66.0), y + d(8.0), d(252.0), d(19.0)), &name)?;
-            let line = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sub_color(r.tone, 0.6)).top().ellipsis();
-            self.ink.text(&r.sub, rect(d(66.0), y + d(28.0), d(252.0), d(16.0)), &line)?;
+            self.ink.text(&r.name, rect(d(66.0), y + d(7.0), d(252.0), d(19.0)), &name)?;
+            let line = TextStyle::new(Face::Text, Weight::Regular, d(12.0), sub_color(r.tone, 0.65)).top().ellipsis();
+            self.ink.text(&r.sub, rect(d(66.0), y + d(27.0), d(252.0), d(16.0)), &line)?;
             self.hits.push((row, CardAction::OutputPick(i + 1)));
         }
-        // More devices below: a "+N" capsule on the last row (the wheel scrolls them in).
         let hidden = others.len().saturating_sub(page.scroll + OUTPUT_VISIBLE_ROWS);
         if hidden > 0 {
-            let y = d(178.0) + (OUTPUT_VISIBLE_ROWS - 1) as f32 * d(54.0) + d(15.0);
+            let y = d(178.0) + (OUTPUT_VISIBLE_ROWS - 1) as f32 * d(54.0) + d(14.0);
             let capsule = rect(d(328.0) - d(12.0) - d(36.0), y, d(36.0), d(22.0));
-            self.ink.rrect(capsule, d(11.0), white(0.14))?;
+            self.ink.rrect(capsule, d(4.0), white(0.12))?;
             let more = TextStyle::new(Face::Text, Weight::SemiBold, d(11.5), white(0.85)).centered();
             self.ink.text(&format!("+{hidden}"), capsule, &more)?;
         }
         Ok(())
     }
 
-    /// The cover band as a lyrics view: darkened, the line on in the middle (up to two lines),
-    /// the one before above and the next below, dim.
-    /// The lines over the dimmed cover. When a new line starts they all move up one place: the
-    /// old line shrinks and dims into the one above, the next grows and brightens into the middle,
-    /// a new next fades in at the bottom and the oldest fades out at the top.
     fn lyrics(&mut self, band: D2D_RECT_F, view: &LyricsView) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        self.ink.rrect(band, d(24.0), [0.0, 0.0, 0.0, 0.62])?;
-        let (x, w) = (band.left + d(20.0), band.right - band.left - d(40.0));
-        // Ease-out cubic: quick to leave, soft to land.
+        self.ink.rrect(band, d(4.0), [0.0, 0.0, 0.0, 0.68])?;
+        let (x, w) = (band.left + d(14.0), band.right - band.left - d(28.0));
         let p = 1.0 - (1.0 - view.progress.clamp(0.0, 1.0)).powi(3);
-        // The places, top to bottom: gone above, before, on, next, coming from below.
-        // (top, height, size, alpha, bright)
         let places: [(f32, f32, f32, f32, bool); 5] = [
-            (band.top + d(14.0), d(22.0), d(13.5), 0.0, false),
-            (band.top + d(46.0), d(22.0), d(13.5), 0.45, false),
-            (band.top + d(70.0), d(66.0), d(18.0), 1.0, true),
-            (band.bottom - d(36.0), d(22.0), d(13.5), 0.45, false),
-            (band.bottom - d(4.0), d(22.0), d(13.5), 0.0, false),
+            (band.top + d(6.0), d(18.0), d(12.0), 0.0, false),
+            (band.top + d(24.0), d(18.0), d(12.0), 0.45, false),
+            (band.top + d(44.0), d(44.0), d(15.0), 1.0, true),
+            (band.bottom - d(24.0), d(18.0), d(12.0), 0.45, false),
+            (band.bottom - d(4.0), d(18.0), d(12.0), 0.0, false),
         ];
         let lerp = |a: f32, b: f32| a + (b - a) * p;
         let now = view.current.as_deref().filter(|t| !t.is_empty()).unwrap_or("♪");
         let lines = [view.before.as_deref(), view.prev.as_deref(), Some(now), view.next.as_deref()];
-        // Line i comes from place i + 1 and settles in place i (the oldest leaves to place 0).
         for (i, line) in lines.iter().enumerate() {
             let Some(text) = line else { continue };
             let (from, to) = (places[i + 1], places[i]);
@@ -2489,152 +2976,381 @@ impl Painter<'_, '_> {
         Ok(())
     }
 
+    fn paint_idle_media(&mut self, card: &MediaCard) -> Result<()> {
+        let d = |v: f32| v * self.s.0;
+        let (ar, ag, ab) = timer_accent();
+
+        // Pin button at top right
+        let pin = rect(self.w - d(16.0) - d(28.0), d(16.0), d(28.0), d(28.0));
+        if card.pinned {
+            self.ink.rrect(pin, d(4.0), white(0.09))?;
+        }
+        let pin_color = if card.pinned { rgba(ar, ag, ab, 1.0) } else { neutral_icon() };
+        let pin_icon = rect((pin.left + d(6.0)).round(), (pin.top + d(6.0)).round(), d(16.0).round(), d(16.0).round());
+        self.ink.svg(PIN_SVG, pin_icon, pin_color)?;
+        self.hits.push((pin, CardAction::Pin));
+
+        // Title and subtitle
+        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(20.0), white(1.0)).top().ellipsis();
+        self.ink.text(&crate::i18n::tr("Nothing playing"), rect(d(16.0), d(16.0), pin.left - d(22.0), d(26.0)), &title)?;
+        let sub = TextStyle::new(Face::Text, Weight::Regular, d(13.0), sec_text()).top().ellipsis();
+        self.ink.text(&crate::i18n::tr("Pick an app to start listening."), rect(d(16.0), d(44.0), self.w - d(32.0), d(20.0)), &sub)?;
+
+        // Two tiles side by side
+        let card_w = ((self.w - d(32.0) - d(12.0)) / 2.0).round();
+        let card_h = d(74.0);
+        let card_y = d(72.0);
+
+        // --- Card 1: Spotify ---
+        let c1 = rect(d(16.0), card_y, card_w, card_h);
+        self.ink.rrect(c1, d(8.0), white(0.05))?;
+        self.ink.rrect_outline(rect(c1.left + 0.5, c1.top + 0.5, card_w - 1.0, card_h - 1.0), d(7.5), 1.0, white(0.08))?;
+        self.hits.push((c1, CardAction::LaunchSpotify));
+
+        // Spotify icon (22x22)
+        let icon1 = rect(c1.left + d(12.0), c1.top + d(9.0), d(22.0), d(22.0));
+        self.ink.svg(SPOTIFY_SVG, icon1, white(1.0))?;
+
+        // Spotify text
+        let st_title = TextStyle::new(Face::Text, Weight::SemiBold, d(13.0), white(1.0)).top().ellipsis();
+        self.ink.text("Spotify", rect(c1.left + d(12.0), c1.top + d(35.0), card_w - d(24.0), d(17.0)), &st_title)?;
+        let st_sub = TextStyle::new(Face::Text, Weight::Regular, d(11.0), sec_text()).top().ellipsis();
+        let sp_installed = crate::platform::media_launch::is_spotify_installed();
+        let sp_label = if sp_installed { crate::i18n::tr("Open app") } else { crate::i18n::tr("Open in browser") };
+        self.ink.text(&sp_label, rect(c1.left + d(12.0), c1.top + d(51.0), card_w - d(24.0), d(16.0)), &st_sub)?;
+
+        // --- Card 2: YouTube ---
+        let c2 = rect(c1.right + d(12.0), card_y, card_w, card_h);
+        self.ink.rrect(c2, d(8.0), white(0.05))?;
+        self.ink.rrect_outline(rect(c2.left + 0.5, c2.top + 0.5, card_w - 1.0, card_h - 1.0), d(7.5), 1.0, white(0.08))?;
+        self.hits.push((c2, CardAction::LaunchYouTube));
+
+        // YouTube icon (22x22)
+        let icon2 = rect(c2.left + d(12.0), c2.top + d(9.0), d(22.0), d(22.0));
+        self.ink.svg(YOUTUBE_SVG, icon2, white(1.0))?;
+
+        // YouTube text
+        self.ink.text("YouTube", rect(c2.left + d(12.0), c2.top + d(35.0), card_w - d(24.0), d(17.0)), &st_title)?;
+        self.ink.text(&crate::i18n::tr("Open in browser"), rect(c2.left + d(12.0), c2.top + d(51.0), card_w - d(24.0), d(16.0)), &st_sub)?;
+
+        // --- Bottom Row: Output Chip & Note ---
+        let bot_y = d(158.0);
+        let chip_h = d(28.0);
+        let chip_text = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.84));
+        let out_name = card.output.as_deref().unwrap_or("Headphone");
+        let text_w = self.ink.measure(out_name, &chip_text)?.min(d(110.0));
+        let out_w = (text_w + d(38.0)).round();
+        let out_chip = rect(d(16.0), bot_y, out_w, chip_h);
+        self.ink.rrect(out_chip, d(4.0), white(0.05))?;
+        self.ink.rrect_outline(rect(out_chip.left + 0.5, out_chip.top + 0.5, out_w - 1.0, chip_h - 1.0), d(3.5), 1.0, white(0.08))?;
+        let icon = if out_name.to_lowercase().contains("hoparl") || out_name.to_lowercase().contains("speaker") { Icon::Speaker } else { Icon::Headphones };
+        let glyph_st = TextStyle::new(Face::Icons, Weight::Regular, d(13.0), neutral_icon()).centered();
+        self.ink.text(&glyph(icon).to_string(), rect(out_chip.left + d(8.0), bot_y, d(16.0), chip_h), &glyph_st)?;
+        self.ink.text(out_name, rect(out_chip.left + d(28.0), bot_y, text_w + d(2.0), chip_h), &chip_text.ellipsis())?;
+        self.hits.push((out_chip, CardAction::OutputDevice));
+
+        // Right side note
+        let note = TextStyle::new(Face::Text, Weight::Regular, d(11.5), sec_text()).ellipsis();
+        let note_rect = rect(out_chip.right + d(10.0), bot_y, (self.w - out_chip.right - d(22.0)).max(0.0), chip_h);
+        self.ink.text(&crate::i18n::tr("Card switches to the player when audio starts"), note_rect, &note)?;
+
+        Ok(())
+    }
+
     fn media(&mut self, card: &MediaCard) -> Result<()> {
+        if card.m.id == IDLE_MEDIA {
+            return self.paint_idle_media(card);
+        }
         let m = &card.m;
         let d = |v: f32| v * self.s.0;
-        let [ar, ag, ab] = m.accent;
-        // Cover band with the title over a scrim.
-        let band = rect(d(12.0), d(12.0), d(316.0), d(176.0));
+        let (ar, ag, ab) = timer_accent();
+
+        // Subtle radial ambient tint from album art dominant color at top-left (18%, 18%), fading into #202020.
+        if m.art.is_some() {
+            self.ink.glow(d(64.0), d(56.0), self.w * 0.95, self.h * 0.72, rgba(m.accent[0], m.accent[1], m.accent[2], 0.24))?;
+        }
+
+        // 96×96px album art with 4px corner radius at top-left.
+        let art_rect = rect(d(16.0), d(16.0), d(96.0), d(96.0));
         match &m.art {
             Some(art) => {
-                let (aw, ah) = (m.art_size.0 as f32, m.art_size.1 as f32);
-                let src_h = aw * 176.0 / 316.0;
-                let src = D2D_RECT_F { left: 0.0, top: (ah - src_h) / 2.0, right: aw, bottom: (ah + src_h) / 2.0 };
-                self.ink.image_rounded(art, m.art_size, src, band, d(24.0))?;
+                self.ink.image_cover_rounded(art, m.art_size, art_rect, d(4.0))?;
             }
             None => {
-                self.ink.vgradient(band, d(24.0), rgba(ar, ag, ab, 0.55), rgba(ar, ag, ab, 0.2))?;
+                self.ink.rrect(art_rect, d(4.0), white(0.06))?;
                 let initial: String = m.app_name.chars().take(1).collect();
-                let st = TextStyle::new(Face::Display, Weight::Bold, d(64.0), white(0.35)).centered();
-                self.ink.text(&initial, rect(d(12.0), d(12.0), d(316.0), d(130.0)), &st)?;
+                let st = TextStyle::new(Face::Display, Weight::SemiBold, d(36.0), white(0.45)).centered();
+                self.ink.text(&initial, art_rect, &st)?;
             }
         }
-        let lyrics = card.lyrics.as_ref().filter(|_| card.show_lyrics);
-        if let Some(view) = lyrics {
-            self.lyrics(band, view)?;
-        } else {
-            let scrim = rect(d(12.0), d(12.0 + 176.0 - 96.0), d(316.0), d(96.0));
-            self.ink.vgradient(scrim, d(24.0), [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.55])?;
+        self.ink.rrect_outline(
+            rect(art_rect.left + 0.5, art_rect.top + 0.5, art_rect.right - art_rect.left - 1.0, art_rect.bottom - art_rect.top - 1.0),
+            d(3.5),
+            1.0,
+            white(0.08),
+        )?;
+
+        // Top-right quiet Pin button (upright pushpin SVG) and optional Lyrics button stacked below it.
+        let pin = rect(self.w - d(16.0) - d(28.0), d(16.0), d(28.0), d(28.0));
+        if card.pinned {
+            self.ink.rrect(pin, d(4.0), white(0.09))?;
         }
-        // The pin, across from the lyrics chip: pinned, the card stays open.
-        let pin = rect(band.left + d(12.0), band.top + d(12.0), d(28.0), d(28.0));
-        self.ink.rrect(pin, d(14.0), if card.pinned { white(0.92) } else { [0.0, 0.0, 0.0, 0.45] })?;
-        let pin_glyph = if card.pinned { "\u{E842}" } else { "\u{E840}" };
-        let pin_st = TextStyle::new(Face::Icons, Weight::Regular, d(13.0), if card.pinned { rgba(0x12, 0x12, 0x12, 1.0) } else { white(1.0) }).centered();
-        self.ink.text(pin_glyph, pin, &pin_st)?;
+        let pin_color = if card.pinned { rgba(ar, ag, ab, 1.0) } else { neutral_icon() };
+        let pin_icon = rect((pin.left + d(6.0)).round(), (pin.top + d(6.0)).round(), d(16.0).round(), d(16.0).round());
+        self.ink.svg(PIN_SVG, pin_icon, pin_color)?;
         self.hits.push((pin, CardAction::Pin));
-        if card.lyrics.is_some() {
-            let label = if card.show_lyrics { tr("Kapak") } else { tr("Sözler") };
-            let st = TextStyle::new(Face::Text, Weight::SemiBold, d(12.5), white(1.0));
-            let chip_w = self.ink.measure(label, &st)? + d(24.0);
-            let chip = rect(band.right - d(12.0) - chip_w, band.top + d(12.0), chip_w, d(28.0));
-            self.ink.rrect(chip, d(14.0), [0.0, 0.0, 0.0, 0.45])?;
-            self.ink.text(label, chip, &st.centered())?;
-            self.hits.push((chip, CardAction::Lyrics));
+
+        let right_limit = pin.left - d(6.0);
+        let artist_right_limit = self.w - d(16.0);
+
+        // Title (20px semibold), artist in secondary text, and 4-bar system accent equalizer below.
+        let info_x = d(126.0);
+        let info_w = (right_limit - info_x).max(d(80.0));
+        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(20.0), white(1.0)).top().ellipsis();
+        self.ink.text(&m.title, rect(info_x, d(18.0), info_w, d(26.0)), &title)?;
+        if !m.artist.is_empty() {
+            let artist = TextStyle::new(Face::Text, Weight::Regular, d(13.0), sec_text()).top().ellipsis();
+            self.ink.text(&m.artist, rect(info_x, d(46.0), (artist_right_limit - info_x).max(d(60.0)), d(20.0)), &artist)?;
         }
-        // Page dots: one per Now Bar item, the current one solid (scroll or swipe to change).
+        // Four 3px system accent equalizer bars under the artist line.
+        let eq_bottom = d(88.0);
+        let heights = if m.playing { [13.0, 7.0, 11.0, 5.0] } else { [3.5, 3.5, 3.5, 3.5] };
+        for (i, bh) in heights.into_iter().enumerate() {
+            let bx = (info_x + i as f32 * d(5.0)).round();
+            let bh_px = d(bh).round();
+            self.ink.rrect(rect(bx, eq_bottom - bh_px, d(3.0).round(), bh_px), d(1.5), rgba(ar, ag, ab, 1.0))?;
+        }
+
+        // Page indicator dots if multiple activities are stacked.
         let (page, pages) = card.pages;
         if pages > 1 {
-            let (dot, gap) = (d(6.0), d(5.0));
+            let (dot, gap) = (d(5.0), d(4.0));
             let dots_w = pages as f32 * dot + (pages - 1) as f32 * gap;
-            let x0 = ((self.w - dots_w) / 2.0).round();
-            let y = d(22.0).round();
-            self.ink.rrect(rect(x0 - d(6.0), y - d(4.0), dots_w + d(12.0), dot + d(8.0)), (dot + d(8.0)) / 2.0, [0.0, 0.0, 0.0, 0.45])?;
+            let x0 = (self.w - d(16.0) - dots_w).round();
+            let y = d(82.0).round();
             for i in 0..pages {
-                self.ink.rrect(rect(x0 + i as f32 * (dot + gap), y, dot, dot), dot / 2.0, white(if i == page { 1.0 } else { 0.4 }))?;
+                let fill = if i == page { rgba(ar, ag, ab, 1.0) } else { white(0.3) };
+                self.ink.rrect(rect(x0 + i as f32 * (dot + gap), y, dot, dot), dot / 2.0, fill)?;
             }
         }
-        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(18.0), white(1.0)).ellipsis();
-        if lyrics.is_none() {
-            self.ink.text(&m.title, rect(d(28.0), d(12.0 + 176.0 - 58.0), d(284.0), d(26.0)), &title)?;
-        }
-        if !m.artist.is_empty() && lyrics.is_none() {
-            let artist = TextStyle::new(Face::Text, Weight::Regular, d(14.0), white(0.75)).ellipsis();
-            self.ink.text(&m.artist, rect(d(28.0), d(12.0 + 176.0 - 33.0), d(284.0), d(20.0)), &artist)?;
-        }
 
-        // App badge and output chip.
-        let badge = rect(d(16.0), d(204.0), d(20.0), d(20.0));
-        let app = crate::activities::media::app_accent(&m.app_id);
-        self.ink.rrect(badge, d(10.0), rgba(app[0], app[1], app[2], 1.0))?;
-        let initial: String = m.app_name.chars().take(1).collect();
-        self.ink.text(&initial, badge, &TextStyle::new(Face::Text, Weight::Bold, d(11.0), white(1.0)).centered())?;
-        let chip_text = TextStyle::new(Face::Text, Weight::Medium, d(12.5), white(1.0));
+        // Quiet source and output chips row (4px radius, white 5% fill, 1px white 8% border).
+        let chip_y = d(124.0);
+        let chip_h = d(28.0);
+        let chip_text = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.84));
         let chip_text_w = match &card.output {
-            Some(output) => Some(self.ink.measure(output, &chip_text)?.min(d(150.0))),
+            Some(output) => Some(self.ink.measure(output, &chip_text)?.min(d(146.0))),
             None => None,
         };
-        let name_w = d(media_app_name_width_dip(chip_text_w.map(|w| w / self.s.0 + 44.0)));
-        let app_name = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.85)).ellipsis();
-        self.ink.text(&m.app_name, rect(d(42.0), d(200.0), name_w, d(28.0)), &app_name)?;
-        if let (Some(output), Some(text_w)) = (&card.output, chip_text_w) {
-            let chip_w = text_w + d(44.0);
-            let chip = rect(self.w - d(16.0) - chip_w, d(200.0), chip_w, d(28.0));
-            self.ink.rrect(chip, d(14.0), white(0.14))?;
-            let icon = if output.to_lowercase().contains("hoparl") { Icon::Speaker } else { Icon::Headphones };
-            let glyph_st = TextStyle::new(Face::Icons, Weight::Regular, d(14.0), white(1.0)).centered();
-            self.ink.text(&glyph(icon).to_string(), rect(chip.left + d(10.0), chip.top, d(16.0), d(28.0)), &glyph_st)?;
-            self.ink.text(output, rect(chip.left + d(32.0), chip.top, text_w + d(2.0), d(28.0)), &chip_text.ellipsis())?;
-            self.hits.push((chip, CardAction::OutputDevice));
+        let show_spotify = crate::settings::current().media_spotify_button;
+        let is_spotify = m.app_id.to_lowercase().contains("spotify") || m.app_name.to_lowercase().contains("spotify");
+        let (display_name, display_accent, action) = if show_spotify {
+            if is_spotify {
+                // When Spotify is playing, offer YouTube
+                ("YouTube", [0xFF, 0x00, 0x00], Some(CardAction::LaunchYouTube))
+            } else {
+                // When playing from another source (Chrome, etc.), offer Spotify
+                ("Spotify", [0x1D, 0xB9, 0x54], Some(CardAction::LaunchSpotify))
+            }
+        } else {
+            // When quick button is turned off, show original source app
+            let orig_name = if m.app_name.is_empty() { "Media" } else { m.app_name.as_str() };
+            (orig_name, crate::activities::media::app_accent(&m.app_id), None)
+        };
+        let app_text_w = self.ink.measure(display_name, &chip_text)?.min(d(media_app_name_width_dip(chip_text_w.map(|w| w / self.s.0 + 44.0))));
+        let src_chip_w = (d(28.0) + app_text_w + d(10.0)).round();
+        let src_chip = rect(d(16.0), chip_y, src_chip_w, chip_h);
+        self.ink.rrect(src_chip, d(4.0), white(0.05))?;
+        self.ink.rrect_outline(rect(src_chip.left + 0.5, src_chip.top + 0.5, src_chip_w - 1.0, chip_h - 1.0), d(3.5), 1.0, white(0.08))?;
+        let dot_side = d(8.0).round();
+        self.ink.rrect(rect(src_chip.left + d(10.0), chip_y + (chip_h - dot_side) / 2.0, dot_side, dot_side), dot_side / 2.0, rgba(display_accent[0], display_accent[1], display_accent[2], 1.0))?;
+        self.ink.text(display_name, rect(src_chip.left + d(24.0), chip_y, app_text_w + d(4.0), chip_h), &chip_text.ellipsis())?;
+        if let Some(act) = action {
+            self.hits.push((src_chip, act));
         }
 
-        // Wave seek bar, coloured by the cover; flat while there is no timeline (live streams).
-        let (x0, x1, y) = (d(16.0), self.w - d(16.0), d(244.0));
+        if let (Some(output), Some(text_w)) = (&card.output, chip_text_w) {
+            let out_w = (text_w + d(38.0)).round();
+            let out_chip = rect(self.w - d(16.0) - out_w, chip_y, out_w, chip_h);
+            self.ink.rrect(out_chip, d(4.0), white(0.05))?;
+            self.ink.rrect_outline(rect(out_chip.left + 0.5, out_chip.top + 0.5, out_w - 1.0, chip_h - 1.0), d(3.5), 1.0, white(0.08))?;
+            let icon = if output.to_lowercase().contains("hoparl") { Icon::Speaker } else { Icon::Headphones };
+            let glyph_st = TextStyle::new(Face::Icons, Weight::Regular, d(13.0), neutral_icon()).centered();
+            self.ink.text(&glyph(icon).to_string(), rect(out_chip.left + d(8.0), chip_y, d(16.0), chip_h), &glyph_st)?;
+            self.ink.text(output, rect(out_chip.left + d(28.0), chip_y, text_w + d(2.0), chip_h), &chip_text.ellipsis())?;
+            self.hits.push((out_chip, CardAction::OutputDevice));
+        }
+
+        // Slider: 4px track with system accent fill and a 20px thumb with a grey ring (#454545) and an accent center that grows on drag/hover.
+        let (x0, x1, y) = (d(16.0), self.w - d(16.0), d(172.0));
+        let track_h = d(4.0).round();
         let timeline = m.timeline.filter(|t| t.end > t.start);
         match (timeline, card.position) {
             (Some(t), Some(position)) => {
                 let duration = (t.end - t.start) as f32;
                 let frac = card.seeking.unwrap_or(((position - t.start) as f32 / duration).clamp(0.0, 1.0));
                 let xp = x0 + frac * (x1 - x0);
-                if crate::settings::current().media_card_wave {
-                    self.ink.wave(x0, xp, y, d(2.0), d(22.0), 0.0, d(3.0), rgba(ar, ag, ab, 1.0))?;
-                } else {
-                    self.ink.line(x0, y, xp, y, d(3.0), rgba(ar, ag, ab, 1.0))?;
+                self.ink.rrect(rect(x0, y - track_h / 2.0, x1 - x0, track_h), track_h / 2.0, white(0.20))?;
+                if xp > x0 {
+                    self.ink.rrect(rect(x0, y - track_h / 2.0, (xp - x0).max(track_h), track_h), track_h / 2.0, rgba(ar, ag, ab, 1.0))?;
                 }
-                self.ink.line(xp + d(4.0), y, x1, y, d(3.0), white(0.28))?;
-                self.ink.rrect(rect(xp - d(9.0), y - d(9.0), d(18.0), d(18.0)), d(9.0), rgba(ar, ag, ab, 0.35))?;
-                self.ink.rrect(rect(xp - d(6.0), y - d(6.0), d(12.0), d(12.0)), d(6.0), white(1.0))?;
+                let thumb_r = d(10.0).round();
+                let thumb = rect(xp - thumb_r, y - thumb_r, 2.0 * thumb_r, 2.0 * thumb_r);
+                self.ink.rrect(thumb, thumb_r, rgba(0x45, 0x45, 0x45, 1.0))?;
+                self.ink.rrect_outline(rect(thumb.left + 0.5, thumb.top + 0.5, 2.0 * thumb_r - 1.0, 2.0 * thumb_r - 1.0), thumb_r - 0.5, 1.0, white(0.22))?;
+                let inner_r = if card.seeking.is_some() { d(6.0).round() } else { d(4.5).round() };
+                self.ink.rrect(rect(xp - inner_r, y - inner_r, 2.0 * inner_r, 2.0 * inner_r), inner_r, rgba(ar, ag, ab, 1.0))?;
+
                 let shown = card.seeking.map_or(position, |f| t.start + (duration * f) as i64);
-                let times = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.7)).tabular();
-                self.ink.text(&format_media_time(shown - t.start), rect(x0, d(256.0), d(80.0), d(18.0)), &times)?;
-                self.ink.text(&format_media_time(t.end - t.start), rect(x1 - d(80.0), d(256.0), d(80.0), d(18.0)), &times.trailing())?;
+                let times = TextStyle::new(Face::Text, Weight::Regular, d(11.5), sec_text()).tabular();
+                self.ink.text(&format_media_time(shown - t.start), rect(x0, d(188.0), d(80.0), d(16.0)), &times)?;
+                self.ink.text(&format_media_time(t.end - t.start), rect(x1 - d(80.0), d(188.0), d(80.0), d(16.0)), &times.trailing())?;
                 if m.can.seek {
-                    *self.seek = Some((rect(x0 - d(8.0), d(228.0), x1 - x0 + d(16.0), d(32.0)), x0, x1));
+                    *self.seek = Some((rect(x0 - d(8.0), d(158.0), x1 - x0 + d(16.0), d(28.0)), x0, x1));
                 }
             }
             _ => {
-                self.ink.line(x0, y, x1, y, d(3.0), white(0.2))?;
+                self.ink.rrect(rect(x0, y - track_h / 2.0, x1 - x0, track_h), track_h / 2.0, white(0.20))?;
             }
         }
 
-        // Transport row.
-        let cy = d(306.0);
+        // Per-app volume slider row (speaker icon with mute toggle, volume track with accent fill, and percentage label).
+        let (app_vol, app_muted) = card.app_volume.unwrap_or((1.0, false));
+        let vol_cy = d(226.0);
+        let spk_box = rect(d(16.0), vol_cy - d(10.0), d(20.0), d(20.0));
+        let spk_icon = if app_muted || app_vol <= 0.001 {
+            Icon::Mute
+        } else {
+            Icon::Volume
+        };
+        let spk_color = if app_muted {
+            white(0.40)
+        } else {
+            white(0.85)
+        };
+        self.ink.text(
+            &glyph(spk_icon).to_string(),
+            spk_box,
+            &TextStyle::new(Face::Icons, Weight::Regular, d(13.0), spk_color).centered(),
+        )?;
+        self.hits.push((spk_box, CardAction::MediaAppMute));
+
+        let (vx0, vx1) = (d(44.0), self.w - d(54.0));
+        let v_track_h = d(3.5).round();
+        let v_track_w = vx1 - vx0;
+        let v_xp = vx0 + app_vol.clamp(0.0, 1.0) * v_track_w;
+
+        // Track background (dim white)
+        self.ink.rrect(
+            rect(vx0, vol_cy - v_track_h / 2.0, v_track_w, v_track_h),
+            v_track_h / 2.0,
+            white(0.18),
+        )?;
+        // Filled track (system accent or white if muted)
+        if v_xp > vx0 {
+            let fill = if app_muted {
+                white(0.35)
+            } else {
+                rgba(ar, ag, ab, 1.0)
+            };
+            self.ink.rrect(
+                rect(vx0, vol_cy - v_track_h / 2.0, (v_xp - vx0).max(v_track_h), v_track_h),
+                v_track_h / 2.0,
+                fill,
+            )?;
+        }
+        // Subtle circular thumb
+        let thumb_r = d(5.5).round();
+        let thumb = rect(v_xp - thumb_r, vol_cy - thumb_r, 2.0 * thumb_r, 2.0 * thumb_r);
+        let thumb_fill = if app_muted {
+            white(0.60)
+        } else {
+            rgba(ar, ag, ab, 1.0)
+        };
+        self.ink.rrect(thumb, thumb_r, thumb_fill)?;
+        self.ink.rrect_outline(
+            rect(thumb.left + 0.5, thumb.top + 0.5, 2.0 * thumb_r - 1.0, 2.0 * thumb_r - 1.0),
+            thumb_r - 0.5,
+            1.0,
+            white(0.25),
+        )?;
+
+        // Percentage text (e.g. "80%")
+        let pct_str = if app_muted {
+            "Mute".to_string()
+        } else {
+            format!("{}%", (app_vol * 100.0).round() as i32)
+        };
+        let pct_style = TextStyle::new(Face::Text, Weight::Regular, d(11.0), sec_text()).tabular().trailing();
+        self.ink.text(
+            &pct_str,
+            rect(self.w - d(50.0), vol_cy - d(8.0), d(34.0), d(16.0)),
+            &pct_style,
+        )?;
+
+        // App volume slider hit target
+        *self.app_volume = Some((
+            rect(vx0 - d(6.0), vol_cy - d(12.0), v_track_w + d(12.0), d(24.0)),
+            vx0,
+            vx1,
+        ));
+
+        // Footer band controls: black at 28% with a 1px white 7% top border.
+        let band_h = d(68.0);
+        let band = rect(0.0, self.h - band_h, self.w, band_h);
+        self.ink.rrect(band, 0.0, [0.0, 0.0, 0.0, 0.28])?;
+        self.ink.line(0.0, band.top + 0.5, self.w, band.top + 0.5, 1.0, white(0.07))?;
+
+        let cy = (band.top + band_h / 2.0).round();
         let enabled = |on: bool| if on { 1.0 } else { 0.35 };
+
+        // Prev / Next: 40px quiet 4px-radius buttons.
         for (x, icon, on, action) in [
-            (104.0, Icon::Prev, m.can.prev, CardAction::Prev),
-            (170.0, if m.playing { Icon::Pause } else { Icon::Play }, m.can.play_pause, CardAction::PlayPause),
-            (236.0, Icon::Next, m.can.next, CardAction::Next),
+            (114.0, Icon::Prev, m.can.prev, CardAction::Prev),
+            (226.0, Icon::Next, m.can.next, CardAction::Next),
         ] {
-            let area = rect(d(x - 25.0), cy - d(25.0), d(50.0), d(50.0));
-            self.ink.rrect(area, d(25.0), white(0.14))?;
-            let st = TextStyle::new(Face::Icons, Weight::Regular, d(22.0), white(enabled(on))).centered();
+            let area = rect(d(x - 20.0), cy - d(20.0), d(40.0), d(40.0));
+            let st = TextStyle::new(Face::Icons, Weight::Regular, d(16.0), white(enabled(on))).centered();
             self.ink.text(&glyph(icon).to_string(), area, &st)?;
             self.hits.push((area, action));
         }
-        for (x, icon, supported, active, action) in [
-            (32.0, Icon::Shuffle, m.can.shuffle, m.shuffle == Some(true), CardAction::Shuffle),
-            (308.0, Icon::Repeat, m.can.repeat, m.repeat == Some(true), CardAction::Repeat),
+
+        // Play / Pause: 48px system accent circle with a soft accent glow (~18px, 45%) while playing.
+        let play_r = d(24.0).round();
+        let play_cx = d(170.0).round();
+        if m.playing {
+            self.ink.glow(play_cx, cy, d(36.0), d(36.0), rgba(ar, ag, ab, 0.45))?;
+        }
+        let play_area = rect(play_cx - play_r, cy - play_r, 2.0 * play_r, 2.0 * play_r);
+        self.ink.rrect(play_area, play_r, rgba(ar, ag, ab, 1.0))?;
+        let play_icon = if m.playing { Icon::Pause } else { Icon::Play };
+        let play_st = TextStyle::new(Face::Icons, Weight::Regular, d(18.0), rgba(0x00, 0x00, 0x00, enabled(m.can.play_pause))).centered();
+        self.ink.text(&glyph(play_icon).to_string(), play_area, &play_st)?;
+        self.hits.push((play_area, CardAction::PlayPause));
+
+        // Shuffle and Repeat at the edges: 36px buttons, subtle highlight when active.
+        for (x, icon, supported, active, is_shuffle, action) in [
+            (36.0, Icon::Shuffle, m.can.shuffle, m.shuffle == Some(true), true, CardAction::Shuffle),
+            (304.0, Icon::Repeat, m.can.repeat, m.repeat.is_some(), false, CardAction::Repeat),
         ] {
-            let area = rect(d(x - 20.0), cy - d(20.0), d(40.0), d(40.0));
+            let area = rect(d(x - 18.0), cy - d(18.0), d(36.0), d(36.0));
+            if active && supported {
+                self.ink.rrect(area, d(6.0), white(0.08))?;
+                self.ink.rrect_outline(rect(area.left + 0.5, area.top + 0.5, d(36.0) - 1.0, d(36.0) - 1.0), d(5.5), 1.0, white(0.06))?;
+            }
             let tint = if !supported {
-                white(0.35)
+                white(0.28)
             } else if active {
-                rgba(ar.max(90), ag.max(90), ab.max(90), 1.0)
+                rgba(ar, ag, ab, 1.0)
             } else {
-                white(0.85)
+                sec_text()
             };
-            let st = TextStyle::new(Face::Icons, Weight::Regular, d(19.0), tint).centered();
+            let st = TextStyle::new(Face::Icons, Weight::Regular, d(15.0), tint).centered();
             self.ink.text(&glyph(icon).to_string(), area, &st)?;
+            if !is_shuffle && supported && m.repeat == Some(true) {
+                let one_st = TextStyle::new(Face::Text, Weight::Bold, d(8.5), tint).centered();
+                self.ink.text("1", area, &one_st)?;
+            }
             self.hits.push((area, action));
         }
         Ok(())
@@ -2644,16 +3360,16 @@ impl Painter<'_, '_> {
         let (l, r) = (self.d(18.0), self.w - self.d(18.0));
         let inner = r - l;
         // Tabs.
-        let tabs = rect(l, self.d(16.0), inner, self.d(38.0));
-        self.ink.rrect(tabs, self.d(19.0), white(0.10))?;
+        let tabs = rect(l, self.d(16.0), inner, self.d(36.0));
+        self.ink.rrect(tabs, self.d(4.0), white(0.06))?;
         let half = inner / 2.0;
-        let (timer_tab, watch_tab) = (rect(l, self.d(16.0), half, self.d(38.0)), rect(l + half, self.d(16.0), half, self.d(38.0)));
+        let (timer_tab, watch_tab) = (rect(l, self.d(16.0), half, self.d(36.0)), rect(l + half, self.d(16.0), half, self.d(36.0)));
         let selected = if p.stopwatch_tab { watch_tab } else { timer_tab };
         let pad = self.d(3.0);
         let sel = D2D_RECT_F { left: selected.left + pad, top: selected.top + pad, right: selected.right - pad, bottom: selected.bottom - pad };
-        self.ink.rrect(sel, self.d(16.0), white(0.18))?;
-        for (area, label, on, stopwatch) in [(timer_tab, tr("Zamanlayıcı"), !p.stopwatch_tab, false), (watch_tab, tr("Kronometre"), p.stopwatch_tab, true)] {
-            let st = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.5), white(if on { 1.0 } else { 0.7 })).centered();
+        self.ink.rrect(sel, self.d(4.0), white(0.10))?;
+        for (area, label, on, stopwatch) in [(timer_tab, "Timer", !p.stopwatch_tab, false), (watch_tab, "Stopwatch", p.stopwatch_tab, true)] {
+            let st = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.0), white(if on { 1.0 } else { 0.65 })).centered();
             self.ink.text(label, area, &st)?;
             self.hits.push((area, CardAction::PickerTab(stopwatch)));
         }
@@ -2662,7 +3378,7 @@ impl Painter<'_, '_> {
             let st = TextStyle::new(Face::Display, Weight::Light, self.d(40.0), white(0.45)).centered().tabular();
             self.ink.text(&crate::activities::timer::format_stopwatch(0), rect(l, self.d(74.0), inner, self.d(56.0)), &st)?;
             let note = TextStyle::new(Face::Text, Weight::Regular, self.d(13.0), white(0.7)).centered();
-            self.ink.text(tr("Başlat'a basınca saymaya başlar"), rect(l, self.d(140.0), inner, self.d(24.0)), &note)?;
+            self.ink.text("Counting starts when you tap Start", rect(l, self.d(140.0), inner, self.d(24.0)), &note)?;
         } else {
             // Wheel fields: HH : MM : SS; the mouse wheel over a field turns it.
             let field_w = self.d(76.0);
@@ -2675,7 +3391,7 @@ impl Painter<'_, '_> {
                 let st = TextStyle::new(Face::Display, weight, self.d(40.0), white(alpha)).centered().tabular();
                 self.ink.text(&format!("{value:02}"), area, &st)?;
                 let unit = TextStyle::new(Face::Text, Weight::Regular, self.d(11.5), white(0.6)).centered();
-                self.ink.text(tr([n_("sa"), n_("dk"), n_("sn")][i]), rect(x, self.d(118.0), field_w, self.d(16.0)), &unit)?;
+                self.ink.text(["hr", "min", "sec"][i], rect(x, self.d(118.0), field_w, self.d(16.0)), &unit)?;
                 self.hits.push((area, CardAction::PickerField(i as u8)));
                 if i < 2 {
                     let colon = TextStyle::new(Face::Display, Weight::Light, self.d(32.0), white(0.45)).centered();
@@ -2692,19 +3408,103 @@ impl Painter<'_, '_> {
                 let on = p.total_ms() == *minutes as u64 * 60_000;
                 let (r, g, b) = timer_accent();
                 let fill = if on { rgba(r, g, b, 0.55) } else { white(0.12) };
-                self.chip(area, &trf("{} dk", &[minutes]), fill, CardAction::PickPreset(*minutes))?;
+                self.chip(area, &format!("{minutes} min"), fill, CardAction::PickPreset(*minutes))?;
             }
         }
         // Start.
         let (r_, g_, b_) = timer_accent();
         let start = rect(l, self.h - self.d(18.0 + 46.0), inner, self.d(46.0));
-        self.chip(start, tr("Başlat"), rgba(r_, g_, b_, 1.0), CardAction::PickerStart)
+        self.chip(start, "Start", rgba(r_, g_, b_, 1.0), CardAction::PickerStart)
+    }
+
+    fn download(&mut self, c: &DownloadCard) -> Result<()> {
+        let (r, g, b) = (0x00, 0x78, 0xD4);
+
+        // Icon badge on left
+        let circle = self.d(40.0).round();
+        let dot = rect(self.d(20.0).round(), self.d(18.0).round(), circle, circle);
+        self.ink.rrect(dot, self.d(12.0), rgba(r, g, b, 1.0))?;
+        let icon_st = TextStyle::new(Face::Icons, Weight::Regular, self.d(20.0), white(1.0)).centered();
+        self.ink.text(&glyph(Icon::Download).to_string(), dot, &icon_st)?;
+
+        // Filename and status
+        let text_x = self.d(72.0);
+        let text_w = self.w - text_x - self.d(20.0);
+        let title = TextStyle::new(Face::Text, Weight::SemiBold, self.d(15.0), white(1.0)).top().ellipsis();
+        self.ink.text(&c.name, rect(text_x, self.d(17.0), text_w, self.d(22.0)), &title)?;
+
+        let status_st = TextStyle::new(Face::Text, Weight::Regular, self.d(12.5), white(0.7)).top().ellipsis().tabular();
+        self.ink.text(&c.status, rect(text_x, self.d(40.0), text_w, self.d(18.0)), &status_st)?;
+
+        // Progress bar
+        let bar_y = self.d(72.0);
+        let bar_h = self.d(6.0).round();
+        let bar_x = self.d(20.0);
+        let bar_w = self.w - self.d(40.0);
+        let track = rect(bar_x, bar_y, bar_w, bar_h);
+        self.ink.rrect(track, bar_h / 2.0, white(0.18))?;
+
+        let progress_frac = if c.done {
+            1.0
+        } else {
+            c.progress.unwrap_or(0.0)
+        };
+        let fill_w = if progress_frac > 0.0001 {
+            (bar_w * progress_frac.clamp(0.0, 1.0)).max(bar_h)
+        } else {
+            0.0
+        };
+        let fill_color = if c.done { rgba(0x10, 0x7C, 0x10, 1.0) } else { rgba(r, g, b, 1.0) };
+        if fill_w > 0.0 {
+            self.ink.rrect(rect(bar_x, bar_y, fill_w, bar_h), bar_h / 2.0, fill_color)?;
+        }
+
+        // Size and speed under progress bar
+        let detail_y = self.d(85.0);
+        let size_st = TextStyle::new(Face::Text, Weight::Regular, self.d(12.0), white(0.75)).top().tabular();
+        self.ink.text(&c.size_text, rect(bar_x, detail_y, self.d(180.0), self.d(18.0)), &size_st)?;
+
+        if !c.speed.is_empty() {
+            let speed_st = TextStyle::new(Face::Text, Weight::SemiBold, self.d(12.0), white(0.9)).trailing().top().tabular();
+            self.ink.text(&c.speed, rect(self.w - self.d(20.0) - self.d(170.0), detail_y, self.d(170.0), self.d(18.0)), &speed_st)?;
+        }
+
+        // Action buttons
+        let btn_y = self.d(114.0);
+        let btn_h = self.d(34.0);
+        let folder_w = self.d(96.0);
+        let open_w = self.d(96.0);
+        let folder_rect = rect(self.w - self.d(20.0) - folder_w, btn_y, folder_w, btn_h);
+        let open_rect = rect(folder_rect.left - self.d(10.0) - open_w, btn_y, open_w, btn_h);
+
+        let open_label = if c.done { "Open file" } else { "Open" };
+        self.chip(open_rect, open_label, white(0.14), CardAction::DownloadOpen)?;
+        let folder_fill = if c.done { rgba(0x10, 0x7C, 0x10, 1.0) } else { rgba(r, g, b, 1.0) };
+        self.chip(folder_rect, "Folder", folder_fill, CardAction::DownloadFolder)?;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_card_size_and_accent() {
+        let card = DownloadCard {
+            name: "test.zip".into(),
+            path: std::path::PathBuf::from(r"C:\Downloads\test.zip"),
+            speed: "3.5 MB/s".into(),
+            status: "Downloading · 3.5 MB/s".into(),
+            size_text: "45 MB / 100 MB".into(),
+            progress: Some(0.45),
+            done: false,
+            app_name: "Google Chrome".into(),
+        };
+        assert_eq!(card_size_dip(&CardContent::Download(card.clone())), (370.0, 164.0));
+        assert_eq!(card_accent(&CardContent::Download(card)), (0x00, 0x78, 0xD4));
+    }
 
     fn brief(weather: bool, rain: bool, matches: usize, music: bool, screen: bool) -> BriefCard {
         let team = || CardTeam { name: "FB".into(), code: "FB".into(), palette: TeamPalette { tint: [0x0B, 0x1E, 0x5B], flood: [0x0B, 0x1E, 0x5B], headline: [255, 255, 255] }, crest: None };
@@ -2794,7 +3594,7 @@ mod tests {
 
     fn shelf_card(n: usize) -> ShelfCard {
         let tiles = (0..n).map(|i| ShelfTile { name: format!("f{i}.txt"), thumb: None, kind: FileKind::Document, selected: false }).collect();
-        ShelfCard { tiles, hover: None, chips: vec![], said: None, pinned: false }
+        ShelfCard { tiles, hover: None, chips: vec![], said: None, pinned: false, scroll: 0.0 }
     }
 
     #[test]
@@ -2803,15 +3603,12 @@ mod tests {
         let tiles = shelf_layout(5, &s).tiles;
         let chips = shelf_chips(&[40.0, 80.5], 2, &s);
         assert_eq!(chips[0].left, tiles[0].left, "under the first column");
-        assert_eq!(chips[0].top - tiles[4].bottom, 15.0, "12 DIP under the last row");
+        assert!((chips[0].top - tiles[4].bottom - 30.0).abs() <= 1.0, "inside the footer band under the second row");
         assert_eq!(chips[0].bottom - chips[0].top, 35.0, "28 DIP tall");
         assert_eq!((chips[0].right - chips[0].left, chips[1].right - chips[1].left), (95.0, 136.0), "the label plus 44 DIP of glyph and padding");
         assert_eq!(chips[1].left - chips[0].right, 10.0, "8 DIP apart");
-        let h = card_size_dip(&CardContent::Shelf(shelf_card(5))).1 * 1.25;
-        assert!((h - chips[0].bottom - 20.0).abs() <= 1.0, "16 DIP below");
-        // The widest three (one picture, in Turkish) fit inside the tiles' width.
-        let three = shelf_chips(&[38.0 * 1.25, 78.0 * 1.25, 37.0 * 1.25], 1, &s);
-        assert!(three[2].right <= tiles[3].right, "{three:?}");
+        let h = 312.0 * 1.25;
+        assert!((h - chips[0].bottom - 10.0).abs() <= 1.0, "centred inside the 44 DIP footer band");
     }
 
     #[test]
@@ -2819,18 +3616,18 @@ mod tests {
         let s = Scale(1.25);
         let l = shelf_layout(5, &s);
         assert_eq!(l.tiles.len(), 5);
-        assert!((l.tiles[4].top - l.tiles[0].top - 85.0 * 1.25).abs() <= 1.0, "row 2 starts one pitch lower");
-        assert!((l.tiles[4].left - l.tiles[0].left).abs() <= 1.0, "row 2 starts in column 1");
-        assert!((l.tiles[1].left - l.tiles[0].left - 85.0 * 1.25).abs() <= 1.0, "75 DIP tiles 10 DIP apart");
-        assert!(((l.tiles[0].right - l.tiles[0].left) - 75.0 * 1.25).abs() <= 1.0);
+        assert!((l.tiles[3].top - l.tiles[0].top - 106.0 * 1.25).abs() <= 1.0, "row 2 starts one pitch lower");
+        assert!((l.tiles[3].left - l.tiles[0].left).abs() <= 1.0, "row 2 starts in column 1");
+        assert!((l.tiles[1].left - l.tiles[0].left - 113.0 * 1.25).abs() <= 1.0, "104 DIP tiles 9 DIP apart");
+        assert!(((l.tiles[0].right - l.tiles[0].left) - 104.0 * 1.25).abs() <= 1.0);
     }
 
     #[test]
     fn shelf_tiles_line_up_with_the_header() {
         let s = Scale(1.25);
-        let l = shelf_layout(4, &s);
+        let l = shelf_layout(3, &s);
         assert!((l.tiles[0].left - 20.0 * 1.25).abs() <= 1.0, "first tile under \"Raf\"'s left edge");
-        assert!((l.tiles[3].right - 350.0 * 1.25).abs() <= 1.0, "last tile under the chip's right edge");
+        assert!((l.tiles[2].right - 350.0 * 1.25).abs() <= 1.0, "last tile under the chip's right edge");
         assert!((l.clear.right - 350.0 * 1.25).abs() <= 1.0);
     }
 
@@ -2877,7 +3674,7 @@ mod tests {
         assert_eq!(h(AppCard { text: "a".repeat(120), ..app_card() }), bare + 58.0, "three lines at most");
         assert_eq!(h(AppCard { progress: Some(40), ..app_card() }), bare + 14.0);
         assert_eq!(card_size_dip(&CardContent::App(Box::new(AppCard { prompt: true, ..app_card() }))), (370.0, 236.0), "as Claude's ask");
-        assert_eq!(card_radius_dip(&CardContent::App(Box::new(app_card()))), 36.0);
+        assert_eq!(card_radius_dip(&CardContent::App(Box::new(app_card()))), 8.0);
         assert_eq!(card_accent(&CardContent::App(Box::new(app_card()))), (0x1D, 0xB9, 0x54));
     }
 
@@ -2902,8 +3699,9 @@ mod tests {
 
     #[test]
     fn shelf_card_size() {
-        assert_eq!(card_size_dip(&CardContent::Shelf(shelf_card(5))), (370.0, 270.0), "two rows and the footer");
-        assert_eq!(card_radius_dip(&CardContent::Shelf(shelf_card(1))), 36.0);
+        assert_eq!(card_size_dip(&CardContent::Shelf(shelf_card(0))), (340.0, 204.0), "empty matches idle media");
+        assert_eq!(card_size_dip(&CardContent::Shelf(shelf_card(5))), (340.0, 310.0), "two rows and the footer band");
+        assert_eq!(card_radius_dip(&CardContent::Shelf(shelf_card(1))), 8.0);
     }
 
     fn claude(ask: bool, focus: bool) -> ClaudeCard {
@@ -2925,7 +3723,7 @@ mod tests {
         assert_eq!(card_size_dip(&CardContent::Claude(Box::new(claude(false, false)))), (370.0, 192.0));
         assert_eq!(card_size_dip(&CardContent::Claude(Box::new(claude(true, false)))), (370.0, 236.0), "İzin ver / Reddet");
         assert_eq!(card_size_dip(&CardContent::Claude(Box::new(claude(false, true)))), (370.0, 236.0), "Pencereye git");
-        assert_eq!(card_radius_dip(&CardContent::Claude(Box::new(claude(false, false)))), 36.0);
+        assert_eq!(card_radius_dip(&CardContent::Claude(Box::new(claude(false, false)))), 8.0);
     }
 
     #[test]
@@ -2948,10 +3746,10 @@ mod tests {
     fn output_sublines() {
         use crate::platform::audio::OutputBus;
         let buds = BudsSnapshot { left: 74, right: 69, case: None, noise: None, worn: Default::default() };
-        assert_eq!(output_subline(OutputBus::Bluetooth, Some(&buds)), "Bluetooth · Sol %74 · Sağ %69");
+        assert_eq!(output_subline(OutputBus::Bluetooth, Some(&buds)), "Bluetooth · Left 74% · Right 69%");
         assert_eq!(output_subline(OutputBus::Bluetooth, None), "Bluetooth");
-        assert_eq!(output_subline(OutputBus::Virtual, None), "Sanal");
-        assert_eq!(output_subline(OutputBus::Internal, None), "Dahili");
+        assert_eq!(output_subline(OutputBus::Virtual, None), "Virtual");
+        assert_eq!(output_subline(OutputBus::Internal, None), "Built-in");
         assert_eq!(output_subline(OutputBus::Usb, None), "USB");
     }
 

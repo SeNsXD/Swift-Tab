@@ -10,7 +10,7 @@ use windows::Win32::System::Registry::{
 
 const RUN: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 /// The Run value's name.
-pub const NAME: &str = "NowBar";
+pub const NAME: &str = "SwiftTab";
 
 pub fn autostart_enabled() -> bool {
     run_value(NAME).is_some()
@@ -57,6 +57,8 @@ pub fn set_autostart(on: bool) -> windows::core::Result<()> {
 pub fn set_autostart_for(name: &str, exe: &Path, on: bool) -> windows::core::Result<()> {
     let name = HSTRING::from(name);
     unsafe {
+        // An older build named the value "NowBar": drop it, so Startup apps never lists that name.
+        let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN, &HSTRING::from("NowBar"));
         if !on {
             return match RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN, &name).ok() {
                 Err(e) if e.code() == windows::Win32::Foundation::ERROR_FILE_NOT_FOUND.to_hresult() => Ok(()),
@@ -79,10 +81,10 @@ mod tests {
 
     #[test]
     fn run_entry_points_at_this_exe_whatever_the_quotes_and_case() {
-        let exe = Path::new(r"C:\Projects\nowbar\bin\nowbar.exe");
-        assert!(points_at(r#""C:\Projects\nowbar\bin\nowbar.exe""#, exe));
-        assert!(points_at(r"c:\projects\NOWBAR\bin\nowbar.exe", exe));
-        assert!(!points_at(r#""C:\Users\k\AppData\Local\Temp\nbt-app\release\nowbar.exe""#, exe));
-        assert_eq!(run_command(exe), r#""C:\Projects\nowbar\bin\nowbar.exe""#);
+        let exe = Path::new(r"C:\Projects\nowbar\bin\swifttab.exe");
+        assert!(points_at(r#""C:\Projects\nowbar\bin\swifttab.exe""#, exe));
+        assert!(points_at(r"c:\projects\NOWBAR\bin\swifttab.exe", exe));
+        assert!(!points_at(r#""C:\Users\k\AppData\Local\Temp\nbt-app\release\swifttab.exe""#, exe));
+        assert_eq!(run_command(exe), r#""C:\Projects\nowbar\bin\swifttab.exe""#);
     }
 }

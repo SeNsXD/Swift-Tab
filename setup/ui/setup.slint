@@ -1,4 +1,4 @@
-// The setup's one window: a stage on the left where real Now Bar pills turn in a taskbar, the
+// The setup's one window: a stage on the left where real Swift Tab pills turn in a taskbar, the
 // app and its choices on the right. Same family as the settings window (Raycast Nocturne, Inter,
 // Windows' own frame without its title bar).
 
@@ -57,8 +57,8 @@ component Primary inherits Rectangle {
     in property <string> label;
     in property <bool> danger;
     callback clicked;
-    height: 40px;
-    border-radius: 10px;
+    height: 36px;
+    border-radius: 4px;
     background: (root.danger ? Theme.danger : Theme.acc).darker(t.pressed ? 0.12 : t.has-hover ? 0.05 : 0);
     Text {
         text: root.label;
@@ -75,7 +75,7 @@ component Primary inherits Rectangle {
 }
 
 /// The left panel: a strip of taskbar at the bottom and the pill in it, turning through what the
-/// Now Bar shows (each pill drawn by the Now Bar's own painter; the body is drawn here so its
+/// Swift Tab shows (each pill drawn by the Swift Tab's own painter; the body is drawn here so its
 /// width and colours can glide from one to the next).
 component Stage inherits Rectangle {
     in property <[image]> pills;
@@ -86,17 +86,18 @@ component Stage inherits Rectangle {
     in property <[color]> glows;
     in property <[string]> names;
     in property <[string]> lines;
-    in property <length> pill-h: 32px;
+    in property <length> pill-h: 44px;
     in property <bool> moving: true;
+    callback open-url(string);
     in-out property <int> index: 0;
     property <int> count: pills.length;
     property <color> accent: count > 0 ? accents[index] : transparent;
     property <color> top: count > 0 ? tops[index] : transparent;
     property <color> bottom: count > 0 ? bottoms[index] : transparent;
     property <color> glow: count > 0 ? glows[index] : Theme.acc;
-    animate accent, top, bottom { duration: 420ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1); }
+    animate accent, top, bottom { duration: 200ms; easing: cubic-bezier(0, 0, 0, 1); }
     animate glow { duration: 900ms; easing: ease-in-out; }
-    border-radius: 14px;
+    border-radius: 8px;
     border-width: 1px;
     border-color: Theme.pv-edge;
     clip: true;
@@ -125,7 +126,7 @@ component Stage inherits Rectangle {
     // What the pill is, and where in the turn it is.
     for name[i] in root.names: Rectangle {
         x: 24px;
-        y: parent.height * 0.34;
+        y: 65px;
         width: parent.width - 48px;
         height: 64px;
         opacity: i == root.index ? 1 : 0;
@@ -155,7 +156,7 @@ component Stage inherits Rectangle {
     }
     HorizontalLayout {
         x: (parent.width - self.preferred-width) / 2;
-        y: parent.height * 0.34 + 80px;
+        y: 155px;
         height: 6px;
         spacing: 6px;
         for _[i] in root.count: Rectangle {
@@ -166,39 +167,53 @@ component Stage inherits Rectangle {
             animate width, background { duration: 320ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1); }
         }
     }
-    strip := Rectangle {
-        y: parent.height - self.height;
-        height: 52px;
-        background: #1B1B1BF2;
-        Rectangle {
-            height: 1px;
-            y: 0;
-            background: #FFFFFF12;
+
+    // Permanent credit section in the bottom area:
+    // MADE BY
+    // (LOGO)
+    // (LINK)
+    Rectangle {
+        x: 18px;
+        y: parent.height - 210px;
+        width: parent.width - 36px;
+        height: 175px;
+        border-radius: 14px;
+        background: #FFFFFF0A;
+        border-width: 1px;
+        border-color: #FFFFFF12;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 14px;
+
+            Text {
+                text: "MADE BY";
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1.2px;
+                color: Theme.text3;
+                horizontal-alignment: center;
+            }
+
+            Image {
+                source: @image-url("../../assets/xdnotlabs.png");
+                height: 32px;
+                image-fit: contain;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "github.com/SeNsXD";
+                font-size: 13px;
+                font-weight: 600;
+                color: gh_touch.has-hover ? Theme.acc.brighter(0.25) : Theme.acc;
+                horizontal-alignment: center;
+            }
         }
-        pill := Rectangle {
-            visible: root.count > 0;
-            width: root.count > 0 ? root.widths[root.index] : 0;
-            animate width { duration: 420ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1); }
-            height: root.pill-h;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            border-radius: self.height / 2;
-            clip: true;
-            background: @linear-gradient(180deg, root.top 0%, root.bottom 100%);
-            Rectangle {
-                x: 0;
-                width: parent.width / 2;
-                background: @linear-gradient(90deg, root.accent.with-alpha(0.38) 0%, root.accent.with-alpha(0) 100%);
-            }
-            for img[i] in root.pills: Image {
-                source: img;
-                width: root.widths[i];
-                height: root.pill-h;
-                x: (parent.width - self.width) / 2;
-                image-fit: fill;
-                opacity: i == root.index ? 1 : 0;
-                animate opacity { duration: 260ms; easing: ease-in-out; }
-            }
+
+        gh_touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.open-url("https://github.com/SeNsXD"); }
         }
     }
 }
@@ -208,16 +223,16 @@ export component SetupWindow inherits Window {
     in property <string> mode: "install";
     /// "ready", "working", "done" or "error".
     in property <string> phase: "ready";
-    in property <string> heading: "Syro";
-    in property <string> subtitle: @tr("Görev çubuğunda canlı etkinlikler");
+    in property <string> heading: "Swift Tab";
+    in property <string> subtitle: "Live activities in the taskbar";
     in property <string> version;
     in property <string> location;
     in property <bool> location-visible: true;
-    in property <bool> claude-available: true;
+    in property <bool> claude-available: false;
     in property <string> step;
     in property <float> progress;
     in property <string> message;
-    in property <string> primary: @tr("Kur");
+    in property <string> primary: "Install";
     in-out property <bool> autostart: true;
     in-out property <bool> claude: true;
     /// Other apps' notifications (the API): off unless the user turns it on.
@@ -233,7 +248,7 @@ export component SetupWindow inherits Window {
     in property <[color]> pill-glows;
     in property <[string]> pill-names;
     in property <[string]> pill-lines;
-    in property <length> pill-height: 32px;
+    in property <length> pill-height: 44px;
     /// False for still screenshots: the stage holds its first pill.
     in property <bool> moving: true;
     in-out property <int> stage-index;
@@ -243,18 +258,19 @@ export component SetupWindow inherits Window {
     callback change-location();
     callback close-clicked();
     callback drag();
+    callback open-url(string);
 
     property <bool> busy: phase == "working";
-    property <length> col-x: 368px;
+    property <length> col-x: root.mode == "uninstall" ? 28px : 368px;
     property <length> col-w: self.width - col-x - 28px;
 
-    title: mode == "uninstall" ? @tr("Syro'yu kaldır") : @tr("Syro kurulumu");
+    title: mode == "uninstall" ? "Uninstall Swift Tab" : "Swift Tab Setup";
     icon: @image-url("../../assets/nowbar-256.png");
-    width: 700px;
-    height: 496px;
+    width: root.mode == "uninstall" ? 380px : 700px;
+    height: root.mode == "uninstall" ? 380px : 496px;
     no-frame: !root.framed;
     background: Theme.ground;
-    default-font-family: "Inter";
+    default-font-family: Theme.text-face;
     default-font-size: 13px;
 
     // Anywhere empty moves the window.
@@ -266,7 +282,7 @@ export component SetupWindow inherits Window {
         }
     }
 
-    Stage {
+    if root.mode != "uninstall": Stage {
         x: 12px;
         y: 12px;
         width: 328px;
@@ -282,6 +298,7 @@ export component SetupWindow inherits Window {
         pill-h: root.pill-height;
         moving: root.moving;
         index <=> root.stage-index;
+        open-url(url) => { root.open-url(url); }
     }
 
     close-button := Rectangle {
@@ -303,7 +320,7 @@ export component SetupWindow inherits Window {
         }
     }
 
-    // The app: its pill on a tile.
+    // The app: its no-background ribbon logo on a tile.
     Rectangle {
         x: root.col-x;
         y: 36px;
@@ -312,12 +329,12 @@ export component SetupWindow inherits Window {
         border-radius: 14px;
         border-width: 1px;
         border-color: #FFFFFF1A;
-        background: @linear-gradient(160deg, #3A3836 0%, #1E1D1C 100%);
-        Rectangle {
-            width: 36px;
-            height: 15px;
-            border-radius: 7.5px;
-            background: #FFFFFF;
+        background: @linear-gradient(160deg, #161C28 0%, #0D111A 100%);
+        Image {
+            source: @image-url("../../assets/nowbar-256.png");
+            width: 34px;
+            height: 34px;
+            image-fit: contain;
         }
     }
     HorizontalLayout {
@@ -362,24 +379,23 @@ export component SetupWindow inherits Window {
     // The choices (locked while it works), or what happened.
     if root.phase == "ready" || root.phase == "working": VerticalLayout {
         x: root.col-x;
-        y: root.mode == "uninstall" ? 196px : 168px;
+        y: root.mode == "uninstall" ? 180px : 168px;
         width: root.col-w;
         opacity: root.busy ? 0.45 : 1;
-        if root.mode == "install": Choice { label: @tr("Windows'la başlat"); enabled: !root.busy; checked <=> root.autostart; }
-        if root.mode == "install" && root.claude-available: Choice { label: @tr("Claude Code'a bağlan"); enabled: !root.busy; checked <=> root.claude; }
+        if root.mode == "install": Choice { label: "Start with Windows"; enabled: !root.busy; checked <=> root.autostart; }
         if root.mode == "install": Choice {
-            label: @tr("Uygulama bildirimlerini aç");
-            hint: @tr("İzin verdiğin uygulamalar ve gösterdikleri senin sorumluluğunda");
+            label: "Turn on app notifications";
+            hint: "The apps you allow, and what they show, are your responsibility";
             enabled: !root.busy;
             checked <=> root.api;
         }
-        if root.mode == "install": Choice { label: @tr("Masaüstü kısayolu"); enabled: !root.busy; checked <=> root.desktop; }
-        if root.mode == "install": Choice { label: @tr("Bitince ayarları aç"); enabled: !root.busy; checked <=> root.open-settings; }
-        if root.mode == "uninstall": Choice { label: @tr("Ayarlarımı da sil"); enabled: !root.busy; checked <=> root.wipe; }
+        if root.mode == "install": Choice { label: "Desktop shortcut"; enabled: !root.busy; checked <=> root.desktop; }
+        if root.mode == "install": Choice { label: "Open settings when done"; enabled: !root.busy; checked <=> root.open-settings; }
+        if root.mode == "uninstall": Choice { label: "Delete my settings too"; enabled: !root.busy; checked <=> root.wipe; }
     }
     if root.phase == "done" || root.phase == "error": Rectangle {
         x: root.col-x;
-        y: root.mode == "uninstall" ? 200px : 176px;
+        y: root.mode == "uninstall" ? 190px : 176px;
         width: root.col-w;
         height: 120px;
         Rectangle {
@@ -401,7 +417,7 @@ export component SetupWindow inherits Window {
             width: parent.width - 40px;
             height: 28px;
             vertical-alignment: center;
-            text: root.phase == "done" ? (root.mode == "uninstall" ? @tr("Syro kaldırıldı") : @tr("Syro kuruldu")) : (root.mode == "uninstall" ? @tr("Kaldırma tamamlanamadı") : @tr("Kurulum tamamlanamadı"));
+            text: root.phase == "done" ? (root.mode == "uninstall" ? "Swift Tab has been uninstalled" : "Swift Tab is installed") : (root.mode == "uninstall" ? "Uninstall could not be completed" : "Installation could not be completed");
             font-size: 15px;
             font-weight: 600;
             color: Theme.strong;
@@ -441,7 +457,7 @@ export component SetupWindow inherits Window {
             vertical-alignment: center;
         }
         Text {
-            text: @tr("Değiştir");
+            text: "Change";
             font-size: 12.5px;
             font-weight: 500;
             color: change.has-hover && !root.busy ? Theme.acc.brighter(0.15) : Theme.acc;

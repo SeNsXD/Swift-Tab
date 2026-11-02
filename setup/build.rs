@@ -1,5 +1,5 @@
 // The setup's window (ui/setup.slint), its manifest and icon (the app's), and its payload: with
-// NOWBAR_SETUP_PAYLOAD set (a folder holding release nowbar.exe and nowbar-settings.exe) both are
+// NOWBAR_SETUP_PAYLOAD set (a folder holding release swifttab.exe and swifttab-settings.exe) both are
 // packed into OUT_DIR/payload.bin; without it the payload is empty (the window works, "Kur" says
 // the setup carries no files). The exe embeds it with include_bytes!: nothing is appended to the
 // file, so signing it later stays possible.
@@ -29,7 +29,7 @@ fn main() {
     let packed = match std::env::var_os("NOWBAR_SETUP_PAYLOAD") {
         Some(dir) => {
             let dir = PathBuf::from(dir);
-            let names = ["nowbar.exe", "nowbar-settings.exe"];
+            let names = ["swifttab.exe", "swifttab-settings.exe"];
             let files: Vec<(&str, Vec<u8>)> = names
                 .iter()
                 .map(|n| {
@@ -52,21 +52,59 @@ fn main() {
     std::fs::copy(app.join("nowbar.manifest"), &manifest).expect("nowbar.manifest");
     println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}", manifest.display());
-    embed_icon(&app.join("assets").join("nowbar.ico"), &out);
+    embed_icon(&app.join("assets").join("nowbar.ico"), &app.join("assets").join("nowbar-nobg.ico"), &out);
 }
 
 /// As the app's build.rs: rc.exe from the Windows SDK, or the default icon and a warning.
-fn embed_icon(source: &Path, out: &Path) {
+fn embed_icon(source: &Path, nobg_source: &Path, out: &Path) {
     println!("cargo:rerun-if-changed={}", source.display());
+    println!("cargo:rerun-if-changed={}", nobg_source.display());
     let Some(rc) = find_rc() else {
         println!("cargo:warning=rc.exe (Windows SDK) not found: the setup keeps the default icon");
         return;
     };
     let ico = out.join("nowbar.ico");
     std::fs::copy(source, &ico).expect("nowbar.ico");
+    let nobg_ico = out.join("nowbar-nobg.ico");
+    let _ = std::fs::copy(nobg_source, &nobg_ico);
     let script = out.join("setup.rc");
     let path = ico.display().to_string().replace('\\', "\\\\");
-    std::fs::write(&script, format!("1 ICON \"{path}\"\n")).expect("setup.rc");
+    let nobg_path = nobg_ico.display().to_string().replace('\\', "\\\\");
+    let rc_body = if nobg_ico.exists() {
+        format!(
+            "1 ICON \"{path}\"\n2 ICON \"{nobg_path}\"\n\
+1 VERSIONINFO\n\
+FILEVERSION 1,0,0,0\n\
+PRODUCTVERSION 1,0,0,0\n\
+FILEFLAGSMASK 0x3fL\n\
+FILEFLAGS 0x0L\n\
+FILEOS 0x40004L\n\
+FILETYPE 0x1L\n\
+FILESUBTYPE 0x0L\n\
+BEGIN\n\
+    BLOCK \"StringFileInfo\"\n\
+    BEGIN\n\
+        BLOCK \"040904b0\"\n\
+        BEGIN\n\
+            VALUE \"CompanyName\", \"Swift Tab\"\n\
+            VALUE \"FileDescription\", \"Swift Tab\"\n\
+            VALUE \"FileVersion\", \"1.0.0.0\"\n\
+            VALUE \"InternalName\", \"Swift Tab\"\n\
+            VALUE \"OriginalFilename\", \"Swift Tab Setup.exe\"\n\
+            VALUE \"ProductName\", \"Swift Tab\"\n\
+            VALUE \"ProductVersion\", \"1.0.0.0\"\n\
+        END\n\
+    END\n\
+    BLOCK \"VarFileInfo\"\n\
+    BEGIN\n\
+        VALUE \"Translation\", 0x409, 1200\n\
+    END\n\
+END\n"
+        )
+    } else {
+        format!("1 ICON \"{path}\"\n")
+    };
+    std::fs::write(&script, rc_body).expect("setup.rc");
     let res = out.join("setup.res");
     let built = Command::new(rc).arg("/nologo").arg("/fo").arg(&res).arg(&script).status().is_ok_and(|s| s.success());
     if built {

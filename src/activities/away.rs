@@ -19,7 +19,7 @@ pub const BRIEF_ROW_S: i64 = 15 * 60;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AwayKind {
     Claude,
-    /// Something `nowbar.exe push` sent finished.
+    /// Something `swifttab.exe push` sent finished.
     Live,
     Match,
     Rain { snow: bool },
@@ -227,29 +227,19 @@ mod tests {
 
     #[test]
     fn words() {
-        assert_eq!((count_text(1), count_text(4)), ("1 şey".to_string(), "4 şey".to_string()));
+        assert_eq!((count_text(1), count_text(4)), ("1 thing".to_string(), "4 things".to_string()));
         // 14:02 to 17:14 local.
-        assert_eq!(span_text(14 * 3600 + 120, 17 * 3600 + 14 * 60), "14:02 – 17:14 · 3 sa 12 dk");
+        assert_eq!(span_text(14 * 3600 + 120, 17 * 3600 + 14 * 60), "14:02 – 17:14 · 3 h 12 min");
         assert_eq!(hhmm(86_400 + 9 * 3600 + 5 * 60), "09:05");
-        assert_eq!(claude_done("now-bar"), "Claude bitti · now-bar");
-        assert_eq!(live_done("cargo build"), "cargo build bitti");
+        assert_eq!(claude_done("swifttab"), "Claude finished · swifttab");
+        assert_eq!(live_done("cargo build"), "cargo build finished");
         assert_eq!(goal_text("GS", "FB", (1, 0), "67′"), "GS 1–0 FB · 67′");
         assert_eq!(goal_text("GS", "FB", (1, 0), ""), "GS 1–0 FB");
-        assert_eq!(full_time_text("GS", "FB", (2, 1)), "GS 2–1 FB · Bitti");
-        assert_eq!((rain_text(false), rain_text(true)), ("Yağmur başladı", "Kar başladı"));
-        assert_eq!(download_done("Rocket League"), "Rocket League indirmesi bitti");
-        assert_eq!(battery_text(15), "Pil %15 kaldı");
-        assert_eq!(app_text("Discord", "Yeni mesaj"), "Discord · Yeni mesaj");
+        assert_eq!(full_time_text("GS", "FB", (2, 1)), "GS 2–1 FB · Final");
+        assert_eq!((rain_text(false), rain_text(true)), ("Rain started", "Snow started"));
+        assert_eq!(download_done("Rocket League"), "Rocket League finished downloading");
+        assert_eq!(battery_text(15), "Battery at 15%");
+        assert_eq!(app_text("Discord", "New message"), "Discord · New message");
         assert_eq!(app_text("Discord", ""), "Discord");
-    }
-
-    #[test]
-    fn words_in_english() {
-        crate::i18n::in_language(crate::i18n::Language::English, || {
-            assert_eq!((count_text(1), count_text(4)), ("1 thing".to_string(), "4 things".to_string()));
-            assert_eq!(claude_done("now-bar"), "Claude finished · now-bar");
-            assert_eq!(battery_text(15), "Battery at 15%");
-            assert_eq!(download_done("Rocket League"), "Rocket League finished downloading");
-        });
     }
 }

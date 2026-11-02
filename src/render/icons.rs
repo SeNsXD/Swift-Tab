@@ -50,10 +50,17 @@ pub enum Icon {
     Copy,
     Shrink,
     Link,
+    /// Windows 11 Fluent Pin icon (`\u{E718}`).
+    Pin,
+    /// Windows 11 Fluent Weather icons (`\u{E753}`, `\u{E9C4}`, `\u{E706}`, `\u{E9C8}`).
+    Cloud,
+    Rain,
+    Sun,
+    Snow,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 43] = [
+    pub const ALL: [Icon; 48] = [
         Icon::Play,
         Icon::Pause,
         Icon::Prev,
@@ -97,11 +104,16 @@ impl Icon {
         Icon::Copy,
         Icon::Shrink,
         Icon::Link,
+        Icon::Pin,
+        Icon::Cloud,
+        Icon::Rain,
+        Icon::Sun,
+        Icon::Snow,
     ];
 }
 
 /// Segoe Fluent Icons code point for an icon (checked visually with the `glyphsheet` tool).
-/// Transport controls use the Solid variants, which match One UI's filled glyphs.
+/// Transport controls use the Solid variants, which match Fluent's filled glyphs.
 pub fn glyph(i: Icon) -> char {
     match i {
         Icon::Play => '\u{F5B0}',
@@ -148,6 +160,74 @@ pub fn glyph(i: Icon) -> char {
         // BackToWindow: two arrows coming in.
         Icon::Shrink => '\u{E73F}',
         Icon::Link => '\u{E71B}',
+        Icon::Pin => '\u{E718}',
+        Icon::Cloud => '\u{E753}',
+        Icon::Rain => '\u{E708}',
+        Icon::Sun => '\u{E706}',
+        Icon::Snow => '\u{E945}',
+    }
+}
+
+pub const PIN_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M12 17v5M8 3h8l-1 7 3 4H6l3-4z"/></svg>"##;
+
+pub const SPOTIFY_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#1ED760" d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.5 17.3c-.22.36-.68.47-1.05.25-2.87-1.75-6.49-2.15-10.75-1.18-.41.09-.82-.16-.91-.57-.09-.41.16-.82.57-.91 4.67-1.06 8.67-.61 11.89 1.36.37.22.48.69.25 1.05zm1.47-3.26c-.28.45-.87.6-1.32.32-3.29-2.02-8.3-2.61-12.19-1.42-.51.15-1.05-.14-1.2-.65-.15-.51.14-1.05.65-1.2 4.45-1.35 9.97-.7 13.74 1.62.45.28.6.87.32 1.33zm.13-3.4c-3.95-2.35-10.45-2.57-14.22-1.42-.6.18-1.24-.16-1.43-.77-.18-.6.16-1.24.77-1.43 4.33-1.31 11.51-1.06 16.05 1.63.55.32.72 1.03.4 1.58-.32.55-1.03.73-1.57.41z"/></svg>"##;
+
+pub const YOUTUBE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z"/><polygon points="9.545,15.568 15.818,12 9.545,8.432" fill="#FFFFFF"/></svg>"##;
+
+pub const YTMUSIC_SVG: &str = YOUTUBE_SVG;
+
+pub const WEATHER_CLOUD_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 14h8a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 9.2 8.5 3.5 3.5 0 0 0 10 14z" fill="#90A4AE"/><path d="M6.5 19h11a4 4 0 0 0 .6-7.95A6 6 0 0 0 5.7 10.6 4.2 4.2 0 0 0 6.5 19z" fill="#CFD8DC"/><path d="M6 18h10.5a3.8 3.8 0 0 0 .5-7.55A5.7 5.7 0 0 0 5.2 10 4 4 0 0 0 6 18z" fill="#ECEFF1"/></svg>"##;
+
+pub const WEATHER_PARTLY_SUNNY_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="15.5" cy="8.5" r="4.2" fill="#FFA000"/><circle cx="15.5" cy="8.5" r="3" fill="#FFC107"/><path d="M15.5 2.5v1.8M21.5 8.5h-1.8M19.7 4.3l-1.3 1.3M19.7 12.7l-1.3-1.3M11.3 4.3l1.3 1.3" stroke="#FFA000" stroke-width="1.8" stroke-linecap="round"/><path d="M7 19.5h10.5a3.8 3.8 0 0 0 .6-7.55A5.7 5.7 0 0 0 6.2 11.5 4.2 4.2 0 0 0 7 19.5z" fill="#B0BEC5"/><path d="M6.5 18.5h10a3.6 3.6 0 0 0 .5-7.16A5.4 5.4 0 0 0 5.7 11 4 4 0 0 0 6.5 18.5z" fill="#ECEFF1"/></svg>"##;
+
+pub const WEATHER_SUN_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#FFA000"/><circle cx="12" cy="12" r="3.8" fill="#FFC107"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6" stroke="#FFA000" stroke-width="2" stroke-linecap="round"/></svg>"##;
+
+pub const WEATHER_RAIN_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 14h11a3.8 3.8 0 0 0 .6-7.55A5.7 5.7 0 0 0 5.7 8 4 4 0 0 0 6.5 14z" fill="#78909C"/><path d="M6 13h10.5a3.6 3.6 0 0 0 .5-7.16A5.4 5.4 0 0 0 5.2 7.5 3.8 3.8 0 0 0 6 13z" fill="#B0BEC5"/><path d="M8.5 16.5l-1.5 4M12.5 16.5l-1.5 4M16.5 16.5l-1.5 4" stroke="#29B6F6" stroke-width="2" stroke-linecap="round"/></svg>"##;
+
+pub const WEATHER_SUN_RAIN_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="15.5" cy="7.5" r="3.5" fill="#FFA000"/><path d="M15.5 2.5v1.5M20.5 7.5h-1.5M19 4l-1.1 1.1" stroke="#FFA000" stroke-width="1.6" stroke-linecap="round"/><path d="M6 14h10a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 5.2 8.5 3.5 3.5 0 0 0 6 14z" fill="#90A4AE"/><path d="M5.5 13.2h9.5a3.3 3.3 0 0 0 .5-6.56A4.8 4.8 0 0 0 4.8 8 3.3 3.3 0 0 0 5.5 13.2z" fill="#CFD8DC"/><path d="M8 16.5l-1.2 3.5M12.5 16.5l-1.2 3.5" stroke="#29B6F6" stroke-width="1.8" stroke-linecap="round"/></svg>"##;
+
+pub const WEATHER_MOON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.5 8 8 0 0 1-9-9 8 8 0 0 1 4-4.5z" fill="#FFD54F"/><circle cx="9.8" cy="11.5" r="1.1" fill="#FFCA28" opacity="0.6"/><circle cx="12.5" cy="15" r="0.9" fill="#FFCA28" opacity="0.6"/><path d="M18.5 4.5l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5z" fill="#FFF59D"/></svg>"##;
+
+pub const WEATHER_SNOW_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 14h11a3.8 3.8 0 0 0 .6-7.55A5.7 5.7 0 0 0 5.7 8 4 4 0 0 0 6.5 14z" fill="#78909C"/><path d="M6 13h10.5a3.6 3.6 0 0 0 .5-7.16A5.4 5.4 0 0 0 5.2 7.5 3.8 3.8 0 0 0 6 13z" fill="#B0BEC5"/><g stroke="#80DEEA" stroke-width="1.4" stroke-linecap="round"><path d="M8 17v3.5M6.3 18.7h3.4M12.5 17v3.5M10.8 18.7h3.4M17 17v3.5M15.3 18.7h3.4"/></g></svg>"##;
+
+pub const WEATHER_STORM_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 14h11a3.8 3.8 0 0 0 .6-7.55A5.7 5.7 0 0 0 5.7 8 4 4 0 0 0 6.5 14z" fill="#37474F"/><path d="M6 13h10.5a3.6 3.6 0 0 0 .5-7.16A5.4 5.4 0 0 0 5.2 7.5 3.8 3.8 0 0 0 6 13z" fill="#455A64"/><path d="M12.5 12l-2.8 4.2h3.2l-1.4 4.8 4.2-5.5h-3.2l1.8-3.5z" fill="#FFD600" stroke="#FFEA00" stroke-width="0.5"/></svg>"##;
+
+pub const WEATHER_FOG_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5 8h14M3 11.5h18M5.5 15h13M7 18.5h10" stroke="#CFD8DC" stroke-width="2" stroke-linecap="round" opacity="0.9"/></svg>"##;
+
+/// Maps a weather symbol string to its crisp multi-color Fluent SVG weather icon.
+pub fn weather_svg_for_symbol(sym: &str) -> &'static str {
+    if sym.contains('⛈') {
+        WEATHER_STORM_SVG
+    } else if sym.contains('🌦') {
+        WEATHER_SUN_RAIN_SVG
+    } else if sym.contains('🌧') || sym.contains('\u{E9C4}') {
+        WEATHER_RAIN_SVG
+    } else if sym.contains('❄') || sym.contains('\u{E9C8}') {
+        WEATHER_SNOW_SVG
+    } else if sym.contains('🌙') || sym.contains('\u{E708}') {
+        WEATHER_MOON_SVG
+    } else if sym.contains('⛅') || sym.contains('🌤') {
+        WEATHER_PARTLY_SUNNY_SVG
+    } else if sym.contains('☀') || sym.contains('\u{E706}') {
+        WEATHER_SUN_SVG
+    } else if sym.contains('🌫') {
+        WEATHER_FOG_SVG
+    } else {
+        WEATHER_CLOUD_SVG
+    }
+}
+
+/// Maps a weather symbol string (emoji or Fluent icon) to its Segoe Fluent Icons [`Icon`] so the UI
+/// draws crisp monochrome glyphs (`#D6D6D6`) instead of emoji.
+pub fn weather_icon_for_symbol(sym: &str) -> Icon {
+    if sym.contains('🌧') || sym.contains('🌦') || sym.contains('⛈') || sym.contains('\u{E9C4}') {
+        Icon::Rain
+    } else if sym.contains('❄') || sym.contains('\u{E9C8}') {
+        Icon::Snow
+    } else if sym.contains('☀') || sym.contains('\u{E706}') {
+        Icon::Sun
+    } else {
+        Icon::Cloud
     }
 }
 

@@ -37,12 +37,21 @@ const SCREENSHOT_TOOLS: [&str; 12] = [
 ];
 
 /// Windows 11's Alt+Tab, Task View and Snap are explorer's own monitor-wide XAML layers
-/// (XamlExplorerHostIslandWindow): the pill blinked away and back while they were up.
+/// (XamlExplorerHostIslandWindow): the pill blinked away and back while they were up. The Start
+/// menu, Search and the flyouts of the taskbar (calendar, quick settings, notifications) are
+/// hosts of their own, and covered the pill the same way when the Windows key was pressed.
+const SHELL_FLYOUTS: [&str; 5] = ["StartMenuExperienceHost.exe", "SearchHost.exe", "SearchApp.exe", "ShellExperienceHost.exe", "ShellHost.exe"];
 const SHELL: [&str; 1] = ["explorer.exe"];
 
 /// Whether this app never counts as fullscreen, whatever its window covers.
 pub fn never_fullscreen(exe: &str) -> bool {
-    SCREENSHOT_TOOLS.iter().chain(SHELL.iter()).any(|t| t.eq_ignore_ascii_case(exe))
+    SCREENSHOT_TOOLS.iter().chain(SHELL.iter()).chain(SHELL_FLYOUTS.iter()).any(|t| t.eq_ignore_ascii_case(exe))
+}
+
+/// The Start menu, Search or a taskbar flyout is in front. The taskbar's buttons are read
+/// while they are covered or moving then: what is read is not taken until it has closed.
+pub fn shell_flyout_in_front() -> bool {
+    foreground_exe().is_some_and(|exe| SHELL_FLYOUTS.iter().any(|t| t.eq_ignore_ascii_case(&exe)))
 }
 
 pub fn is_fullscreen_rect(fg: RectPx, monitor: RectPx, class: &str) -> bool {
@@ -127,6 +136,107 @@ pub fn exe_of(hwnd: HWND) -> Option<String> {
         let _ = windows::Win32::Foundation::CloseHandle(process);
         ok.then(|| String::from_utf16_lossy(&buf[..len as usize]).rsplit('\\').next().unwrap_or_default().to_string())
     }
+}
+
+/// Brings the top-level window of the media player (`app_id` / `app_name`) to the foreground,
+/// restoring it if minimised.
+pub fn focus_media_app(app_id: &str, app_name: &str) {
+    use windows::core::{w, BOOL, HSTRING};
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowLongW, GetWindowTextW, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow, GWL_EXSTYLE,
+        GW_OWNER, SW_RESTORE, SW_SHOWNORMAL, WS_EX_TOOLWINDOW,
+    };
+    struct Target<'a> {
+        app_id: &'a str,
+        app_name: &'a str,
+        found: Option<HWND>,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, ptr: LPARAM) -> BOOL {
+        let t = unsafe { &mut *(ptr.0 as *mut Target<'_>) };
+        let tool = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOOLWINDOW.0 != 0;
+        let owned = unsafe { GetWindow(hwnd, GW_OWNER) }.is_ok_and(|o| !o.is_invalid());
+        if unsafe { IsWindowVisible(hwnd) }.as_bool() && !tool && !owned {
+            let mut buf = [0u16; 256];
+            let len = unsafe { GetWindowTextW(hwnd, &mut buf) } as usize;
+            if len > 0 {
+                if let Some(exe) = exe_of(hwnd) {
+                    let target_friendly = crate::activities::media::app_name(t.app_id).to_ascii_lowercase();
+                    let exe_friendly = crate::activities::media::app_name(&exe).to_ascii_lowercase();
+                    let name_low = t.app_name.to_ascii_lowercase();
+                    let exe_low = exe.to_ascii_lowercase();
+                    if (!target_friendly.is_empty() && target_friendly == exe_friendly)
+                        || (!name_low.is_empty() && (exe_low.contains(&name_low) || exe_friendly.contains(&name_low)))
+                    {
+                        t.found = Some(hwnd);
+                        return false.into();
+                    }
+                }
+            }
+        }
+        true.into()
+    }
+    let mut target = Target { app_id, app_name, found: None };
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut target as *mut _ as isize));
+        if let Some(hwnd) = target.found {
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let _ = SetForegroundWindow(hwnd);
+            return;
+        }
+        if app_id.to_ascii_lowercase().contains("spotify") || app_name.eq_ignore_ascii_case("spotify") {
+            let _ = ShellExecuteW(None, w!("open"), w!("spotify:"), None, None, SW_SHOWNORMAL);
+        } else if app_id.to_ascii_lowercase().ends_with(".exe") {
+            let _ = ShellExecuteW(None, w!("open"), &HSTRING::from(app_id), None, None, SW_SHOWNORMAL);
+        }
+    }
+}
+
+/// Brings the top-level window of `exe` (e.g. "chrome.exe") to the foreground, restoring it if minimised.
+pub fn focus_app_by_exe(exe: &str) -> bool {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowLongW, GetWindowTextW, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
+        GWL_EXSTYLE, GW_OWNER, SW_RESTORE, WS_EX_TOOLWINDOW,
+    };
+    struct Target<'a> {
+        exe: &'a str,
+        found: Option<HWND>,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, ptr: LPARAM) -> BOOL {
+        let t = unsafe { &mut *(ptr.0 as *mut Target<'_>) };
+        let tool = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOOLWINDOW.0 != 0;
+        let owned = unsafe { GetWindow(hwnd, GW_OWNER) }.is_ok_and(|o| !o.is_invalid());
+        if unsafe { IsWindowVisible(hwnd) }.as_bool() && !tool && !owned {
+            let mut buf = [0u16; 256];
+            let len = unsafe { GetWindowTextW(hwnd, &mut buf) } as usize;
+            if len > 0 {
+                if let Some(proc_exe) = exe_of(hwnd) {
+                    if proc_exe.eq_ignore_ascii_case(t.exe) {
+                        t.found = Some(hwnd);
+                        return false.into();
+                    }
+                }
+            }
+        }
+        true.into()
+    }
+    let mut target = Target { exe, found: None };
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut target as *mut _ as isize));
+        if let Some(hwnd) = target.found {
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let _ = SetForegroundWindow(hwnd);
+            return true;
+        }
+    }
+    false
 }
 
 /// Fullscreen on `monitor` (the taskbar's): a D3D/presentation/busy state reported by the shell,
@@ -219,6 +329,8 @@ mod tests {
         assert!(never_fullscreen("explorer.exe"), "Alt+Tab, Task View and Snap are explorer's own layers");
         assert!(never_fullscreen("EXPLORER.EXE"));
         assert!(never_fullscreen("ShareX.exe"), "screenshot tools still");
+        assert!(never_fullscreen("StartMenuExperienceHost.exe"), "the Windows key");
+        assert!(never_fullscreen("SearchHost.exe"), "typing after it");
         assert!(!never_fullscreen("vlc.exe"));
     }
 

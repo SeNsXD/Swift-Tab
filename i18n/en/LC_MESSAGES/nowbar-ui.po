@@ -1,4 +1,4 @@
-# English for the Now Bar. msgid: the Turkish in the code; msgstr: its English.
+# English for the Swift Tab. msgid: the Turkish in the code; msgstr: its English.
 # tools/i18n-extract.py adds what's missing (empty msgstr); `cargo t` fails until it's filled in.
 msgid ""
 msgstr ""
@@ -12,11 +12,17 @@ msgstr "Automatic"
 msgid "{} dk"
 msgstr "{} min"
 
-msgid "Now Bar"
-msgstr "Syro"
+msgid "Swift Tab"
+msgstr "Swift Tab"
 
 msgid "Syro"
-msgstr "Syro"
+msgstr "Swift Tab"
+
+msgid "Şimdi"
+msgstr "Now"
+
+msgid "{} öğe"
+msgstr "{} items"
 
 #: ui/pages.slint
 msgid "Dil"
@@ -1997,11 +2003,11 @@ msgstr " · Played 2 h 14 min"
 
 #: ui/settings.slint
 msgid "Syro Ayarları"
-msgstr "Syro Settings"
+msgstr "Swift Tab Settings"
 
 #: ui/settings.slint
-msgid "Now Bar Ayarları"
-msgstr "Syro Settings"
+msgid "Swift Tab Ayarları"
+msgstr "Swift Tab Settings"
 
 #: ui/settings.slint
 msgid "Aç"
@@ -2100,8 +2106,8 @@ msgid "Claude Code hook'ları kaldırıldı."
 msgstr "Claude Code hooks removed."
 
 #: src/main.rs
-msgid "Kullanım: nowbar.exe claude-hooks install | remove"
-msgstr "Usage: nowbar.exe claude-hooks install | remove"
+msgid "Kullanım: swifttab.exe claude-hooks install | remove"
+msgstr "Usage: swifttab.exe claude-hooks install | remove"
 
 #: src/main.rs
 msgid "Claude Code ayarları yazılamadı: {}"
@@ -2109,11 +2115,11 @@ msgstr "Couldn't write Claude Code's settings: {}"
 
 #: src/main.rs
 msgid "Claude Code ayarlarındaki \"hooks\" alanı tanınmadı; dosyaya dokunulmadı."
-msgstr "Claude Code's settings have a \"hooks\" field Syro doesn't recognise; the file was left as it was."
+msgstr "Claude Code's settings have a \"hooks\" field Swift Tab doesn't recognise; the file was left as it was."
 
 #: src/main.rs
 msgid "Syro açılamadı: {}\nAyrıntılar: {}"
-msgstr "Syro couldn't start: {}\nDetails: {}"
+msgstr "Swift Tab couldn't start: {}\nDetails: {}"
 
 #: src/settings_ui.rs
 msgid "Wireless Buds"
@@ -2201,7 +2207,7 @@ msgstr "Automatic: Windows' own; Turkish or English"
 
 #: src/settings_ui.rs
 msgid "Oturum açınca Syro kendiliğinden çalışır"
-msgstr "Syro starts by itself when you sign in"
+msgstr "Swift Tab starts by itself when you sign in"
 
 #: src/settings_ui.rs
 msgid "Zamanlayıcı seçicisini açar"
@@ -2437,11 +2443,11 @@ msgstr "The pill and cards hide while a full-screen app is in front"
 
 #: src/settings_ui.rs
 msgid "Bu uygulamalar tam ekran olsa da Syro görünür kalır"
-msgstr "Syro stays visible even when these apps are full screen"
+msgstr "Swift Tab stays visible even when these apps are full screen"
 
 #: src/settings_ui.rs
 msgid "Yeni sürüm varsa indirir, doğrular ve Syro'yu yeniden başlatır"
-msgstr "Downloads a new version if there is one, checks it and restarts Syro"
+msgstr "Downloads a new version if there is one, checks it and restarts Swift Tab"
 
 #: src/settings_ui.rs
 msgid "Günde bir kez GitHub'a yeni sürüm var mı diye sorar"
@@ -2449,7 +2455,7 @@ msgstr "Asks GitHub once a day whether there's a new version"
 
 #: src/settings_ui.rs
 msgid "Syro'nun günlük dosyası"
-msgstr "Syro's log file"
+msgstr "Swift Tab's log file"
 
 #: src/settings_ui.rs
 msgid "settings.json"
@@ -2484,8 +2490,8 @@ msgid "Bir uygulama mikrofonu ya da kamerayı kullanırken pilde, uygulamanın a
 msgstr "In the pill, with the app's name, while an app uses the microphone or camera"
 
 #: src/settings_ui.rs
-msgid "nowbar.exe push ve Claude Code'un hook'ları pilde bir etkinlik gösterir"
-msgstr "nowbar.exe push and Claude Code's hooks show an activity in the pill"
+msgid "swifttab.exe push ve Claude Code'un hook'ları pilde bir etkinlik gösterir"
+msgstr "swifttab.exe push and Claude Code's hooks show an activity in the pill"
 
 #: src/settings_ui.rs
 msgid "Ekran görüntüsünü göster"
@@ -2842,7 +2848,7 @@ msgstr "Getting ready"
 
 #: setup/src/install.rs
 msgid "Syro kapatılıyor"
-msgstr "Closing Syro"
+msgstr "Closing Swift Tab"
 
 #: setup/src/install.rs
 msgid "Dosyalar kopyalanıyor"
@@ -2862,11 +2868,11 @@ msgstr "Couldn't connect Claude Code: its settings file is open or can't be read
 
 #: setup/src/install.rs
 msgid "Syro başlatılıyor"
-msgstr "Starting Syro"
+msgstr "Starting Swift Tab"
 
 #: setup/src/install.rs
 msgid "Syro açılmadı. Yeniden başlatıp tekrar dene."
-msgstr "Syro didn't start. Restart and try again."
+msgstr "Swift Tab didn't start. Restart and try again."
 
 #: setup/src/install.rs
 msgid "Ayarlar yazılamadı: {}"
@@ -2878,7 +2884,7 @@ msgstr "Couldn't set it to start with Windows: {}"
 
 #: setup/src/install.rs
 msgid "Syro'nun dosyaları değiştirilemedi; Syro'yu kapatıp tekrar dene."
-msgstr "Couldn't replace Syro's files; close Syro and try again."
+msgstr "Couldn't replace Swift Tab's files; close Swift Tab and try again."
 
 #: setup/src/main.rs
 msgid "Kurulum dosyası bozuk; yeniden indir."
@@ -2890,11 +2896,11 @@ msgstr "The setup window couldn't open: {}"
 
 #: setup/src/main.rs
 msgid "Syro'yu kaldır"
-msgstr "Uninstall Syro"
+msgstr "Uninstall Swift Tab"
 
 #: setup/src/main.rs
 msgid "Syro, kısayolları ve Claude Code bağlantısı kaldırılacak."
-msgstr "Syro, its shortcuts and its Claude Code connection will be removed."
+msgstr "Swift Tab, its shortcuts and its Claude Code connection will be removed."
 
 #: setup/src/main.rs
 msgid "Kaldır"
@@ -2930,11 +2936,11 @@ msgstr "Install anyway"
 
 #: setup/src/main.rs
 msgid "Syro görev çubuğunda. Her şeyi ayarlar penceresinden değiştirebilirsin."
-msgstr "Syro is in the taskbar. You can change everything in its settings window."
+msgstr "Swift Tab is in the taskbar. You can change everything in its settings window."
 
 #: setup/src/main.rs
 msgid "Dosyalar yerinde; Syro başlatılmadı."
-msgstr "The files are in place; Syro wasn't started."
+msgstr "The files are in place; Swift Tab wasn't started."
 
 #: setup/src/main.rs
 msgid "Kapat"
@@ -2950,7 +2956,7 @@ msgstr "Try again"
 
 #: setup/src/main.rs
 msgid "Syro kapanmadı; görev çubuğundan kapatıp tekrar dene."
-msgstr "Syro didn't close; quit it from the taskbar and try again."
+msgstr "Swift Tab didn't close; quit it from the taskbar and try again."
 
 #: setup/src/main.rs
 msgid "Dosyalar siliniyor"
@@ -2961,12 +2967,12 @@ msgid "Çalan şarkı, kontroller ve şarkı sözleri"
 msgstr "The playing song, controls and lyrics"
 
 #: setup/src/stage.rs
-msgid "Ne yaptığı, görev listesi ve izin istekleri"
-msgstr "What it's doing, its task list and permission requests"
+msgid "Hava durumu"
+msgstr "Weather"
 
 #: setup/src/stage.rs
-msgid "Skor, dakika ve goller anında"
-msgstr "Score, minute and goals as they happen"
+msgid "Sıcaklık ve güncel durum"
+msgstr "Temperature and current conditions"
 
 #: setup/src/stage.rs
 msgid "Kulaklıkların ve kutunun pili"
@@ -3002,7 +3008,7 @@ msgstr "Some files couldn't be removed (they may be open). After a restart you c
 
 #: setup/ui/setup.slint
 msgid "Syro kurulumu"
-msgstr "Syro setup"
+msgstr "Swift Tab setup"
 
 #: setup/ui/setup.slint
 msgid "Windows'la başlat"
@@ -3026,11 +3032,11 @@ msgstr "Delete my settings too"
 
 #: setup/ui/setup.slint
 msgid "Syro kaldırıldı"
-msgstr "Syro uninstalled"
+msgstr "Swift Tab uninstalled"
 
 #: setup/ui/setup.slint
 msgid "Syro kuruldu"
-msgstr "Syro installed"
+msgstr "Swift Tab installed"
 
 #: setup/ui/setup.slint
 msgid "Kaldırma tamamlanamadı"
@@ -3054,7 +3060,7 @@ msgstr "Needs Windows 11"
 
 #: src/main.rs
 msgid "Syro, Windows 10 sürüm 1809 veya sonrasını gerektirir."
-msgstr "Syro needs Windows 10 version 1809 or later."
+msgstr "Swift Tab needs Windows 10 version 1809 or later."
 
 #: src/render/card.rs
 msgid "Bildirim göstermek istiyor"
@@ -3106,7 +3112,7 @@ msgstr "Blocked"
 
 #: ui/pages.slint
 msgid "Açıkken, izin verdiğin uygulamalar pilde bildirim gösterebilir. Hangi uygulamalara izin verdiğin ve gösterdikleri senin sorumluluğunda; Syro yalnızca gösterir."
-msgstr "While it's on, the apps you allow can show notifications in the pill. Which apps you allow, and what they show, is your responsibility; Syro only shows it."
+msgstr "While it's on, the apps you allow can show notifications in the pill. Which apps you allow, and what they show, is your responsibility; Swift Tab only shows it."
 
 #: setup/ui/setup.slint
 msgid "Uygulama bildirimlerini aç"
@@ -3446,7 +3452,7 @@ msgstr "Keeps the last 20 things you copy; turn off to stop recording"
 
 #: ui/pages.slint
 msgid "Syro'yu aç"
-msgstr "Open Syro"
+msgstr "Open Swift Tab"
 
 #: ui/pages.slint
 msgid "Açıkken üzerine gelince açılır, kapalıyken tıkla"
@@ -3675,3 +3681,744 @@ msgstr "Hide while the player is in front"
 #: ui/pages.slint
 msgid "Oynatıcının penceresi önündeyken pil görünmez; küçülünce ya da arkada kalınca görünür"
 msgstr "Hidden while the player's window is in front; shown when it is minimized or behind other windows"
+
+#: src/settings_ui.rs
+msgid "Ana sayfa"
+msgstr "Home"
+
+#: src/settings_ui.rs
+msgid "Küçük (%78), Normal (%88), Büyük (%100)"
+msgstr "Small (78%), Normal (88%), Large (100%)"
+
+#: src/settings_ui.rs
+msgid "Pilin saydamlığı"
+msgstr "Pill opacity"
+
+#: src/settings_ui.rs
+msgid "Kulaklığın pili köşede hava durumunun yanında"
+msgstr "The earbuds' battery sits beside the weather in the corner"
+
+#: src/settings_ui.rs
+msgid "Bütün ayarlar sıfırlanır"
+msgstr "Resets every setting"
+
+#: src/settings_ui.rs
+msgid "Bluetooth kulaklıklar, pilleriyle köşe çubuğunda"
+msgstr "Bluetooth earbuds with their battery in the corner bar"
+
+#: src/settings_ui.rs
+msgid "Boşta hava ve konum"
+msgstr "Weather and place when idle"
+
+#: src/settings_ui.rs
+msgid "Etkinlik yokken köşede sıcaklığı ve şehri gösterir"
+msgstr "With nothing on, the corner shows the temperature and the city"
+
+#: src/settings_ui.rs
+msgid "Köşede kulaklık pilinin yanında, hep görünür"
+msgstr "Beside the earbuds' battery in the corner, always on"
+
+#: ui/pages.slint
+msgid "Canlı Görev Çubuğu Düzeni"
+msgstr "Live Taskbar Layout"
+
+#: ui/pages.slint
+msgid "köşede hava & kulaklık · önünde medya / pano / raf"
+msgstr "weather & earbuds in the corner · media / clipboard / shelf in front"
+
+#: ui/pages.slint
+msgid "3 seçenek · eski Normal artık Büyük"
+msgstr "3 options · the old Normal is now Large"
+
+#: ui/pages.slint
+msgid "Kart ve Hareket"
+msgstr "Card and Motion"
+
+#: ui/pages.slint
+msgid "Bulanıklık (Akrilik)"
+msgstr "Blur (Acrylic)"
+
+#: ui/pages.slint
+msgid "Görev Çubuğunda Medya"
+msgstr "Media on the Taskbar"
+
+#: ui/pages.slint
+msgid "sağ tık: çalan uygulamayı aç"
+msgstr "right-click: open the playing app"
+
+#: ui/pages.slint
+msgid "Köşe Çubuğunda Kulaklık Pili"
+msgstr "Earbuds Battery in the Corner Bar"
+
+#: ui/pages.slint
+msgid "hava durumunun yanında sabit"
+msgstr "fixed beside the weather"
+
+#: ui/pages.slint
+msgid "Bluetooth Kulaklıklar"
+msgstr "Bluetooth Earbuds"
+
+#: ui/pages.slint
+msgid "tüm bağlı kulaklıkların pil yüzdesi köşede görünür"
+msgstr "the battery level of every connected pair shows in the corner"
+
+#: ui/pages.slint
+msgid "kulak içi algılama ve pil"
+msgstr "in-ear detection and battery"
+
+#: ui/pages.slint
+msgid "Kulaklıklar"
+msgstr "Headphones"
+
+#: ui/pages.slint
+msgid "Bluetooth kulaklık pili"
+msgstr "Bluetooth earbuds battery"
+
+#: ui/pages.slint
+msgid "Hava durumunun yanında köşede gösterilir"
+msgstr "Shown in the corner beside the weather"
+
+#: ui/pages.slint
+msgid "Cihaz seçimi"
+msgstr "Device choice"
+
+#: ui/pages.slint
+msgid "Activity"
+msgstr "Activity"
+
+#: ui/pages.slint
+msgid "Live match"
+msgstr "Live match"
+
+#: ui/pages.slint
+msgid "When"
+msgstr "When"
+
+#: ui/pages.slint
+msgid "Before match"
+msgstr "Before match"
+
+#: ui/pages.slint
+msgid "When started"
+msgstr "When started"
+
+#: ui/pages.slint
+msgid "Keep after"
+msgstr "Keep after"
+
+#: ui/pages.slint
+msgid "Moments"
+msgstr "Moments"
+
+#: ui/pages.slint
+msgid "Opponent goal moment"
+msgstr "Opponent goal moment"
+
+#: ui/pages.slint
+msgid "Pill expands briefly when goal scored"
+msgstr "Pill expands briefly when goal scored"
+
+#: ui/pages.slint
+msgid "Goal sound"
+msgstr "Goal sound"
+
+#: ui/pages.slint
+msgid "When your team scores"
+msgstr "When your team scores"
+
+#: ui/pages.slint
+msgid "Exceptions"
+msgstr "Exceptions"
+
+#: ui/pages.slint
+msgid "No exceptions yet"
+msgstr "No exceptions yet"
+
+#: ui/pages.slint
+msgid "enter an application name above"
+msgstr "enter an application name above"
+
+#: ui/pages.slint
+msgid "Visible"
+msgstr "Visible"
+
+#: ui/pages.slint
+msgid "Running Applications"
+msgstr "Running Applications"
+
+#: ui/pages.slint
+msgid "click to add exception"
+msgstr "click to add exception"
+
+#: ui/pages.slint
+msgid "Add"
+msgstr "Add"
+
+#: ui/pages.slint
+msgid "Hide in fullscreen"
+msgstr "Hide in fullscreen"
+
+#: ui/pages.slint
+msgid "When games, video, or presentations are active"
+msgstr "When games, video, or presentations are active"
+
+#: ui/pages.slint
+msgid "Corner Weather & Earbuds Bar"
+msgstr "Corner Weather & Earbuds Bar"
+
+#: ui/pages.slint
+msgid "stays persistent when cards expand"
+msgstr "stays persistent when cards expand"
+
+#: ui/pages.slint
+msgid "Weather & System Activities"
+msgstr "Weather & System Activities"
+
+#: ui/pages.slint
+msgid "click to toggle"
+msgstr "click to toggle"
+
+#: ui/pages.slint
+msgid "Weather bar"
+msgstr "Weather bar"
+
+#: ui/pages.slint
+msgid "pinned in corner"
+msgstr "pinned in corner"
+
+#: ui/pages.slint
+msgid "off"
+msgstr "off"
+
+#: ui/pages.slint
+msgid "On"
+msgstr "On"
+
+#: ui/pages.slint
+msgid "Off"
+msgstr "Off"
+
+#: ui/pages.slint
+msgid "Other headphones"
+msgstr "Other headphones"
+
+#: ui/pages.slint
+msgid "Bluetooth battery in corner bar"
+msgstr "Bluetooth battery in corner bar"
+
+#: ui/pages.slint
+msgid "Microphone / Camera"
+msgstr "Microphone / Camera"
+
+#: ui/pages.slint
+msgid "in pill when active"
+msgstr "in pill when active"
+
+#: ui/pages.slint
+msgid "City"
+msgstr "City"
+
+#: ui/pages.slint
+msgid "Connection failed"
+msgstr "Connection failed"
+
+#: ui/pages.slint
+msgid "Not found"
+msgstr "Not found"
+
+#: ui/pages.slint
+msgid "Select one"
+msgstr "Select one"
+
+#: ui/pages.slint
+msgid "Type name, press Enter"
+msgstr "Type name, press Enter"
+
+#: ui/pages.slint
+msgid "Weather and Location"
+msgstr "Weather and Location"
+
+#: ui/pages.slint
+msgid "Show when idle"
+msgstr "Show when idle"
+
+#: ui/pages.slint
+msgid "Weather and city show in corner when idle"
+msgstr "Weather and city show in corner when idle"
+
+#: ui/pages.slint
+msgid "Always visible beside pill and earbuds"
+msgstr "Always visible beside pill and earbuds"
+
+#: ui/pages.slint
+msgid "Weather effects"
+msgstr "Weather effects"
+
+#: ui/pages.slint
+msgid "Snow, rain, sun, stars"
+msgstr "Snow, rain, sun, stars"
+
+#: ui/pages.slint
+msgid "Use my location"
+msgstr "Use my location"
+
+#: ui/pages.slint
+msgid "Selected city prioritized"
+msgstr "Selected city prioritized"
+
+#: ui/pages.slint
+msgid "Rain alert"
+msgstr "Rain alert"
+
+#: ui/pages.slint
+msgid "Brief moment before rain begins"
+msgstr "Brief moment before rain begins"
+
+#: ui/pages.slint
+msgid "Select a city"
+msgstr "Select a city"
+
+#: ui/pages.slint
+msgid "Weather alerts"
+msgstr "Weather alerts"
+
+#: ui/pages.slint
+msgid "Storm, wind, heat, freeze, air quality"
+msgstr "Storm, wind, heat, freeze, air quality"
+
+#: ui/pages.slint
+msgid "Screenshots & Files"
+msgstr "Screenshots & Files"
+
+#: ui/pages.slint
+msgid "Show screenshot in pill"
+msgstr "Show screenshot in pill"
+
+#: ui/pages.slint
+msgid "ShareX & Snipping Tool"
+msgstr "ShareX & Snipping Tool"
+
+#: ui/pages.slint
+msgid "Add screenshot to shelf"
+msgstr "Add screenshot to shelf"
+
+#: ui/pages.slint
+msgid "Ready to drag and drop later"
+msgstr "Ready to drag and drop later"
+
+#: ui/pages.slint
+msgid "File copy progress"
+msgstr "File copy progress"
+
+#: ui/pages.slint
+msgid "Show in pill even when Explorer is minimized"
+msgstr "Show in pill even when Explorer is minimized"
+
+#: ui/pages.slint
+msgid "In Pill"
+msgstr "In Pill"
+
+#: ui/pages.slint
+msgid "Downloads"
+msgstr "Downloads"
+
+#: ui/pages.slint
+msgid "progress, speed"
+msgstr "progress, speed"
+
+#: ui/pages.slint
+msgid "Playtime"
+msgstr "Playtime"
+
+#: ui/pages.slint
+msgid "during and after gameplay"
+msgstr "during and after gameplay"
+
+#: ui/pages.slint
+msgid "Libraries"
+msgstr "Libraries"
+
+#: ui/pages.slint
+msgid "on this PC"
+msgstr "on this PC"
+
+#: ui/pages.slint
+msgid "not found"
+msgstr "not found"
+
+#: ui/pages.slint
+msgid "Stores"
+msgstr "Stores"
+
+#: ui/pages.slint
+msgid "Registry and library files"
+msgstr "Registry and library files"
+
+#: ui/pages.slint
+msgid "New Epic launcher directory"
+msgstr "New Epic launcher directory"
+
+#: ui/pages.slint
+msgid "Progress, speed, and pause"
+msgstr "Progress, speed, and pause"
+
+#: ui/pages.slint
+msgid "Shown in pill when windowed"
+msgstr "Shown in pill when windowed"
+
+#: ui/pages.slint
+msgid "Fullscreen"
+msgstr "Fullscreen"
+
+#: ui/pages.slint
+msgid "In-game island"
+msgstr "In-game island"
+
+#: ui/pages.slint
+msgid "Urgent alerts on top, click-through"
+msgstr "Urgent alerts on top, click-through"
+
+#: ui/pages.slint
+msgid "Today"
+msgstr "Today"
+
+#: ui/pages.slint
+msgid "No screen time recorded yet"
+msgstr "No screen time recorded yet"
+
+#: ui/pages.slint
+msgid "tracked while apps are in foreground"
+msgstr "tracked while apps are in foreground"
+
+#: ui/pages.slint
+msgid "No limit"
+msgstr "No limit"
+
+#: ui/pages.slint
+msgid "30 min"
+msgstr "30 min"
+
+#: ui/pages.slint
+msgid "1 hr"
+msgstr "1 hr"
+
+#: ui/pages.slint
+msgid "2 hrs"
+msgstr "2 hrs"
+
+#: ui/pages.slint
+msgid "3 hrs"
+msgstr "3 hrs"
+
+#: ui/pages.slint
+msgid "4 hrs"
+msgstr "4 hrs"
+
+#: ui/pages.slint
+msgid "Digital Wellbeing"
+msgstr "Digital Wellbeing"
+
+#: ui/pages.slint
+msgid "Track screen time"
+msgstr "Track screen time"
+
+#: ui/pages.slint
+msgid "Stored locally on this PC, 7 days"
+msgstr "Stored locally on this PC, 7 days"
+
+#: ui/pages.slint
+msgid "Show in Now Brief"
+msgstr "Show in Now Brief"
+
+#: ui/pages.slint
+msgid "Yesterday or today total"
+msgstr "Yesterday or today total"
+
+#: ui/pages.slint
+msgid "Limits"
+msgstr "Limits"
+
+#: ui/pages.slint
+msgid "Limit alerts"
+msgstr "Limit alerts"
+
+#: ui/pages.slint
+msgid "Moment in pill when limit exceeded"
+msgstr "Moment in pill when limit exceeded"
+
+#: ui/pages.slint
+msgid "Music"
+msgstr "Music"
+
+#: ui/pages.slint
+msgid "Music of the week"
+msgstr "Music of the week"
+
+#: ui/pages.slint
+msgid "Tracks played counted locally"
+msgstr "Tracks played counted locally"
+
+#: ui/pages.slint
+msgid "Taskbar Clipboard"
+msgstr "Taskbar Clipboard"
+
+#: ui/pages.slint
+msgid "right-click: clear all"
+msgstr "right-click: clear all"
+
+#: ui/pages.slint
+msgid "Clipboard History"
+msgstr "Clipboard History"
+
+#: ui/pages.slint
+msgid "copied items stored here"
+msgstr "copied items stored here"
+
+#: ui/pages.slint
+msgid "Stored Content"
+msgstr "Stored Content"
+
+#: ui/pages.slint
+msgid "Text"
+msgstr "Text"
+
+#: ui/pages.slint
+msgid "plain text"
+msgstr "plain text"
+
+#: ui/pages.slint
+msgid "Links"
+msgstr "Links"
+
+#: ui/pages.slint
+msgid "web URLs"
+msgstr "web URLs"
+
+#: ui/pages.slint
+msgid "Images"
+msgstr "Images"
+
+#: ui/pages.slint
+msgid "screenshots and copied images"
+msgstr "screenshots and copied images"
+
+#: ui/pages.slint
+msgid "Rich Formatting"
+msgstr "Rich Formatting"
+
+#: ui/pages.slint
+msgid "bold, links, styled text"
+msgstr "bold, links, styled text"
+
+#: ui/pages.slint
+msgid "Clipboard"
+msgstr "Clipboard"
+
+#: ui/pages.slint
+msgid "Retains last 20 copied items; ceases storing when off"
+msgstr "Retains last 20 copied items; ceases storing when off"
+
+#: ui/pages.slint
+msgid "Show in pill on copy"
+msgstr "Show in pill on copy"
+
+#: ui/pages.slint
+msgid "Pill pops up briefly when you copy"
+msgstr "Pill pops up briefly when you copy"
+
+#: ui/pages.slint
+msgid "Item Types"
+msgstr "Item Types"
+
+#: ui/pages.slint
+msgid "Copied text clips"
+msgstr "Copied text clips"
+
+#: ui/pages.slint
+msgid "Web links and addresses"
+msgstr "Web links and addresses"
+
+#: ui/pages.slint
+msgid "Pictures and screenshots"
+msgstr "Pictures and screenshots"
+
+#: ui/pages.slint
+msgid "Only plain text retained when off"
+msgstr "Only plain text retained when off"
+
+#: ui/pages.slint
+msgid "Taskbar Shelf"
+msgstr "Taskbar Shelf"
+
+#: ui/pages.slint
+msgid "Shelf"
+msgstr "Shelf"
+
+#: ui/pages.slint
+msgid "Pin Shelf"
+msgstr "Pin Shelf"
+
+#: ui/pages.slint
+msgid "opens even when empty"
+msgstr "opens even when empty"
+
+#: ui/pages.slint
+msgid "appears when holding files"
+msgstr "appears when holding files"
+
+#: ui/pages.slint
+msgid "How to Use"
+msgstr "How to Use"
+
+#: ui/pages.slint
+msgid "3 tips"
+msgstr "3 tips"
+
+#: ui/pages.slint
+msgid "Drop files"
+msgstr "Drop files"
+
+#: ui/pages.slint
+msgid "drag to pill: stored on shelf"
+msgstr "drag to pill: stored on shelf"
+
+#: ui/pages.slint
+msgid "Scroll to open"
+msgstr "Scroll to open"
+
+#: ui/pages.slint
+msgid "scroll wheel switches between pill cards"
+msgstr "scroll wheel switches between pill cards"
+
+#: ui/pages.slint
+msgid "Drag out"
+msgstr "Drag out"
+
+#: ui/pages.slint
+msgid "pick files from shelf and drop anywhere"
+msgstr "pick files from shelf and drop anywhere"
+
+#: ui/pages.slint
+msgid "Opens on scroll even when shelf is empty"
+msgstr "Opens on scroll even when shelf is empty"
+
+#: ui/pages.slint
+msgid " apps · visible in fullscreen"
+msgstr " apps · visible in fullscreen"
+
+#: ui/pages.slint
+msgid "Searching…"
+msgstr "Searching…"
+
+#: ui/pages.slint
+msgid "New York, London…"
+msgstr "New York, London…"
+
+#: ui/pages.slint
+msgid "2 moments · click to toggle"
+msgstr "2 moments · click to toggle"
+
+#: ui/pages.slint
+msgid "on · click to turn off"
+msgstr "on · click to turn off"
+
+#: ui/pages.slint
+msgid "off · click to turn on"
+msgstr "off · click to turn on"
+
+#: ui/pages.slint
+msgid "pinned · click to unpin"
+msgstr "pinned · click to unpin"
+
+#: ui/pages.slint
+msgid "unpinned · click to pin"
+msgstr "unpinned · click to pin"
+
+#: src/settings_ui.rs
+msgid "Rafı göster"
+msgstr "Show Shelf"
+
+#: src/settings_ui.rs
+msgid "Dosyaları pile bırakıp tutar; kapatınca raf gizlenir"
+msgstr "Holds files dropped onto the pill; hides the shelf when turned off"
+
+#: ui/pages.slint
+msgid "currently playing track in pill and flyout card"
+msgstr "currently playing track in pill and flyout card"
+
+#: ui/pages.slint
+msgid "drop files onto the pill to hold and drag them out later"
+msgstr "drop files onto the pill to hold and drag them out later"
+
+#: ui/pages.slint
+msgid "Enable Shelf"
+msgstr "Enable Shelf"
+
+#: ui/pages.slint
+msgid "Show the shelf when files are dropped or pinned"
+msgstr "Show the shelf when files are dropped or pinned"
+
+#: src/settings_ui.rs
+msgid "Oturum açınca Swift Tab kendiliğinden çalışır"
+msgstr "Swift Tab starts by itself when you sign in"
+
+#: src/settings_ui.rs
+msgid "Bu uygulamalar tam ekran olsa da Swift Tab görünür kalır"
+msgstr "Swift Tab stays visible even when these apps are full screen"
+
+#: src/settings_ui.rs
+msgid "Swift Tab'ın günlük dosyası"
+msgstr "Swift Tab's log file"
+
+#: setup/src/install.rs
+msgid "Swift Tab kapatılıyor"
+msgstr "Closing Swift Tab"
+
+#: setup/src/install.rs
+msgid "Swift Tab başlatılıyor"
+msgstr "Starting Swift Tab"
+
+#: setup/src/install.rs
+msgid "Swift Tab açılmadı. Yeniden başlatıp tekrar dene."
+msgstr "Swift Tab didn't start. Restart and try again."
+
+#: setup/src/install.rs
+msgid "Swift Tab'ın dosyaları değiştirilemedi; Swift Tab'ı kapatıp tekrar dene."
+msgstr "Couldn't replace Swift Tab's files; close Swift Tab and try again."
+
+#: setup/src/main.rs
+msgid "Swift Tab'ı kaldır"
+msgstr "Uninstall Swift Tab"
+
+#: setup/src/main.rs
+msgid "Swift Tab ve kısayolları kaldırılacak."
+msgstr "Swift Tab and its shortcuts will be removed."
+
+#: setup/src/main.rs
+msgid "Swift Tab görev çubuğunda. Her şeyi ayarlar penceresinden değiştirebilirsin."
+msgstr "Swift Tab is in the taskbar. You can change everything in its settings window."
+
+#: setup/src/main.rs
+msgid "Dosyalar yerinde; Swift Tab başlatılmadı."
+msgstr "The files are in place; Swift Tab wasn't started."
+
+#: setup/src/main.rs
+msgid "Swift Tab kapanmadı; görev çubuğundan kapatıp tekrar dene."
+msgstr "Swift Tab didn't close; quit it from the taskbar and try again."
+
+#: setup/ui/setup.slint
+msgid "Swift Tab kurulumu"
+msgstr "Swift Tab setup"
+
+#: setup/ui/setup.slint
+msgid "Swift Tab kaldırıldı"
+msgstr "Swift Tab uninstalled"
+
+#: setup/ui/setup.slint
+msgid "Swift Tab kuruldu"
+msgstr "Swift Tab installed"
+
+#: setup/src/main.rs
+msgid "Swift Tab, Windows 10 sürüm 1809 veya sonrasını gerektirir."
+msgstr "Swift Tab needs Windows 10 version 1809 or later."
+

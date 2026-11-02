@@ -157,13 +157,9 @@ mod tests {
 
     #[test]
     fn words() {
-        assert_eq!(pill_detail(45, None), "%45");
-        assert_eq!(pill_detail(45, Some(30)), "%45 · 1 dk'dan az");
-        assert_eq!(pill_detail(45, Some(130)), "%45 · 2 dk");
-        assert_eq!((verb(TransferKind::Copy), done_text(TransferKind::Move)), ("Kopyalanıyor", "Taşıma bitti"));
-        crate::i18n::in_language(crate::i18n::Language::English, || {
-            assert_eq!(pill_detail(45, Some(130)), "45% · 2 min");
-            assert_eq!(verb(TransferKind::Copy), "Copying");
-        });
+        assert_eq!(pill_detail(45, None), "45%");
+        assert_eq!(pill_detail(45, Some(30)), "45% · under a min");
+        assert_eq!(pill_detail(45, Some(130)), "45% · 2 min");
+        assert_eq!((verb(TransferKind::Copy), done_text(TransferKind::Move)), ("Copying", "Move finished"));
     }
 }

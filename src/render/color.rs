@@ -1,4 +1,4 @@
-﻿//! Album-art colours: the vivid accent of a cover, and the One UI 9 media pill gradient from it.
+//! Album-art colours: the vivid accent of a cover, and the One UI 9 media pill gradient from it.
 
 /// The accent is never darker than this HSL lightness, so it reads on the dark material.
 const MIN_LIGHTNESS: f32 = 0.45;
@@ -217,6 +217,12 @@ pub fn team_palette(primary: [u8; 3], secondary: [u8; 3]) -> TeamPalette {
 pub fn media_gradient(accent: [u8; 3]) -> ([u8; 3], [u8; 3]) {
     let scale = |k: f32| accent.map(|c| (c as f32 * k).round() as u8);
     (scale(0.32), scale(0.13))
+}
+
+/// Windows 11 Acrylic panel tint: mixes `tint` at 24% into the `#202020` panel base
+/// (`color-mix(in srgb, var(--tint) 24%, rgba(32, 32, 32, 0.8))`).
+pub fn tint_mix_24(tint: [u8; 3]) -> [u8; 3] {
+    tint.map(|c| (c as f32 * 0.24 + 32.0 * 0.76).round().clamp(0.0, 255.0) as u8)
 }
 
 #[cfg(test)]

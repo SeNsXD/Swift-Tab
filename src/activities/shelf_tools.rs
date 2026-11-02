@@ -107,16 +107,12 @@ mod tests {
 
     #[test]
     fn made_files_are_named_after_theirs() {
-        assert_eq!(shrunk_name("ekran.png"), "ekran (küçük).jpg");
-        assert_eq!(shrunk_name("tatil.JPEG"), "tatil (küçük).jpg");
-        assert_eq!(shrunk_name("grafik"), "grafik (küçük).jpg");
+        assert_eq!(shrunk_name("ekran.png"), "ekran (small).jpg");
+        assert_eq!(shrunk_name("tatil.JPEG"), "tatil (small).jpg");
+        assert_eq!(shrunk_name("grafik"), "grafik (small).jpg");
         assert_eq!(zip_name("Fotoğraflar", true, 1), "Fotoğraflar.zip");
         assert_eq!(zip_name("rapor.v2.pdf", false, 1), "rapor.v2.zip");
-        assert_eq!(zip_name("ekran.png", false, 3), "ekran ve 2 dosya.zip");
-        crate::i18n::in_language(crate::i18n::Language::English, || {
-            assert_eq!(shrunk_name("ekran.png"), "ekran (small).jpg");
-            assert_eq!(zip_name("ekran.png", false, 3), "ekran and 2 more.zip");
-        });
+        assert_eq!(zip_name("ekran.png", false, 3), "ekran and 2 more.zip");
     }
 
     #[test]

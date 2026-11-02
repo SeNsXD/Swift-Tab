@@ -1,10 +1,23 @@
-﻿.vs/
-bin/
-obj/
-Debug/
-Release/
-*.user
-*.suo
-.env
-.env.*
-!.env.example
+# Build output
+/target
+/bin
+/dist
+
+# Temporary and backup archives
+*.zip
+BEFORE BUG FIX .zip
+New folder/
+New folder.zip
+Backup file/
+
+# Local logs
+*.log
+
+# Machine and agent working folders
+/CLAUDE.local.md
+/CLAUDE.md
+/PRODUCT.md
+/docs/superpowers/
+/.impeccable/
+/.superpowers/
+/.taste-skill/

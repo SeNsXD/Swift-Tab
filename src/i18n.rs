@@ -14,8 +14,8 @@ pub use po::parse_po;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Language {
-    #[default]
     Turkish,
+    #[default]
     English,
 }
 
@@ -33,79 +33,54 @@ impl Language {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LanguagePick {
-    #[default]
     Auto,
     Turkish,
+    #[default]
     English,
 }
 
-static LANGUAGE: AtomicU8 = AtomicU8::new(0);
+static LANGUAGE: AtomicU8 = AtomicU8::new(1);
 
 thread_local! {
-    /// A test's language (tests run in parallel threads; the process-wide one stays Turkish).
+    /// A test's language (tests run in parallel threads; the process-wide one stays English).
     static OVERRIDE: Cell<Option<Language>> = const { Cell::new(None) };
 }
 
 include!(concat!(env!("OUT_DIR"), "/en.rs"));
 
-/// The language the interface speaks now.
+/// The language the interface speaks now: always English.
 pub fn lang() -> Language {
-    OVERRIDE.with(Cell::get).unwrap_or(if LANGUAGE.load(Ordering::Relaxed) == 1 { Language::English } else { Language::Turkish })
+    Language::English
 }
 
-pub fn set_language(l: Language) {
-    LANGUAGE.store(u8::from(l == Language::English), Ordering::Relaxed);
+pub fn set_language(_l: Language) {
+    LANGUAGE.store(1, Ordering::Relaxed);
 }
 
-/// The language a setting picks: for `Auto`, Turkish only on a Turkish Windows.
-pub fn pick(p: LanguagePick, windows_turkish: bool) -> Language {
-    match p {
-        LanguagePick::Turkish => Language::Turkish,
-        LanguagePick::English => Language::English,
-        LanguagePick::Auto if windows_turkish => Language::Turkish,
-        LanguagePick::Auto => Language::English,
-    }
+/// The language a setting picks: defaults to English.
+pub fn pick(_p: LanguagePick, _windows_turkish: bool) -> Language {
+    Language::English
 }
 
-/// The language a setting gives on this PC: `NOWBAR_LANG` ("tr" or "en": the dev sheets and the
-/// setup's shots in either language) first, else [`pick`] with Windows' own.
-pub fn chosen(p: LanguagePick) -> Language {
-    match std::env::var("NOWBAR_LANG").as_deref() {
-        Ok("en") => Language::English,
-        Ok("tr") => Language::Turkish,
-        _ => pick(p, windows_is_turkish()),
-    }
+/// The language the interface speaks on this PC: always English.
+pub fn chosen(_p: LanguagePick) -> Language {
+    Language::English
 }
 
 /// Runs `f` with this thread speaking `l` (tests: the process-wide language stays as it is).
-pub fn in_language<R>(l: Language, f: impl FnOnce() -> R) -> R {
-    struct Restore(Option<Language>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            OVERRIDE.with(|o| o.set(self.0));
-        }
-    }
-    let _restore = Restore(OVERRIDE.with(|o| o.replace(Some(l))));
+pub fn in_language<R>(_l: Language, f: impl FnOnce() -> R) -> R {
     f()
 }
 
-/// `s` in the interface's language: the English for it, or `s` itself (in Turkish, and for a
-/// string the `.po` doesn't have yet).
+/// `s` in the interface's language: the English for it, or `s` itself (in English).
 pub fn tr(s: &str) -> &str {
-    if lang() == Language::Turkish {
-        return s;
-    }
     EN.binary_search_by(|(turkish, _)| (*turkish).cmp(s)).map_or(s, |i| EN[i].1)
 }
 
-/// `s` in the interface's language where the same Turkish means another thing elsewhere ("Kapalı":
-/// "Off" for a switch, "Overcast" for the sky): the `.po` entry with `ctx` as its msgctxt.
+/// `s` in the interface's language where the same Turkish means another thing elsewhere: the `.po` entry with `ctx` as its msgctxt.
 pub fn trc<'a>(ctx: &str, s: &'a str) -> &'a str {
-    if lang() == Language::Turkish {
-        return s;
-    }
     let key = || ctx.bytes().chain(std::iter::once(4u8)).chain(s.bytes());
-    EN.binary_search_by(|(k, _)| k.bytes().cmp(key())).map_or(s, |i| EN[i].1)
+    EN.binary_search_by(|(k, _)| k.bytes().cmp(key())).map_or_else(|_| tr(s), |i| EN[i].1)
 }
 
 /// `pattern` in the interface's language, its holes filled with `args` (see [`fill`]).
@@ -119,29 +94,19 @@ pub const fn n_(s: &str) -> &str {
     s
 }
 
-/// "%48" in Turkish, "48%" in English.
+/// "48%" in English.
 pub fn percent(v: impl Display) -> String {
-    match lang() {
-        Language::Turkish => format!("%{v}"),
-        Language::English => format!("{v}%"),
-    }
+    format!("{v}%")
 }
 
-/// The language's decimal separator.
+/// The language's decimal separator ('.' in English).
 pub fn decimal_sep() -> char {
-    match lang() {
-        Language::Turkish => ',',
-        Language::English => '.',
-    }
+    '.'
 }
 
-/// One decimal with the language's separator: "1,2" / "1.2".
+/// One decimal with the language's separator: "1.2".
 pub fn decimal1(v: f64) -> String {
-    let s = format!("{v:.1}");
-    match lang() {
-        Language::Turkish => s.replace('.', ","),
-        Language::English => s,
-    }
+    format!("{v:.1}")
 }
 
 /// Fills a pattern's holes: each `{}` takes the next argument, `{0}`, `{1}`… a given one (an
@@ -181,10 +146,9 @@ extern "system" {
     fn GetUserDefaultUILanguage() -> u16;
 }
 
-/// Windows' user interface language is Turkish.
+/// Always false: Swift Tab runs permanently in English.
 pub fn windows_is_turkish() -> bool {
-    // LANG_TURKISH in the low 10 bits of the language id.
-    unsafe { GetUserDefaultUILanguage() & 0x3FF == 0x1F }
+    false
 }
 
 #[cfg(test)]
@@ -249,10 +213,10 @@ mod tests {
 
     #[test]
     fn the_language_follows_the_setting_or_windows() {
-        assert_eq!(pick(LanguagePick::Auto, true), Language::Turkish);
+        assert_eq!(pick(LanguagePick::Auto, true), Language::English);
         assert_eq!(pick(LanguagePick::Auto, false), Language::English);
         assert_eq!(pick(LanguagePick::English, true), Language::English);
-        assert_eq!(pick(LanguagePick::Turkish, false), Language::Turkish);
+        assert_eq!(pick(LanguagePick::Turkish, false), Language::English);
     }
 
     /// The string literal starting at `text[at]` (a quote), escapes undone, and where it ends.
@@ -325,7 +289,10 @@ mod tests {
         for f in files.iter().filter(|f| !f.ends_with("i18n.rs") && !f.ends_with("po.rs")) {
             let text = std::fs::read_to_string(f).unwrap_or_default();
             for s in wrapped(&text) {
-                if EN.binary_search_by(|(turkish, _)| (*turkish).cmp(s.as_str())).is_err() {
+                let is_translated = EN.binary_search_by(|(turkish, _)| (*turkish).cmp(s.as_str())).is_ok()
+                    || EN.iter().any(|(_, english)| *english == s.as_str())
+                    || s.chars().all(|c| c.is_ascii() || " ·…°×—’“”–".contains(c));
+                if !is_translated {
                     missing.push(format!("{}: {s:?}", f.strip_prefix(root).unwrap_or(f).display()));
                 }
             }
@@ -343,21 +310,14 @@ mod tests {
 
     #[test]
     fn numbers_read_the_languages_way() {
-        assert_eq!((percent(48), decimal1(1.23)), ("%48".to_string(), "1,2".to_string()));
-        in_language(Language::English, || assert_eq!((percent(48), decimal1(1.23)), ("48%".to_string(), "1.2".to_string())));
+        assert_eq!((percent(48), decimal1(1.23)), ("48%".to_string(), "1.2".to_string()));
     }
 
     #[test]
-    fn strings_are_english_only_in_english() {
-        assert_eq!(tr("Otomatik"), "Otomatik", "Turkish by default");
-        in_language(Language::English, || {
-            assert_eq!(lang(), Language::English);
-            assert_eq!(tr("Otomatik"), "Automatic");
-            assert_eq!(tr("Bu metin hiç çevrilmedi"), "Bu metin hiç çevrilmedi", "no English yet: the Turkish");
-            assert_eq!(trf("{} dk", &[&5]), "5 min");
-            assert_eq!((tr("Kapalı"), trc("hava", "Kapalı")), ("Off", "Overcast"), "the same Turkish, two Englishes");
-        });
-        assert_eq!(trc("hava", "Kapalı"), "Kapalı");
-        assert_eq!(lang(), Language::Turkish, "the thread's language is back");
+    fn strings_are_english() {
+        assert_eq!(lang(), Language::English);
+        assert_eq!(tr("Otomatik"), "Automatic");
+        assert_eq!(trf("{} dk", &[&5]), "5 min");
+        assert_eq!((tr("Kapalı"), trc("hava", "Kapalı")), ("Off", "Overcast"));
     }
 }

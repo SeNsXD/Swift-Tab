@@ -1,13 +1,12 @@
 //! Tray icon (a small white pill, drawn at run time) and its menu.
 
-use windows::core::{w, Result, HSTRING};
+use windows::core::{Result, HSTRING};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{CreateBitmap, CreateDIBSection, DeleteObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS};
 use windows::Win32::UI::Shell::{Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::windows::WM_TRAY;
-use crate::i18n::{tr, trf};
 
 pub const MENU_TIMER: u32 = 1;
 pub const MENU_STOPWATCH: u32 = 2;
@@ -49,18 +48,41 @@ pub fn pill_icon_bgra(size: usize) -> Vec<u8> {
     px
 }
 
+const TRAY_NOBG_64: &[u8] = include_bytes!("../../assets/tray-nobg-64.bgra");
+
+/// Resamples the embedded 64×64 no-background Swift Tab ribbon logo to `size`×`size` BGRA.
+pub fn tray_nobg_bgra(size: usize) -> Vec<u8> {
+    let mut out = vec![0u8; size * size * 4];
+    if TRAY_NOBG_64.len() < 64 * 64 * 4 || size == 0 {
+        return pill_icon_bgra(size);
+    }
+    for y in 0..size {
+        let sy = ((y * 64) + 32) / size;
+        let sy = sy.min(63);
+        for x in 0..size {
+            let sx = ((x * 64) + 32) / size;
+            let sx = sx.min(63);
+            let src = (sy * 64 + sx) * 4;
+            let dst = (y * size + x) * 4;
+            out[dst..dst + 4].copy_from_slice(&TRAY_NOBG_64[src..src + 4]);
+        }
+    }
+    out
+}
+
 fn pill_icon() -> Result<HICON> {
     let size = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16);
+    // Resource ID 2 is assets/nowbar-nobg.ico (the no-background Swift Tab ribbon logo).
     if let Ok(handle) = unsafe {
         windows::Win32::System::LibraryLoader::GetModuleHandleW(None).and_then(|hinst| {
-            LoadImageW(Some(hinst.into()), windows::core::PCWSTR(1 as _), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_SHARED)
+            LoadImageW(Some(hinst.into()), windows::core::PCWSTR(2 as _), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_SHARED)
         })
     } {
         if !handle.is_invalid() {
             return Ok(HICON(handle.0));
         }
     }
-    let pixels = pill_icon_bgra(size as usize);
+    let pixels = tray_nobg_bgra(size as usize);
     unsafe {
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
@@ -93,7 +115,7 @@ pub fn create_tray(owner: HWND) -> Result<()> {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAY;
     nid.hIcon = pill_icon()?;
-    for (dst, src) in nid.szTip.iter_mut().zip("Syro".encode_utf16()) {
+    for (dst, src) in nid.szTip.iter_mut().zip("Swift Tab".encode_utf16()) {
         *dst = src;
     }
     unsafe { Shell_NotifyIconW(NIM_ADD, &nid).ok() }
@@ -111,19 +133,16 @@ pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         if let Some(version) = update {
-            let _ = AppendMenuW(menu, MF_STRING, MENU_UPDATE as usize, &HSTRING::from(trf("Güncelle: {}", &[&version])));
+            let _ = AppendMenuW(menu, MF_STRING, MENU_UPDATE as usize, &HSTRING::from(format!("Update: {version}")));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         }
-        let _ = AppendMenuW(menu, MF_STRING, MENU_BRIEF as usize, w!("Now Brief"));
-        let _ = AppendMenuW(menu, MF_STRING, MENU_MUSIC as usize, &HSTRING::from(tr("Haftanın müziği")));
-        let _ = AppendMenuW(menu, MF_STRING, MENU_CLIPBOARD as usize, &HSTRING::from(tr("Pano geçmişi")));
-        let _ = AppendMenuW(menu, MF_STRING, MENU_QUESTION as usize, &HSTRING::from(tr("Claude'a sor")));
+        let _ = AppendMenuW(menu, MF_STRING, MENU_CLIPBOARD as usize, &HSTRING::from("Clipboard history"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let check = if autostart { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, MF_STRING | check, MENU_AUTOSTART as usize, &HSTRING::from(tr("Windows ile başlat")));
-        let _ = AppendMenuW(menu, MF_STRING, MENU_SETTINGS as usize, &HSTRING::from(tr("Ayarlar…")));
+        let _ = AppendMenuW(menu, MF_STRING | check, MENU_AUTOSTART as usize, &HSTRING::from("Start with Windows"));
+        let _ = AppendMenuW(menu, MF_STRING, MENU_SETTINGS as usize, &HSTRING::from("Settings…"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-        let _ = AppendMenuW(menu, MF_STRING, MENU_QUIT as usize, &HSTRING::from(tr("Çıkış")));
+        let _ = AppendMenuW(menu, MF_STRING, MENU_QUIT as usize, &HSTRING::from("Exit"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         // Required so the menu closes when the user clicks elsewhere.
@@ -136,6 +155,55 @@ pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
     }
 }
 
+/// Right-click menu on the Clipboard or Shelf pill/card ("Clear All").
+pub fn show_clear_menu(owner: HWND) -> bool {
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return false };
+        let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Clear All"));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        chosen == 1
+    }
+}
+
+/// Right-click menu on the Media pill ("Open · <App>").
+pub fn show_media_menu(owner: HWND, app_name: &str) -> bool {
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return false };
+        let label = format!("Open · {app_name}");
+        let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from(label));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        chosen == 1
+    }
+}
+
+/// Right-click menu on the Download pill ("Open download").
+pub fn show_download_menu(owner: HWND) -> bool {
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return false };
+        let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Open download folder"));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        chosen == 1
+    }
+}
+
 pub const SHELF_OPEN: u32 = 1;
 pub const SHELF_SHARE: u32 = 2;
 pub const SHELF_REMOVE: u32 = 3;
@@ -144,9 +212,9 @@ pub const SHELF_REMOVE: u32 = 3;
 pub fn show_shelf_menu(owner: HWND) -> u32 {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
-        let _ = AppendMenuW(menu, MF_STRING, SHELF_OPEN as usize, &HSTRING::from(tr("Aç")));
-        let _ = AppendMenuW(menu, MF_STRING, SHELF_SHARE as usize, &HSTRING::from(tr("Paylaş")));
-        let _ = AppendMenuW(menu, MF_STRING, SHELF_REMOVE as usize, &HSTRING::from(tr("Sil")));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_OPEN as usize, &HSTRING::from("Open"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_SHARE as usize, &HSTRING::from("Share"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_REMOVE as usize, &HSTRING::from("Remove"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         let _ = SetForegroundWindow(owner);

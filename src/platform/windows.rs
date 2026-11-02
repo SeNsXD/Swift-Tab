@@ -84,7 +84,7 @@ pub enum UiEvent {
     Headsets,
     /// A new weather answer.
     Weather,
-    /// A command came from `nowbar.exe push` and the like (`ipc::take()` has it).
+    /// A command came from `swifttab.exe push` and the like (`ipc::take()` has it).
     Ipc,
     /// The updater found a release, installed one or failed (its mailbox says which).
     Update,
@@ -134,6 +134,8 @@ pub enum UiEvent {
     ShelfTool,
     /// Explorer's copy dialog came, moved on or went (its mailbox has it).
     Transfer,
+    /// System download active or finished.
+    Download,
 }
 
 /// Callback message of the tray icon.
@@ -161,6 +163,7 @@ pub const WM_API: u32 = WM_APP + 20;
 pub const WM_SHELF_TOOL: u32 = WM_APP + 21;
 pub const WM_TRANSFER: u32 = WM_APP + 22;
 pub const WM_QUESTION: u32 = WM_APP + 23;
+pub const WM_DOWNLOAD: u32 = WM_APP + 24;
 
 static MAIN_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 static TASKBAR_CREATED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -260,6 +263,10 @@ pub fn post_transfer() {
     post_main(WM_TRANSFER);
 }
 
+pub fn post_download() {
+    post_main(WM_DOWNLOAD);
+}
+
 pub fn post_question() {
     post_main(WM_QUESTION);
 }
@@ -273,6 +280,7 @@ thread_local! {
     /// The info bar's span in the input window (x from, x to), and where the pointer is now:
     /// None outside, Some(false) on the pill, Some(true) on the bar.
     static PILL_BAR: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
+    static PILL_OFFSET_X: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
     static PILL_OVER: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
@@ -367,7 +375,7 @@ extern "system" fn pill_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             if PILL_BAR.with(|b| b.get()).is_some_and(|(from, to)| x >= from && x < to) {
                 pill(PillEvent::BarClick)
             } else {
-                pill(PillEvent::Click { x })
+                pill(PillEvent::Click { x: x - PILL_OFFSET_X.with(|o| o.get()) })
             }
         }
         WM_MBUTTONUP => pill(PillEvent::MiddleClick),
@@ -524,8 +532,9 @@ extern "system" fn main_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LR
             None => LRESULT(0),
         },
         WM_EFFECTS | WM_MEDIA | WM_OUTPUT | WM_BUDS | WM_VOLUME | WM_SETTINGS_FILE | WM_MATCHES | WM_LYRICS | WM_PRIVACY | WM_HEADSETS | WM_WEATHER | WM_SHELF | WM_CAPTURE | WM_UPDATE
-        | WM_TASKBAR_ITEMS | WM_WALLPAPER | WM_GAMES | WM_WELLBEING | WM_API | WM_SHELF_TOOL | WM_TRANSFER | WM_QUESTION => {
+        | WM_TASKBAR_ITEMS | WM_WALLPAPER | WM_GAMES | WM_WELLBEING | WM_API | WM_SHELF_TOOL | WM_TRANSFER | WM_QUESTION | WM_DOWNLOAD => {
             push_event(match msg {
+                WM_DOWNLOAD => UiEvent::Download,
                 WM_API => UiEvent::Api,
                 WM_QUESTION => UiEvent::Question,
                 WM_SHELF_TOOL => UiEvent::ShelfTool,
@@ -567,10 +576,10 @@ extern "system" fn main_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LR
     }
 }
 
-const PASSIVE_CLASS: PCWSTR = w!("NowBarVisual");
-const MAIN_CLASS: PCWSTR = w!("NowBarMain");
-const PILL_INPUT_CLASS: PCWSTR = w!("NowBarPillInput");
-const CARD_INPUT_CLASS: PCWSTR = w!("NowBarCardInput");
+const PASSIVE_CLASS: PCWSTR = w!("SwiftTabVisual");
+const MAIN_CLASS: PCWSTR = w!("SwiftTabMain");
+const PILL_INPUT_CLASS: PCWSTR = w!("SwiftTabPillInput");
+const CARD_INPUT_CLASS: PCWSTR = w!("SwiftTabCardInput");
 
 fn register_classes() {
     static ONCE: Once = Once::new();
@@ -599,7 +608,7 @@ fn create(class: PCWSTR, ex: WINDOW_EX_STYLE, r: RectPx) -> Result<HWND> {
     register_classes();
     unsafe {
         let instance = GetModuleHandleW(None)?.into();
-        CreateWindowExW(ex, class, w!("Now Bar"), WS_POPUP, r.x, r.y, r.w, r.h, None, None, Some(instance), None)
+        CreateWindowExW(ex, class, w!("Swift Tab"), WS_POPUP, r.x, r.y, r.w, r.h, None, None, Some(instance), None)
     }
 }
 
@@ -661,7 +670,11 @@ impl PillWindow {
     pub fn create(g: &Gfx, bar: HWND, lane: RectPx, frame_w: i32) -> Result<Self> {
         let ex = WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
         let hwnd = create(PASSIVE_CLASS, ex, lane)?;
-        unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA)? };
+        unsafe {
+            SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA)?;
+            let on: i32 = if crate::platform::os::solid_fallback() { 0 } else { 1 };
+            let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &on as *const i32 as _, 4);
+        }
         taskbar::embed(hwnd, bar, lane)?;
         let (target, root) = composition_target(g, hwnd, lane)?;
         let stage = g.compositor.CreateContainerVisual()?;
@@ -718,6 +731,7 @@ impl PillWindow {
             parts.push((b.x - input.x, b.w));
         }
         set_hit_regions(self.input, &parts, input.h, radius_px);
+        PILL_OFFSET_X.with(|o| o.set(pill.x - input.x));
         PILL_BAR.with(|p| p.set(bar.map(|b| (b.x - input.x, b.x - input.x + b.w))));
         taskbar::place(self.hwnd, self.bar, self.lane)?;
         self.placed.set(Some((pill, bar, radius_px)));
@@ -736,6 +750,11 @@ impl PillWindow {
         }
         anim.SetDuration(windows::Foundation::TimeSpan { Duration: scaled_ticks(SPRING_DURATION_S * 1000.0) })?;
         self.stage.StartAnimation(h!("Offset.X"), &anim)
+    }
+
+    /// The composition window's left edge, in screen pixels.
+    pub fn lane_x(&self) -> i32 {
+        self.lane.x
     }
 
     /// On show now (not hidden for fullscreen, no room or nothing to show).
@@ -796,7 +815,7 @@ impl CardWindow {
         let hwnd = create(PASSIVE_CLASS, ex, frame)?;
         unsafe {
             SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA)?;
-            let on: i32 = 1;
+            let on: i32 = if crate::platform::os::solid_fallback() { 0 } else { 1 };
             let corners = DWMWCP_DONOTROUND;
             let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
             // Windows 11 only: on Windows 10 they fail, and the card keeps the flat material

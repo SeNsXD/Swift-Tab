@@ -38,10 +38,10 @@ use crate::activities::media_worker::{filetime_now, MediaWorker};
 use crate::activities::lyrics::{self, line_at, Lines};
 use crate::activities::lyrics_worker::{LyricsMailbox, LyricsWorker, Track};
 use crate::activities::power::{power_moment, PowerMoment, POWER_MOMENT_MS};
-use crate::activities::{add_idle, buds_front_ms, has_card, media_paused_keep_ms, settings_page_for, stack_order, BUDS_MODE_MOMENT_MS, ActivityKind, Presence, PresenceState, ALERT_MOMENT_MS, GAME_MOMENT_MS, RAIN_MOMENT_MS, USAGE_MOMENT_MS, VOLUME_MOMENT_MS};
+use crate::activities::{add_idle, buds_front_ms, has_card, media_paused_keep_ms, stack_order, ActivityKind, Presence, PresenceState, ALERT_MOMENT_MS, BUDS_MODE_MOMENT_MS, GAME_MOMENT_MS, RAIN_MOMENT_MS, USAGE_MOMENT_MS, VOLUME_MOMENT_MS};
 use crate::platform::os;
 use crate::platform::power::{self, Power};
-use crate::platform::privacy::{self, InUse, PrivacyMailbox};
+use crate::platform::privacy::{InUse, PrivacyMailbox};
 use crate::platform::bt_battery::{self, Headset, HeadsetMailbox};
 use crate::activities::weather::{clock_text, describe, fx_of, hours_ahead, rain_ahead, rain_when, symbol, RainAhead, RainWatch, Weather, WeatherFx};
 use crate::activities::weather_alert::{alert_text, alerts_now, Alert, AlertWatch};
@@ -56,6 +56,8 @@ use crate::activities::away::{self, AwayItem, AwayKind, AwayLog, AwayReport, AWA
 use crate::activities::music::{self, plays_text, week_caption, Listening, MusicLog};
 use crate::activities::transfer::{done_text, pill_detail, TransferKind, TRANSFER_DONE_MS};
 use crate::activities::transfer_worker::{TransferMailbox, TransferNow};
+use crate::activities::download::{DownloadInfo, DOWNLOAD_DONE_MS};
+use crate::activities::download_worker::DownloadMailbox;
 use crate::render::card::{MusicCard, MusicRow, MUSIC_ACCENT};
 use crate::activities::claude::{done_status, step_label, task_progress};
 use crate::platform::captures::{Capture, CaptureMailbox};
@@ -98,7 +100,7 @@ use crate::render::morph::PAGE_OUT_MS;
 use crate::render::gfx::{is_device_lost, Gfx};
 use crate::render::layout::{card_rect, fit_pill, frame_x, pill_fit, pill_rect, RectPx, Scale, TaskbarInfo};
 use crate::render::morph::{Morph, SHADOW_BLUR_DIP, SHADOW_DY_DIP};
-use crate::render::pill::{layout_for, waveform_levels, PillButton, PillContent, PillLayout, PillVisual, MAX_SLIVERS, PILL_H_DIP, SLIVER_STEP_DIP};
+use crate::render::pill::{layout_for, waveform_levels, PillButton, PillContent, PillLayout, PillVisual, PILL_H_DIP, WIDEST_PILL_DIP};
 
 /// Widest and tallest card (370 DIP; a full Now Brief, screen time included, is 566 tall); the
 /// card window is that plus shadow room and never resizes.
@@ -210,10 +212,8 @@ enum OpenCard {
 }
 
 impl OpenCard {
-    /// Grows out of the pill and shrinks back into it (the picker and the question card, opened
-    /// by a shortcut, slide up on their own).
     fn grows_from_pill(self) -> bool {
-        !self.takes_keys()
+        false
     }
 
     /// Takes the keyboard: focused while open, and not closed by the mouse leaving.
@@ -284,15 +284,19 @@ pub fn should_show_done_card(fullscreen: bool) -> bool {
 /// The activity the wheel moves to: `delta` > 0 goes back through the stack, < 0 comes forward.
 pub fn next_front(stack: &[ActivityKind], front: ActivityKind, delta: i32) -> Option<ActivityKind> {
     let n = stack.len() as i32;
-    let i = stack.iter().position(|k| *k == front)? as i32;
+    if n == 0 {
+        return None;
+    }
+    let match_front = |k: &ActivityKind| *k == front || matches!((k, front), (ActivityKind::Media(_), ActivityKind::Media(_)));
+    let i = stack.iter().position(match_front)? as i32;
     let step = if delta < 0 { -1 } else { 1 };
-    stack.get((i + step).rem_euclid(n.max(1)) as usize).copied()
+    stack.get((i + step).rem_euclid(n) as usize).copied()
 }
 
 /// One wheel step from `front`, walked in the stack's own order (without the user's pick: the
 /// pick sits at the front, so stepping through that stack would only swap the first two).
 pub fn wheel_step(p: &[Presence], now_ms: u64, front: ActivityKind, delta: i32) -> Option<ActivityKind> {
-    next_front(&stack_order(p, now_ms, None), front, delta)
+    next_front(&crate::activities::stack_canonical_order(p, now_ms), front, delta)
 }
 
 /// A swipe ends after this long without wheel events (touchpad inertia included).
@@ -467,6 +471,29 @@ fn pill_moment(m: &MatchSnapshot, moment: Moment) -> PillMoment {
 }
 
 /// The media as the settings want it drawn: the app's colour instead of the cover's if asked.
+/// The id of the stand-in media pill, which no real session has.
+pub use crate::activities::media::IDLE_MEDIA;
+
+/// The media pill with no player: nothing to play or skip, so every button is off.
+fn idle_media() -> MediaSnapshot {
+    MediaSnapshot {
+        id: IDLE_MEDIA,
+        app_id: String::new(),
+        app_name: String::new(),
+        title: tr("Nothing playing").to_string(),
+        artist: String::new(),
+        playing: false,
+        timeline: None,
+        can: crate::activities::media::Caps::default(),
+        shuffle: None,
+        repeat: None,
+        art: None,
+        art_size: (0, 0),
+        accent: [0x60, 0xCD, 0xFF],
+        changed_ms: 0,
+    }
+}
+
 fn styled(mut m: MediaSnapshot) -> MediaSnapshot {
     if !settings::current().use_cover_color {
         m.accent = app_accent(&m.app_id);
@@ -507,9 +534,9 @@ fn visible_outputs() -> Vec<OutputDevice> {
 /// The pill's size setting as a factor on its 32 DIP design (28 / 32 / 36 DIP tall).
 fn pill_size_factor(size: PillSize) -> f32 {
     match size {
-        PillSize::Compact => 0.875,
-        PillSize::Standard => 1.0,
-        PillSize::Large => 1.125,
+        PillSize::Compact => 0.78,
+        PillSize::Standard => 0.88,
+        PillSize::Large => 1.0,
     }
 }
 
@@ -545,29 +572,43 @@ fn effects_enabled() -> bool {
     os::card_blur(os::generation(), settings::current().card_blur, transparency)
 }
 
-/// Starts the settings window (`nowbar-settings.exe` next to this exe); it keeps one instance.
+/// Starts the settings window (`swifttab-settings.exe` next to this exe); it keeps one instance.
 fn open_settings() {
     open_settings_at(None);
 }
 
 /// The settings window on `page` (`--page N`; an open window switches to it).
-fn open_settings_at(page: Option<u8>) {
-    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("nowbar-settings.exe")));
+pub fn open_settings_at(page: Option<u8>) {
+    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("swifttab-settings.exe")));
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(windows::Win32::UI::WindowsAndMessaging::ASFW_ANY);
+    }
     match exe {
         Some(path) if path.exists() => {
             let mut cmd = std::process::Command::new(path);
             if let Some(p) = page {
                 cmd.args(["--page", &p.to_string()]);
             }
-            // The click was ours, so we may hand the foreground on: the window opens in front.
-            unsafe {
-                let _ = windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(windows::Win32::UI::WindowsAndMessaging::ASFW_ANY);
-            }
             if let Err(e) = cmd.spawn() {
                 log(&format!("settings window: {e:?}"));
             }
         }
-        _ => log("settings window: nowbar-settings.exe not found next to nowbar.exe"),
+        _ => {
+            // Dev fallback: when launched via `cargo run --release --bin nowbar`, build & launch `nowbar-settings` automatically.
+            use std::os::windows::process::CommandExt;
+            let mut cmd = std::process::Command::new("cargo");
+            cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
+            cmd.args(["run", "--release", "--bin", "swifttab-settings"]);
+            if let Some(p) = page {
+                cmd.args(["--", "--page", &p.to_string()]);
+            }
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            if let Err(e) = cmd.spawn() {
+                log(&format!("settings window cargo fallback failed: {e:?}"));
+            } else {
+                log("settings window: building and launching nowbar-settings via cargo");
+            }
+        }
     }
 }
 
@@ -726,6 +767,7 @@ pub struct App {
     switch_pending: Option<ActivityKind>,
     outputs: Vec<OutputDevice>,
     volume_drag: bool,
+    app_volume_drag: bool,
     /// Whether the pill was last shown, for the log line when that changes.
     pill_shown: Option<bool>,
     /// The waveform: the output's peak meter (made on the first tick), the bars' levels, and
@@ -759,7 +801,7 @@ pub struct App {
     alert_watch: AlertWatch,
     alerts: std::collections::VecDeque<Alert>,
     alert_moment: Option<(Alert, u64)>,
-    /// What other programs sent (`nowbar.exe push`, Claude Code's hooks, apps through the API).
+    /// What other programs sent (`swifttab.exe push`, Claude Code's hooks, apps through the API).
     live: LiveSet,
     /// The API: its listener while it is on, what it hands over, and the prompts, waiting
     /// requests and clicks.
@@ -803,6 +845,10 @@ pub struct App {
     transfer_since: u64,
     transfer_done: Option<(TransferKind, u64)>,
     transfer_box: TransferMailbox,
+    download: Option<DownloadInfo>,
+    download_since: u64,
+    download_done: Option<(DownloadInfo, u64)>,
+    download_box: DownloadMailbox,
     /// The week's music: what played, the track being followed, when the file was last written.
     music: MusicLog,
     listening: Listening,
@@ -839,10 +885,13 @@ pub struct App {
     share_box: crate::platform::share::ShareMailbox,
     /// The files the shelf's tools made lately (the last 50).
     shelf_made: Vec<PathBuf>,
+    shelf_scroll: f32,
     clipboard_stash: crate::activities::clipboard_stash::ClipboardStash,
     clipboard_ms: u64,
     clipboard_hover: Option<usize>,
     clipboard_toast: Option<(String, u64)>,
+    clipboard_scroll: f32,
+    clipboard_scroll_drag: bool,
     /// Our own paste changes the clipboard: updates until this time are not new copies.
     clipboard_ignore_until: u64,
     clipboard_retries: u8,
@@ -888,7 +937,6 @@ impl App {
         }
         let lyrics_mailbox: LyricsMailbox = Default::default();
         let privacy_mailbox: PrivacyMailbox = Default::default();
-        privacy::watch(privacy_mailbox.clone());
         let headset_mailbox: HeadsetMailbox = Default::default();
         bt_battery::watch(headset_mailbox.clone());
         let wellbeing_box: WellbeingMailbox = Default::default();
@@ -897,6 +945,8 @@ impl App {
         crate::activities::games_worker::start(game_box.clone(), crate::platform::windows::post_games);
         let transfer_box: TransferMailbox = Default::default();
         crate::activities::transfer_worker::start(transfer_box.clone(), crate::platform::windows::post_transfer);
+        let download_box: DownloadMailbox = Default::default();
+        crate::activities::download_worker::start(download_box.clone(), crate::platform::windows::post_download);
         let weather_mailbox: WeatherMailbox = Default::default();
         let capture_mailbox: CaptureMailbox = Default::default();
         // The pill's preview: 36×24 DIP at the pill's scale.
@@ -953,7 +1003,11 @@ impl App {
             main,
             front: None,
             stack: Vec::new(),
-            user_front: None,
+            user_front: match settings::current().preferred_idle_activity.as_str() {
+                "shelf" => Some((ActivityKind::Shelf, now_ms())),
+                "media" => Some((ActivityKind::Media(IDLE_MEDIA), now_ms())),
+                _ => Some((ActivityKind::Clipboard, now_ms())),
+            },
             card_state: CardState::Closed,
             open: None,
             card_screen: RectPx { x: 0, y: 0, w: 0, h: 0 },
@@ -996,6 +1050,7 @@ impl App {
             switch_pending: None,
             outputs: Vec::new(),
             volume_drag: false,
+            app_volume_drag: false,
             pill_shown: None,
             meter: None,
             levels: [0.0; 3],
@@ -1046,6 +1101,10 @@ impl App {
             transfer_since: 0,
             transfer_done: None,
             transfer_box,
+            download: None,
+            download_since: 0,
+            download_done: None,
+            download_box,
             music: music::load(&music::path()),
             listening: Listening::default(),
             music_saved_ms: 0,
@@ -1069,10 +1128,13 @@ impl App {
             tool_mailbox,
             share_box: Default::default(),
             shelf_made: Vec::new(),
+            shelf_scroll: 0.0,
             clipboard_stash: crate::activities::clipboard_stash::ClipboardStash::new(),
             clipboard_ms: 0,
             clipboard_hover: None,
             clipboard_toast: None,
+            clipboard_scroll: 0.0,
+            clipboard_scroll_drag: false,
             clipboard_ignore_until: 0,
             clipboard_retries: 0,
             fg_cache: std::cell::RefCell::new((0, None)),
@@ -1097,6 +1159,8 @@ impl App {
         if let Some(dir) = args.iter().position(|a| a == "--update-from").and_then(|i| args.get(i + 1)) {
             app.updater.apply_from(dir.into());
         }
+        app.clipboard_stash.load_pinned();
+        app.shelf.load_pinned(|p| p.is_dir());
         app.refresh()?;
         log(&format!("started: taskbar {:?}, scale {}, fullscreen {}", app.ui.info.rect, app.ui.scale.0, app.fullscreen));
         // Signed in without a lock screen (or restarted): the start is the day's first look.
@@ -1145,6 +1209,7 @@ impl App {
         }
         self.stop_brief_idle();
         self.card_pinned = false;
+        self.app_volume_drag = false;
         self.disarm_leave();
         unsafe {
             let _ = KillTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE);
@@ -1219,22 +1284,37 @@ impl App {
         pill_rect(info, width_dip, PILL_H_DIP, s, settings::current().pill_offset_dip as f32)
     }
 
+    /// Where the info bar (weather, earbuds) sits: one spot for as long as it is on, whatever pill
+    /// comes and goes beside it. A pill is placed to the bar's right, so the spot is `pill_home` of
+    /// the widest pill (a narrower one, centred, never reaches back into it).
+    fn bar_home(info: &TaskbarInfo, s: &Scale, bar_w_dip: f32) -> RectPx {
+        RectPx { x: Self::pill_home(info, s, WIDEST_PILL_DIP).x, ..Self::pill_home(info, s, bar_w_dip) }
+    }
+
     /// The pill's rect at `width_dip`: its home, or beside the taskbar's buttons when they reach
     /// it (they grow as apps open), and true when only its circle has room. None when not even
     /// the circle fits.
     fn pill_at(&self, width_dip: f32) -> Option<(RectPx, bool)> {
         let s = &self.ui.pill_scale;
-        let home = Self::pill_home(&self.ui.info, s, width_dip);
-        let circle = Self::pill_home(&self.ui.info, s, PILL_H_DIP);
+        let bar_lead = self.bar_info().map_or(0, |b| {
+            (s.px(crate::render::pill::bar_width_dip(&b)) + s.px(crate::render::pill::bar_gap_dip(0))) as i32
+        });
+        let mut home = Self::pill_home(&self.ui.info, s, width_dip);
+        home.x += bar_lead;
+        let mut circle = Self::pill_home(&self.ui.info, s, PILL_H_DIP);
+        circle.x += bar_lead;
         let circle = RectPx { w: circle.h, ..circle };
-        let tail = if settings::current().pill_slivers { s.px(SLIVER_STEP_DIP * MAX_SLIVERS as f32) as i32 } else { 0 };
-        fit_pill(home, circle, tail, self.ui.scale.px(ITEM_GAP_DIP) as i32, &self.ui.info, &self.taskbar_items)
+        // The strips of the activities behind the front one are gone: nothing trails the pill.
+        fit_pill(home, circle, 0, self.ui.scale.px(ITEM_GAP_DIP) as i32, &self.ui.info, &self.taskbar_items)
     }
 
     /// Takes the latest taskbar items unless a card is out (it grows from and shrinks into the
     /// pill, which moves once it has closed). True when they changed.
     fn follow_taskbar_items(&mut self) -> bool {
-        if self.card_state != CardState::Closed {
+        // The Start menu, Search and the flyouts cover or shift the taskbar while they are up: what
+        // is read then isn't the bar's. The next foreground change takes it (the pill didn't
+        // vanish for a few seconds with the Windows key).
+        if self.card_state != CardState::Closed || crate::platform::fullscreen::shell_flyout_in_front() {
             return false;
         }
         let items = self.items_mailbox.lock().map(|slot| slot.clone()).unwrap_or_default();
@@ -1264,6 +1344,11 @@ impl App {
     }
 
     fn pill_screen(&self) -> RectPx {
+        if self.open == Some(OpenCard::Activity(ActivityKind::Weather)) || self.front.is_none() {
+            if let Some(b) = self.bar_info() {
+                return Self::bar_home(&self.ui.info, &self.ui.pill_scale, crate::render::pill::bar_width_dip(&b));
+            }
+        }
         let width = self.front.as_ref().map_or(176.0, PillContent::width_dip);
         self.pill_at(width).map_or_else(|| Self::pill_home(&self.ui.info, &self.ui.pill_scale, width), |(r, _)| r)
     }
@@ -1287,9 +1372,16 @@ impl App {
             return p;
         }
         let hidden = |m: &MediaSnapshot| s.media_hidden_apps.iter().any(|a| m.app_id.eq_ignore_ascii_case(a));
-        for m in self.media.iter().filter(|m| s.media_enabled && !hidden(m) && !self.media_in_front(m)) {
+        let has_track = |m: &MediaSnapshot| m.playing || !m.title.trim().is_empty();
+        for m in self.media.iter().filter(|m| s.media_enabled && !hidden(m) && has_track(m)) {
             let state = if m.playing { PresenceState::Playing } else { PresenceState::Paused };
             p.push(Presence { kind: ActivityKind::Media(m.id), state, changed_ms: m.changed_ms });
+        }
+        // "Always show": with no player (or only long-paused expired players), a stand-in pill ("Nothing playing") keeps the spot.
+        let keep_ms = crate::activities::media_paused_keep_ms();
+        let visible_media = self.media.iter().any(|m| s.media_enabled && !hidden(m) && has_track(m) && (m.playing || now.saturating_sub(m.changed_ms) <= keep_ms));
+        if s.media_pinned && s.media_enabled && !visible_media {
+            p.push(Presence { kind: ActivityKind::Media(IDLE_MEDIA), state: PresenceState::Paused, changed_ms: 0 });
         }
         if let Some((_, at)) = self.rain_moment.filter(|_| s.rain_moment) {
             p.push(Presence { kind: ActivityKind::Rain, state: PresenceState::Moment, changed_ms: at });
@@ -1306,6 +1398,11 @@ impl App {
             (None, Some((_, at))) => p.push(Presence { kind: ActivityKind::Transfer, state: PresenceState::Moment, changed_ms: at }),
             _ => {}
         }
+        match (self.download.as_ref().filter(|_| s.downloads_on), self.download_done.as_ref().filter(|_| s.downloads_on)) {
+            (Some(_), _) => p.push(Presence { kind: ActivityKind::Download, state: PresenceState::Running, changed_ms: self.download_since }),
+            (None, Some((_, at))) => p.push(Presence { kind: ActivityKind::Download, state: PresenceState::Moment, changed_ms: *at }),
+            _ => {}
+        }
         if let Some((_, at)) = self.capture.as_ref().filter(|_| s.capture_moment) {
             p.push(Presence { kind: ActivityKind::Capture, state: PresenceState::Moment, changed_ms: *at });
         }
@@ -1318,18 +1415,13 @@ impl App {
             };
             p.push(Presence { kind: ActivityKind::Live(i.key), state, changed_ms: i.changed_ms });
         }
-        for (h, since) in self.headsets.iter().filter(|_| s.headsets_on) {
-            // Their battery is the chip beside the pill, always. The pill itself is theirs only
-            // for a moment after connecting, or while the battery is low.
-            let low = h.pct < crate::activities::buds::low_battery();
-            if low || now.saturating_sub(*since) < crate::activities::buds_front_ms() {
-                p.push(Presence { kind: ActivityKind::Headset(h.id), state: PresenceState::Connected { battery_low: low }, changed_ms: *since });
-            }
-        }
-        if !self.shelf.is_empty() || s.shelf_pinned {
+        // Earbuds battery is always shown in the corner Weather & Earbuds chip (`BarInfo`),
+        // never replacing the active pill.
+        let _ = &self.headsets;
+        if s.shelf_enabled && (!self.shelf.is_empty() || s.shelf_pinned) {
             p.push(Presence { kind: ActivityKind::Shelf, state: PresenceState::Running, changed_ms: self.shelf_ms });
         }
-        if !self.clipboard_stash.is_empty() {
+        if !self.clipboard_stash.is_empty() || (s.clipboard_pinned && s.clipboard_stash) {
             let age = now.saturating_sub(self.clipboard_ms);
             let state = if age < crate::activities::clipboard_stash::CLIPBOARD_MOMENT_MS {
                 PresenceState::Moment
@@ -1363,16 +1455,7 @@ impl App {
                 games.push(n.game.key);
             }
         }
-        if s.privacy_on && !self.privacy.is_empty() {
-            p.push(Presence { kind: ActivityKind::Privacy, state: PresenceState::Running, changed_ms: self.privacy_ms });
-        }
-        // The Buds are not in the stack: their battery is the chip beside the pill, always.
-        // Only a noise-control change takes the pill for a moment.
-        if self.buds.is_some() && s.buds_enabled {
-            if let Some((_, at)) = self.buds_mode_moment.filter(|(_, at)| now.saturating_sub(*at) < BUDS_MODE_MOMENT_MS) {
-                p.push(Presence { kind: ActivityKind::Buds, state: PresenceState::Moment, changed_ms: at });
-            }
-        }
+        let _ = &self.buds_mode_moment;
         // Nothing else: the clock (and the weather) instead of an empty taskbar spot. With other
         // things on, the weather waits at the back of the stack.
         // Nothing on: the info bar (weather, earbuds' battery) alone where the pill would be.
@@ -1388,7 +1471,7 @@ impl App {
         p
     }
 
-    /// The followed matches the Now Bar shows now (settings: on, the window around kick-off,
+    /// The followed matches the Swift Tab shows now (settings: on, the window around kick-off,
     /// not hidden from the menu).
     #[allow(dead_code)]
     fn shown_matches(&self, _now: u64) -> Vec<&MatchSnapshot> {
@@ -1705,6 +1788,7 @@ impl App {
                 paused: slot.w.state() == RunState::Paused,
             }),
             // With synced lines, the one on takes the title's place (between lines, the title).
+            ActivityKind::Media(IDLE_MEDIA) => settings::current().media_pinned.then(|| PillContent::media(idle_media())),
             ActivityKind::Media(id) => self.media_of(id).map(|m| {
                 let mut shown = styled(m.clone());
                 if let Some((Some(line), _)) = self.pill_lyric(m) {
@@ -1732,6 +1816,11 @@ impl App {
                 (None, Some((kind, _))) => Some(PillContent::Transfer { kind, pct: 100, detail: String::new(), done: true }),
                 _ => None,
             },
+            ActivityKind::Download => match (&self.download, &self.download_done) {
+                (Some(d), _) => Some(PillContent::Download { name: d.filename.clone(), detail: d.detail.clone(), done: false, progress: d.progress }),
+                (None, Some((info, _))) => Some(PillContent::Download { name: info.filename.clone(), detail: String::new(), done: true, progress: Some(1.0) }),
+                _ => None,
+            },
             ActivityKind::WeatherAlert => self.alert_moment.map(|(a, _)| {
                 let (head, detail) = alert_text(&a, unix_now(), self.weather.as_ref().map_or_else(tz_offset_s, |w| w.utc_offset_s));
                 PillContent::WeatherAlert { kind: a.kind, head: head.to_string(), detail }
@@ -1746,8 +1835,14 @@ impl App {
                 .iter()
                 .find(|(h, _)| h.id == id)
                 .map(|(h, _)| PillContent::Headset { name: h.name.clone(), pct: h.pct }),
-            ActivityKind::Shelf => (!self.shelf.is_empty() || settings::current().shelf_pinned).then(|| self.shelf_pill(false)),
-            ActivityKind::Clipboard => (!self.clipboard_stash.is_empty()).then(|| self.clipboard_pill()),
+            ActivityKind::Shelf => {
+                let s = settings::current();
+                (s.shelf_enabled && (!self.shelf.is_empty() || s.shelf_pinned)).then(|| self.shelf_pill(false))
+            }
+            ActivityKind::Clipboard => {
+                let s = settings::current();
+                (!self.clipboard_stash.is_empty() || (s.clipboard_pinned && s.clipboard_stash)).then(|| self.clipboard_pill())
+            }
             ActivityKind::Clock => {
                 let (time, date) = clock_text(unix_now() + tz_offset_s());
                 // Hours offline: no stale sky in the clock pill.
@@ -1794,17 +1889,27 @@ impl App {
                     paused: slot.w.state() == RunState::Paused,
                 })
             }),
-            OpenCard::Activity(kind @ ActivityKind::Media(id)) => self.media_of(id).cloned().map(styled).map(|m| {
-                let hold = self.seek_hold.filter(|(held, _)| *held == id).map(|(_, h)| h);
-                let mut card = MediaCard::new(m, filetime_now(), self.output_name.clone(), self.seeking, self.page_of(kind), hold);
-                card.lyrics = self.lyrics_view(&card);
-                card.show_lyrics = self.show_lyrics;
-                card.pinned = self.card_pinned;
-                if let Some(page) = self.output_page_content(&card.m, now) {
-                    card.page = MediaPage::Output(Box::new(page));
-                }
-                CardContent::Media(Box::new(card))
-            }),
+            OpenCard::Activity(kind @ ActivityKind::Media(id)) => {
+                let m = if id == IDLE_MEDIA {
+                    Some(idle_media())
+                } else {
+                    self.media_of(id).cloned()
+                };
+                m.map(styled).map(|m| {
+                    let hold = self.seek_hold.filter(|(held, _)| *held == id).map(|(_, h)| h);
+                    let mut card = MediaCard::new(m, filetime_now(), self.output_name.clone(), self.seeking, self.page_of(kind), hold);
+                    card.lyrics = self.lyrics_view(&card);
+                    card.show_lyrics = self.show_lyrics;
+                    card.pinned = self.card_pinned;
+                    if let Some(page) = self.output_page_content(&card.m, now) {
+                        card.page = MediaPage::Output(Box::new(page));
+                    }
+                    if card.m.id != IDLE_MEDIA {
+                        card.app_volume = crate::platform::audio::app_volume(&card.m.app_id, &card.m.app_name);
+                    }
+                    CardContent::Media(Box::new(card))
+                })
+            }
             OpenCard::Activity(ActivityKind::Buds) => self.buds.map(|(b, _)| CardContent::Buds(shown_buds(b))),
             OpenCard::Activity(ActivityKind::Match(key)) => self.match_of(key).map(|m| CardContent::Match(Box::new(self.match_card(m, now)))),
             // A moment has no card.
@@ -1820,16 +1925,20 @@ impl App {
                 | ActivityKind::Transfer
                 | ActivityKind::Capture,
             ) => None,
-            OpenCard::Activity(ActivityKind::Shelf) => (!self.shelf.is_empty() || settings::current().shelf_pinned).then(|| {
-                let tiles = self
-                    .shelf
-                    .items()
-                    .iter()
-                    .enumerate()
-                    .map(|(n, i)| ShelfTile { name: i.name.clone(), thumb: self.shelf_thumbs.get(&i.path).cloned().flatten(), kind: i.kind, selected: self.shelf.is_selected(n) })
-                    .collect();
-                CardContent::Shelf(ShelfCard { tiles, hover: self.shelf_hover, chips: self.shelf_chips(), said: self.shelf_status.as_ref().map(|(op, _, _)| *op), pinned: settings::current().shelf_pinned })
-            }),
+            OpenCard::Activity(ActivityKind::Download) => self.download_card(now),
+            OpenCard::Activity(ActivityKind::Shelf) => {
+                let s = settings::current();
+                (s.shelf_enabled && (!self.shelf.is_empty() || s.shelf_pinned)).then(|| {
+                    let tiles = self
+                        .shelf
+                        .items()
+                        .iter()
+                        .enumerate()
+                        .map(|(n, i)| ShelfTile { name: i.name.clone(), thumb: self.shelf_thumbs.get(&i.path).cloned().flatten(), kind: i.kind, selected: self.shelf.is_selected(n) })
+                        .collect();
+                    CardContent::Shelf(ShelfCard { tiles, hover: self.shelf_hover, chips: self.shelf_chips(), said: self.shelf_status.as_ref().map(|(op, _, _)| *op), pinned: self.card_pinned, scroll: self.shelf_scroll })
+                })
+            }
             OpenCard::Activity(ActivityKind::Clipboard) => Some({
                 CardContent::Clipboard(self.clipboard_card())
             }),
@@ -2011,7 +2120,7 @@ impl App {
         let s = settings::current();
         for c in &new {
             log(&format!("capture: {} {}", c.path.display(), size_text(c.size)));
-            if s.capture_to_shelf && self.shelf.add(std::slice::from_ref(&c.path), |_| false) > 0 {
+            if s.shelf_enabled && s.capture_to_shelf && self.shelf.add(std::slice::from_ref(&c.path), |_| false) > 0 {
                 self.shelf_ms = now_ms();
                 self.shelf_thumbs.insert(c.path.clone(), None);
                 self.shelf_worker.send(c.path.clone(), self.ui.card_scale.px(75.0) as u32);
@@ -2046,7 +2155,7 @@ impl App {
     }
 
     /// The card's answer to the permission its Claude session waits for: to the hook process
-    /// (its NowBarAsk window); if that is gone, Claude's own dialog has it.
+    /// (its SwiftTabAsk window); if that is gone, Claude's own dialog has it.
     fn answer_claude(&mut self, allow: bool, painted: u32) {
         let Some(OpenCard::Activity(ActivityKind::Live(key))) = self.open else { return };
         let Some(ask) = self.live.get(key).and_then(|i| i.info.ask.clone()).filter(|a| !a.id.is_empty()) else { return };
@@ -2084,39 +2193,10 @@ impl App {
 
     /// The level the Buds' chip shows: the lower of the two buds (the one that is on, if the
     /// other reads nothing); `None` without Buds.
-    /// The player's own window is the one in front: its controls are right there, so the pill
-    /// steps aside (a minimized player, or one behind other windows, keeps its pill). A browser
-    /// counts only while the tab in front is the one playing.
-    fn media_in_front(&self, m: &MediaSnapshot) -> bool {
-        if !settings::current().media_hide_in_front {
-            return false;
-        }
-        let now = now_ms();
-        let front = {
-            let mut cache = self.fg_cache.borrow_mut();
-            if now.saturating_sub(cache.0) > 250 {
-                *cache = (now, crate::platform::fullscreen::foreground_info());
-            }
-            cache.1.clone()
-        };
-        let Some((exe, title)) = front else { return false };
-        let norm = |s: &str| {
-            let lower = s.to_ascii_lowercase();
-            lower.strip_suffix(".exe").unwrap_or(&lower).chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>()
-        };
-        let exe = norm(&exe);
-        let same = |id: &str| {
-            let id = norm(id);
-            id.len() >= 4 && exe.len() >= 4 && (id == exe || id.contains(&exe) || exe.contains(&id))
-        };
-        if !(same(&m.app_id) || same(&m.app_name)) {
-            return false;
-        }
-        const BROWSERS: [&str; 7] = ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"];
-        if BROWSERS.contains(&exe.as_str()) {
-            return !m.title.is_empty() && title.to_lowercase().contains(&m.title.to_lowercase());
-        }
-        true
+    /// Media pill stays visible at all times even when the media player window or page is in front.
+    fn media_in_front(&self, _m: &MediaSnapshot) -> bool {
+        let _ = &self.fg_cache;
+        false
     }
 
     /// The small bar beside the pill: the weather (when it is on and known) and the earbuds'
@@ -2146,7 +2226,7 @@ impl App {
 
     fn clipboard_pill(&self) -> PillContent {
         let first = self.clipboard_stash.items().front();
-        let label = first.map_or_else(|| tr("Pano").to_string(), |i| {
+        let label = first.map_or_else(|| "Clipboard".to_string(), |i| {
             match &i.kind {
                 crate::activities::clipboard_stash::ClipboardKind::Url { domain } => domain.clone(),
                 crate::activities::clipboard_stash::ClipboardKind::Image { width, height } if *width > 0 && *height > 0 => {
@@ -2157,6 +2237,18 @@ impl App {
         });
         let thumb = first.and_then(|i| i.thumb.clone());
         PillContent::Clipboard { label, count: self.clipboard_stash.len(), thumb }
+    }
+
+    fn shelf_max_scroll(&self) -> f32 {
+        let pinned = self.shelf.items().iter().enumerate().filter(|(n, _)| self.shelf.is_selected(*n)).count();
+        let unpinned = self.shelf.items().len().saturating_sub(pinned);
+        crate::render::card::shelf_categorized_max_scroll(pinned, unpinned)
+    }
+
+    fn clipboard_max_scroll(&self) -> f32 {
+        let pinned = self.clipboard_stash.items().iter().filter(|i| i.pinned).count();
+        let unpinned = self.clipboard_stash.items().len().saturating_sub(pinned);
+        crate::render::card::clipboard_categorized_max_scroll(pinned, unpinned)
     }
 
     fn clipboard_card(&self) -> crate::render::card::ClipboardCard {
@@ -2180,6 +2272,7 @@ impl App {
                 is_url,
                 is_image,
                 has_html,
+                pinned: item.pinned,
             }
         }).collect();
 
@@ -2188,11 +2281,12 @@ impl App {
             tiles,
             hover: self.clipboard_hover,
             toast,
+            scroll: self.clipboard_scroll,
         }
     }
 
     /// The shelf's pill: the newest three, the newest one's name and the count; with `drop_hint`
-    /// (a file drag over the pill, whatever is in front) the accent ring, "Rafa bırak" while empty.
+    /// (a file drag over the pill, whatever is in front) the accent ring, "Drop to shelf" while empty.
     fn shelf_pill(&self, drop_hint: bool) -> PillContent {
         let thumbs = self
             .shelf
@@ -2201,7 +2295,7 @@ impl App {
             .take(3)
             .map(|i| PillThumb { thumb: self.shelf_thumbs.get(&i.path).cloned().flatten(), kind: i.kind })
             .collect();
-        let label = self.shelf.items().first().map_or_else(|| tr("Rafa bırak").to_string(), |i| i.name.clone());
+        let label = self.shelf.items().first().map_or_else(|| "Drop to shelf".to_string(), |i| i.name.clone());
         let min_width_dip = if drop_hint { self.front.as_ref().map_or(0.0, |f| f.width_dip()) } else { 0.0 };
         PillContent::Shelf { label, count: self.shelf.items().len(), thumbs, drop_hint, min_width_dip }
     }
@@ -2209,6 +2303,9 @@ impl App {
     /// Files dropped on the pill or the card: onto the shelf, which comes to the front.
     fn take_dropped(&mut self) -> Result<()> {
         let paths = dragdrop::take_dropped();
+        if !settings::current().shelf_enabled {
+            return Ok(());
+        }
         let added = self.shelf.add(&paths, |p| p.is_dir());
         log(&format!("shelf: +{added} of {} dropped", paths.len()));
         if added > 0 {
@@ -2268,7 +2365,7 @@ impl App {
                 let files: Vec<PathBuf> = self.shelf.targets().iter().filter(|i| i.kind != FileKind::Folder).map(|i| i.path.clone()).collect();
                 let title = match files.as_slice() {
                     [one] => one.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
-                    many => trf("{} dosya", &[&many.len()]),
+                    many => format!("{} files", many.len()),
                 };
                 crate::platform::share::prepare(files, title, self.share_box.clone(), crate::platform::windows::post_shelf_tool);
             }
@@ -2276,7 +2373,7 @@ impl App {
             _ if self.shelf_status.as_ref().is_some_and(|(_, _, until)| *until == u64::MAX) => {}
             ShelfOp::CopyText => {
                 if let Some(path) = targets.into_iter().next() {
-                    self.shelf_status = Some((op, tr("Okunuyor…").to_string(), u64::MAX));
+                    self.shelf_status = Some((op, "Reading…".to_string(), u64::MAX));
                     self.tool_worker.send(ToolJob::Read(path));
                 }
             }
@@ -2289,7 +2386,7 @@ impl App {
                     pictures.push((src.clone(), dest));
                 }
                 self.note_made(pictures.iter().map(|(_, d)| d.clone()));
-                self.shelf_status = Some((op, tr("Küçültülüyor…").to_string(), u64::MAX));
+                self.shelf_status = Some((op, "Compressing…".to_string(), u64::MAX));
                 self.tool_worker.send(ToolJob::Shrink(pictures));
             }
             // Beside the newest, named after it, as Explorer's "Compress to ZIP file" does.
@@ -2298,7 +2395,7 @@ impl App {
                 let (Some(dir), Some(name)) = (newest.parent(), newest.file_name()) else { return };
                 let out = unique_path(dir, &zip_name(&name.to_string_lossy(), newest.is_dir(), targets.len()), Path::exists);
                 self.note_made([out.clone()]);
-                self.shelf_status = Some((op, tr("Sıkıştırılıyor…").to_string(), u64::MAX));
+                self.shelf_status = Some((op, "Zipping…".to_string(), u64::MAX));
                 self.tool_worker.send(ToolJob::Zip { files: targets, out });
             }
         }
@@ -2320,27 +2417,26 @@ impl App {
                 if let Some(Err(e)) = shown {
                     log(&format!("shelf: share failed ({e})"));
                 }
-                self.shelf_say(ShelfOp::Share, tr("Paylaşılamadı"));
+                self.shelf_say(ShelfOp::Share, "Could not share");
             }
         }
         let done: Vec<ToolDone> = self.tool_mailbox.lock().map(|mut m| std::mem::take(&mut *m)).unwrap_or_default();
         for d in done {
             match d {
-                ToolDone::Text { text, .. } if text.trim().is_empty() => self.shelf_say(ShelfOp::CopyText, tr("Metin bulunamadı")),
+                ToolDone::Text { text, .. } if text.trim().is_empty() => self.shelf_say(ShelfOp::CopyText, "No text found"),
                 ToolDone::Text { text, missing } => match crate::platform::clipboard::set_text(self.main.hwnd, &text) {
                     Ok(()) => {
                         log(&format!("shelf: {} characters copied", text.chars().count()));
-                        // Read by another language's recogniser: ş, ğ and ı may be off.
-                        let said = missing.map_or_else(|| tr("Kopyalandı").to_string(), |lang| trf("Kopyalandı · {} tanıyıcı yok", &[&lang]));
+                        let said = missing.map_or_else(|| "Copied".to_string(), |lang| format!("Copied · no {lang} recognizer"));
                         self.shelf_say(ShelfOp::CopyText, &said);
                     }
                     Err(e) => {
                         log(&format!("shelf: clipboard ({e})"));
-                        self.shelf_say(ShelfOp::CopyText, tr("Kopyalanamadı"));
+                        self.shelf_say(ShelfOp::CopyText, "Could not copy");
                     }
                 },
                 ToolDone::Made { op, files, not_smaller } if files.is_empty() => {
-                    self.shelf_say(op, if not_smaller > 0 { tr("Zaten küçük") } else { tr("Küçültülemedi") });
+                    self.shelf_say(op, if not_smaller > 0 { "Already compressed" } else { "Could not compress" });
                 }
                 // Onto the shelf, selected: the footer now shares what was just made.
                 ToolDone::Made { op, files, not_smaller } => {
@@ -2355,20 +2451,20 @@ impl App {
                     }
                     self.forget_shelf_thumbs();
                     let said = match op {
-                        ShelfOp::Zip => tr("Zip hazır").to_string(),
-                        _ if not_smaller > 0 => trf("{} küçültüldü", &[&files.len()]),
-                        _ => tr("Küçültüldü").to_string(),
+                        ShelfOp::Zip => "Zip ready".to_string(),
+                        _ if not_smaller > 0 => format!("{} compressed", files.len()),
+                        _ => "Compressed".to_string(),
                     };
                     self.shelf_say(op, &said);
                 }
                 ToolDone::Failed { op, why } => self.shelf_say(
                     op,
                     match (op, why) {
-                        (_, ToolWhy::NoRecognizer) => tr("Metin tanıma yok"),
-                        (_, ToolWhy::TooBig) => tr("Zip için çok büyük"),
-                        (ShelfOp::Zip, _) => tr("Zip yapılamadı"),
-                        (ShelfOp::Shrink, _) => tr("Küçültülemedi"),
-                        _ => tr("Açılamadı"),
+                        (_, ToolWhy::NoRecognizer) => "No OCR recognizer",
+                        (_, ToolWhy::TooBig) => "Too large for zip",
+                        (ShelfOp::Zip, _) => "Could not zip",
+                        (ShelfOp::Shrink, _) => "Could not compress",
+                        _ => "Could not open",
                     },
                 ),
             }
@@ -2458,6 +2554,7 @@ impl App {
                     raw_png: None,
                     raw_dib: None,
                     timestamp: now,
+                    pinned: false,
                 });
             }
             crate::platform::clipboard::RawClipboardContent::Image { raw_png, raw_dib, bmp_bytes, width, height } => {
@@ -2481,6 +2578,7 @@ impl App {
                     raw_png,
                     raw_dib,
                     timestamp: now,
+                    pinned: false,
                 });
             }
         }
@@ -2523,7 +2621,7 @@ impl App {
                 let _ = crate::platform::clipboard::set_image(self.main.hwnd, item.raw_png.as_deref(), dib);
             }
         }
-        self.clipboard_toast = Some((tr("Panoya kopyalandı").to_string(), now_ms() + 1500));
+        self.clipboard_toast = Some(("Copied to clipboard".to_string(), now_ms() + 1500));
         self.refresh()
     }
 
@@ -2581,32 +2679,65 @@ impl App {
             self.shelf_status = None;
         }
         let open_done_card = self.check_done(now);
+        let presences = self.presences(now);
         if let Some((kind, _)) = self.user_front {
-            if !self.presences(now).iter().any(|p| p.kind == kind) {
+            let still_there = match kind {
+                ActivityKind::Media(_) => presences.iter().any(|p| matches!(p.kind, ActivityKind::Media(_))),
+                _ => presences.iter().any(|p| p.kind == kind),
+            };
+            if !still_there {
                 self.user_front = None;
             }
         }
-        self.stack = stack_order(&self.presences(now), now, self.user_front);
-        let hint = dragdrop::hover() == Some(DropZone::Pill);
+        if self.user_front.is_none() {
+            let preferred = settings::current().preferred_idle_activity.clone();
+            let match_pref = |p: &Presence| match preferred.as_str() {
+                "shelf" => p.kind == ActivityKind::Shelf,
+                "clipboard" => p.kind == ActivityKind::Clipboard,
+                _ => matches!(p.kind, ActivityKind::Media(_)),
+            };
+            if let Some(hit) = presences.iter().find(|p| match_pref(p)) {
+                self.user_front = Some((hit.kind, now));
+            } else if let Some(m) = presences.iter().find(|p| matches!(p.kind, ActivityKind::Media(_))) {
+                self.user_front = Some((m.kind, now));
+            } else if let Some(s) = presences.iter().find(|p| p.kind == ActivityKind::Shelf) {
+                self.user_front = Some((s.kind, now));
+            } else if let Some(c) = presences.iter().find(|p| p.kind == ActivityKind::Clipboard) {
+                self.user_front = Some((c.kind, now));
+            }
+        }
+        self.stack = stack_order(&presences, now, self.user_front);
+        let hint = settings::current().shelf_enabled && dragdrop::hover() == Some(DropZone::Pill);
         let front = if hint { Some(self.shelf_pill(true)) } else { self.stack.first().and_then(|k| self.pill_content(*k, now)) };
         let bottom = self.ui.info.bottom;
         match front.filter(|_| bottom) {
             None => {
                 self.front = None;
                 // Nothing else on: the info bar alone, where the pill would be.
-                let bar = if bottom && self.stack.first() == Some(&ActivityKind::Weather) { self.bar_info() } else { None };
+                let mut bar = if bottom && self.stack.first() == Some(&ActivityKind::Weather) { self.bar_info() } else { None };
+                if let Some(ref mut b) = bar {
+                    if b.battery.is_none() {
+                        if let Some((_, _, ref mut deg)) = b.weather {
+                            if let Some(place) = crate::activities::weather_worker::place() {
+                                if !place.name.trim().is_empty() && !deg.contains('·') {
+                                    *deg = format!("{deg} · {}", place.name.trim());
+                                }
+                            }
+                        }
+                    }
+                }
                 if let Some(bar) = bar {
                     let l = crate::render::pill::idle_layout(&self.ui.pill_scale);
-                    let home = Self::pill_home(&self.ui.info, &self.ui.pill_scale, crate::render::pill::bar_width_dip(&bar));
+                    let home = Self::bar_home(&self.ui.info, &self.ui.pill_scale, crate::render::pill::bar_width_dip(&bar));
                     self.ui.pill_layout = l;
                     self.ui.pill.hide_pill(&l)?;
-                    self.ui.pill.set_bar(&self.gfx, Some(&bar), 0, true, &self.ui.pill_scale)?;
+                    self.ui.pill.set_bar(&self.gfx, Some(&bar), (home.x - self.ui.pill_window.lane_x()) as f32, &self.ui.pill_scale)?;
                     let glide = self.ui.pill_window.shown();
                     self.ui.pill_window.place_with_bar(home, Some(home), l.frame_w, l.radius, glide)?;
                     self.ui.pill_window.set_visible(!self.fullscreen);
                     self.note_pill(!self.fullscreen, "the info bar alone");
                 } else {
-                    self.ui.pill.set_bar(&self.gfx, None, 0, false, &self.ui.pill_scale)?;
+                    self.ui.pill.set_bar(&self.gfx, None, 0.0, &self.ui.pill_scale)?;
                     self.ui.pill_window.set_visible(false);
                     let why = match self.stack.first() {
                         _ if !bottom => "the taskbar isn't at the bottom of the screen".to_string(),
@@ -2629,21 +2760,21 @@ impl App {
             Some(front) => {
                 let (pill, compact) = self.pill_at(front.width_dip()).unwrap_or_else(|| (Self::pill_home(&self.ui.info, &self.ui.pill_scale, front.width_dip()), false));
                 let front_changed = self.front.as_ref() != Some(&front);
-                let behind: Vec<PillContent> = if settings::current().pill_slivers {
-                    // `get`: a file drag shows the shelf's pill even with nothing in the stack.
-                    self.stack.get(1..).unwrap_or(&[]).iter().filter_map(|k| self.pill_content(*k, now)).collect()
-                } else {
-                    Vec::new()
-                };
+                let behind: Vec<PillContent> = Vec::new();
                 let fade = self.front.as_ref().is_some_and(|f| !f.same_kind(&front));
                 self.ui.pill_layout = self.ui.pill.show(&self.gfx, &front, &behind, &self.ui.pill_scale, fade, compact)?;
                 let bar = if compact { None } else { self.bar_info() };
-                let slivers = behind.len().min(MAX_SLIVERS);
-                self.ui.pill.set_bar(&self.gfx, bar.as_ref(), slivers, false, &self.ui.pill_scale)?;
+                // The bar keeps its own spot while pills come and go; it only steps aside when a
+                // pill pushed left by the taskbar's buttons would otherwise run into it.
                 let bar_rect = bar.as_ref().map(|b| {
                     let s = &self.ui.pill_scale;
-                    RectPx { x: pill.x + pill.w + s.px(crate::render::pill::bar_gap_dip(slivers)) as i32, y: pill.y, w: s.px(crate::render::pill::bar_width_dip(b)) as i32, h: pill.h }
+                    let bw = s.px(crate::render::pill::bar_width_dip(b)) as i32;
+                    let gap = s.px(crate::render::pill::bar_gap_dip(0)) as i32;
+                    let spot = Self::bar_home(&self.ui.info, s, crate::render::pill::bar_width_dip(b));
+                    RectPx { x: spot.x.min(pill.x - gap - bw), y: pill.y, w: bw, h: pill.h }
                 });
+                let bar_x = bar_rect.map_or(0.0, |r| (r.x - self.ui.pill_window.lane_x()) as f32);
+                self.ui.pill.set_bar(&self.gfx, bar.as_ref(), bar_x, &self.ui.pill_scale)?;
                 let glide = self.ui.pill_window.shown();
                 self.ui.pill_window.place_with_bar(pill, bar_rect, self.ui.pill_layout.frame_w, self.ui.pill_layout.radius, glide)?;
                 self.ui.pill_window.set_visible(!self.fullscreen);
@@ -2805,9 +2936,24 @@ impl App {
         wake
     }
 
+    fn has_cleaner_anim(&self) -> bool {
+        if !settings::current().pill_cleaner_animation {
+            return false;
+        }
+        match &self.front {
+            Some(PillContent::Media(m)) => m.id == IDLE_MEDIA,
+            Some(PillContent::Clipboard { count: 0, thumb: None, .. }) => true,
+            Some(PillContent::Shelf { count: 0, thumbs, drop_hint: false, .. }) => thumbs.is_empty(),
+            _ => false,
+        }
+    }
+
     fn schedule_tick(&self, now: u64) {
         let mut next: Option<u64> = None;
         let mut sooner = |ms: u64| next = Some(next.map_or(ms, |n| n.min(ms)));
+        if self.has_cleaner_anim() {
+            sooner(40);
+        }
         if let Some(slot) = &self.timer {
             if slot.t.state(now) == RunState::Running {
                 let rem = slot.t.remaining_ms(now);
@@ -2894,6 +3040,12 @@ impl App {
             let age = now.saturating_sub(at);
             if age < TRANSFER_DONE_MS {
                 sooner(TRANSFER_DONE_MS - age + 5);
+            }
+        }
+        if let Some((_, at)) = self.download_done {
+            let age = now.saturating_sub(at);
+            if age < DOWNLOAD_DONE_MS {
+                sooner(DOWNLOAD_DONE_MS - age + 5);
             }
         }
         // "Kopyalandı" goes back to "Kopyala".
@@ -3032,6 +3184,14 @@ impl App {
     fn act(&mut self, action: CardAction) -> Result<()> {
         let now = now_ms();
         match action {
+            CardAction::DownloadOpen => {
+                self.open_download_app();
+                return self.close_card();
+            }
+            CardAction::DownloadFolder => {
+                self.open_download_folder();
+                return self.close_card();
+            }
             CardAction::TimerPause | CardAction::TimerResume => self.toggle_pause(ActivityKind::Timer),
             CardAction::StopwatchPause | CardAction::StopwatchResume => self.toggle_pause(ActivityKind::Stopwatch),
             CardAction::TimerClose => self.timer = None,
@@ -3115,6 +3275,14 @@ impl App {
             CardAction::PickPreset(minutes) => self.picker.preset(minutes),
             CardAction::PickerStart => return self.start_from_picker(),
             CardAction::PickerField(_) => return Ok(()),
+            CardAction::LaunchSpotify => {
+                crate::platform::media_launch::launch_spotify();
+                return Ok(());
+            }
+            CardAction::LaunchYouTube => {
+                crate::platform::media_launch::launch_youtube();
+                return Ok(());
+            }
             CardAction::PlayPause => return self.media_command(MediaCommand::PlayPause),
             CardAction::Prev => return self.media_command(MediaCommand::Prev),
             CardAction::Next => return self.media_command(MediaCommand::Next),
@@ -3130,6 +3298,16 @@ impl App {
                         log(&format!("mute: {e:?}"));
                     }
                 }
+            }
+            CardAction::MediaAppMute => {
+                let app_info = self.media_target().and_then(|id| self.media_of(id)).map(|m| (m.app_id.clone(), m.app_name.clone()));
+                if let Some((app_id, app_name)) = app_info {
+                    if let Some((_, muted)) = crate::platform::audio::app_volume(&app_id, &app_name) {
+                        let _ = crate::platform::audio::set_app_mute(&app_id, &app_name, !muted);
+                        self.refresh()?;
+                    }
+                }
+                return Ok(());
             }
             CardAction::MatchOpen => {
                 if let Some(OpenCard::Activity(ActivityKind::Match(key))) = self.open {
@@ -3160,33 +3338,41 @@ impl App {
                 self.shelf.remove(i);
                 self.shelf_hover = None;
                 self.forget_shelf_thumbs();
+                self.shelf_scroll = self.shelf_scroll.clamp(0.0, self.shelf_max_scroll());
+            }
+            CardAction::ShelfItemPin(i) => {
+                self.shelf.toggle(i);
+                self.shelf_scroll = self.shelf_scroll.clamp(0.0, self.shelf_max_scroll());
             }
             CardAction::ShelfClear => {
-                self.shelf.clear();
+                self.shelf.clear_unpinned();
                 self.shelf_hover = None;
                 self.forget_shelf_thumbs();
+                self.shelf_scroll = self.shelf_scroll.clamp(0.0, self.shelf_max_scroll());
             }
             CardAction::ShelfPin => {
-                let mut s = (*settings::current()).clone();
-                s.shelf_pinned = !s.shelf_pinned;
-                // Pinned, the card stays: not closed by the pointer leaving, a click elsewhere or another window.
-                self.card_pinned = s.shelf_pinned;
-                if !self.card_pinned {
+                self.card_pinned = !self.card_pinned;
+                if self.card_pinned {
+                    self.disarm_leave();
+                } else {
                     self.arm_leave();
                 }
-                if let Err(e) = settings::save(&s) {
-                    log(&format!("settings save: {e:?}"));
-                }
-                settings::install(s);
             }
             CardAction::ShelfTool(op) => self.shelf_tool(op),
             CardAction::ClipboardClear => {
                 self.clipboard_stash.clear();
                 self.clipboard_hover = None;
+                self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
             }
             CardAction::ClipboardRemove(i) => {
                 self.clipboard_stash.remove(i);
                 self.clipboard_hover = None;
+                self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
+            }
+            CardAction::ClipboardPin(i) => {
+                self.clipboard_stash.toggle_pin(i);
+                self.clipboard_hover = None;
+                self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
             }
             CardAction::ClipboardPaste(i) => return self.paste_clipboard_item(i, false),
             CardAction::ClipboardPastePlain(i) => return self.paste_clipboard_item(i, true),
@@ -3207,7 +3393,7 @@ impl App {
         self.refresh()
     }
 
-    /// Takes the football worker's matches (drawn in the Now Bar by the match activity).
+    /// Takes the football worker's matches (drawn in the Swift Tab by the match activity).
     fn take_matches(&mut self) -> Result<()> {
         let football = self.matches_mailbox.lock().ok().and_then(|mut slot| slot.take());
         let games = self.games_mailbox.lock().ok().and_then(|mut slot| slot.take());
@@ -3301,7 +3487,7 @@ impl App {
             match p {
                 Progress::Found(s) => self.update_ready = newer(&s.latest, VERSION).then_some(s),
                 Progress::Installed => {
-                    // main starts the new Now Bar once this loop is over (restart_after_update).
+                    // main starts the new Swift Tab once this loop is over (restart_after_update).
                     unsafe { PostQuitMessage(0) };
                 }
                 Progress::Failed(why) => log(&format!("update: {why}")),
@@ -3310,7 +3496,7 @@ impl App {
         Ok(())
     }
 
-    /// The API listens while the Now Bar and the API are both on; off, it closes the port and
+    /// The API listens while the Swift Tab and the API are both on; off, it closes the port and
     /// whatever waits hears so.
     fn follow_api(&mut self) {
         let s = settings::current();
@@ -3368,11 +3554,11 @@ impl App {
     /// activity says where it is.
     fn app_status(i: &LiveItem, app: &AppMeta, now: u64) -> String {
         match i.state {
-            _ if app.prompt => tr("İzin istiyor").to_string(),
+            _ if app.prompt => "Permission request".to_string(),
             _ if app.life_ms.is_some() => String::new(),
             LiveState::Run => pill_status(i, now),
-            LiveState::Wait => tr("Bekliyor").to_string(),
-            LiveState::Done => tr("Bitti").to_string(),
+            LiveState::Wait => "Waiting".to_string(),
+            LiveState::Done => "Done".to_string(),
             LiveState::Clear => String::new(),
         }
     }
@@ -3430,7 +3616,7 @@ impl App {
         }
     }
 
-    /// Commands from `nowbar.exe push` and the like.
+    /// Commands from `swifttab.exe push` and the like.
     fn take_ipc(&mut self) -> Result<()> {
         let now = now_ms();
         let before = self.live_states();
@@ -3615,11 +3801,11 @@ impl App {
             .map(|(i, d)| {
                 let buds = buds_for(d);
                 let (sub, tone) = if ui.switching.as_deref() == Some(d.id.as_str()) {
-                    (tr("Geçiliyor…").to_string(), SubTone::Busy)
+                    ("Switching…".to_string(), SubTone::Busy)
                 } else if ui.failed.as_ref().is_some_and(|(id, at)| id == &d.id && now.saturating_sub(*at) < SWITCH_FAILED_SHOW_MS) {
-                    (tr("Geçilemedi · tekrar deneyin").to_string(), SubTone::Failed)
+                    ("Could not switch · try again".to_string(), SubTone::Failed)
                 } else if i == 0 && buds.is_none() {
-                    (tr("Şu anda çalıyor").to_string(), SubTone::Normal)
+                    ("Playing now".to_string(), SubTone::Normal)
                 } else {
                     (output_subline(d.bus, buds), SubTone::Normal)
                 };
@@ -3705,10 +3891,10 @@ impl App {
             AskState::Idle => (QuestionShow::Idle, String::new()),
             AskState::Thinking => (QuestionShow::Thinking, String::new()),
             AskState::Writing | AskState::Done => (QuestionShow::Answer, plain(&b.answer)),
-            AskState::NoClaude => (QuestionShow::Problem, tr("Claude Code bu bilgisayarda bulunamadı.").to_string()),
-            AskState::NotSignedIn => (QuestionShow::Problem, tr("Claude Code'a giriş yapılmamış: terminalde claude yazıp /login ile bir kez gir.").to_string()),
-            AskState::Failed => (QuestionShow::Problem, tr("Claude yanıt veremedi.").to_string()),
-            AskState::TimedOut => (QuestionShow::Problem, tr("Yanıt gelmedi.").to_string()),
+            AskState::NoClaude => (QuestionShow::Problem, "Claude Code was not found on this PC.".to_string()),
+            AskState::NotSignedIn => (QuestionShow::Problem, "Not signed in to Claude Code: run claude in terminal and /login once.".to_string()),
+            AskState::Failed => (QuestionShow::Problem, "Claude could not respond.".to_string()),
+            AskState::TimedOut => (QuestionShow::Problem, "No response received.".to_string()),
         };
         let lines = match show {
             QuestionShow::Idle => 0,
@@ -3724,7 +3910,7 @@ impl App {
             answer,
             lines,
             scroll: self.question_scroll,
-            copy: whole.then(|| if copied { tr("Kopyalandı") } else { tr("Kopyala") }.to_string()),
+            copy: whole.then(|| if copied { "Copied" } else { "Copy" }.to_string()),
         }
     }
 
@@ -3833,6 +4019,145 @@ impl App {
                 let _ = ShowWindow(hwnd, SW_RESTORE);
             }
             let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    fn take_download(&mut self) -> Result<()> {
+        let (now, finished) = match self.download_box.lock() {
+            Ok(mut b) => (b.current.clone(), std::mem::take(&mut b.finished)),
+            Err(_) => return Ok(()),
+        };
+        if now.is_some() && self.download.is_none() {
+            self.download_since = now_ms();
+        }
+        self.download = now;
+        for item in finished {
+            log(&format!("downloads: {} finished", item.filename));
+            self.download_done = Some((item, now_ms()));
+        }
+        self.refresh()
+    }
+
+    /// Opens the application downloading the file (or the completed file if finished).
+    fn open_download_app(&self) {
+        if let Some(d) = &self.download {
+            if !d.app_exe.is_empty() {
+                if !crate::platform::fullscreen::focus_app_by_exe(&d.app_exe) {
+                    use windows::Win32::UI::Shell::ShellExecuteW;
+                    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+                    use windows::core::HSTRING;
+                    unsafe {
+                        let _ = ShellExecuteW(None, windows::core::w!("open"), &HSTRING::from(d.app_exe.as_str()), None, None, SW_SHOWNORMAL);
+                    }
+                }
+            }
+        } else if let Some((info, _)) = &self.download_done {
+            use windows::Win32::UI::Shell::ShellExecuteW;
+            use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+            use windows::core::HSTRING;
+            if info.path.exists() {
+                unsafe {
+                    let _ = ShellExecuteW(None, windows::core::w!("open"), &HSTRING::from(info.path.as_os_str()), None, None, SW_SHOWNORMAL);
+                }
+            }
+        }
+    }
+
+    /// Opens the download folder in File Explorer (highlighting the file if completed).
+    fn open_download_folder(&self) {
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::{w, HSTRING};
+
+        let folder = self.download.as_ref().map(|d| d.folder.clone())
+            .or_else(|| self.download_done.as_ref().map(|(d, _)| d.folder.clone()))
+            .or_else(crate::activities::download::downloads_dir);
+
+        let target_file = self.download.as_ref().map(|d| d.path.clone())
+            .or_else(|| self.download_done.as_ref().map(|(d, _)| d.path.clone()));
+
+        if let Some(target) = target_file {
+            if target.exists() {
+                let _ = std::process::Command::new("explorer")
+                    .arg(format!("/select,{}", target.display()))
+                    .spawn();
+                return;
+            }
+        }
+
+        if let Some(dir) = folder {
+            if dir.exists() {
+                unsafe {
+                    let _ = ShellExecuteW(None, w!("open"), &HSTRING::from(dir.as_os_str()), None, None, SW_SHOWNORMAL);
+                }
+            }
+        }
+    }
+
+    fn download_card(&self, _now: u64) -> Option<CardContent> {
+        if let Some(d) = &self.download {
+            let speed = if d.speed_bps > 0 {
+                format!("{}/s", crate::activities::download::format_bytes(d.speed_bps))
+            } else {
+                String::new()
+            };
+            let status = if !speed.is_empty() {
+                if !d.app_name.is_empty() {
+                    format!("Downloading in {} · {speed}", d.app_name)
+                } else {
+                    format!("Downloading · {speed}")
+                }
+            } else if !d.app_name.is_empty() {
+                format!("Downloading in {}", d.app_name)
+            } else {
+                "Downloading...".to_string()
+            };
+            let size_text = if let Some(tot) = d.total_bytes {
+                let pct = d.progress.map_or(0, |p| (p * 100.0).round() as u32);
+                format!("{} / {} ({}%)", crate::activities::download::format_bytes(d.bytes), crate::activities::download::format_bytes(tot), pct)
+            } else {
+                format!("{} downloaded", crate::activities::download::format_bytes(d.bytes))
+            };
+            let speed_and_eta = if let (Some(tot), true) = (d.total_bytes, d.speed_bps > 0) {
+                let eta_s = tot.saturating_sub(d.bytes) / d.speed_bps;
+                let eta = if eta_s >= 3600 {
+                    format!("{}h {}m left", eta_s / 3600, (eta_s % 3600) / 60)
+                } else if eta_s >= 60 {
+                    format!("{}m left", eta_s / 60)
+                } else {
+                    format!("{}s left", eta_s)
+                };
+                if !speed.is_empty() {
+                    format!("{speed} · {eta}")
+                } else {
+                    eta
+                }
+            } else {
+                speed
+            };
+            Some(CardContent::Download(crate::render::card::DownloadCard {
+                name: d.filename.clone(),
+                path: d.path.clone(),
+                speed: speed_and_eta,
+                status,
+                size_text,
+                progress: d.progress,
+                done: false,
+                app_name: d.app_name.clone(),
+            }))
+        } else if let Some((info, _)) = &self.download_done {
+            Some(CardContent::Download(crate::render::card::DownloadCard {
+                name: info.filename.clone(),
+                path: info.path.clone(),
+                speed: String::new(),
+                status: "Downloaded".to_string(),
+                size_text: format!("{} complete", crate::activities::download::format_bytes(info.bytes)),
+                progress: Some(1.0),
+                done: true,
+                app_name: info.app_name.clone(),
+            }))
+        } else {
+            None
         }
     }
 
@@ -3989,15 +4314,14 @@ impl App {
         self.refresh()
     }
 
-    /// Asks the lyrics worker about each playing track it hasn't been asked about.
+    /// Lyrics are disabled in the streamlined Windows 11 Media UI.
     fn ask_lyrics(&mut self) {
-        if !settings::current().media_lyrics {
+        if true || !settings::current().media_lyrics {
             return;
         }
         let now = now_ms();
         for track in self.media.iter().filter(|m| m.playing).filter_map(track_of) {
             let key = track.key();
-            // Not answered 5 minutes on: lrclib was down or offline (the worker gave up).
             let ask = !self.lyrics.contains_key(&key) && self.lyrics_asked.get(&key).is_none_or(|at| now.saturating_sub(*at) > 300_000);
             if ask {
                 self.lyrics_asked.insert(key, now);
@@ -4013,20 +4337,17 @@ impl App {
             self.lyrics_order.push_back(key.clone());
             self.lyrics.insert(key, lines);
         }
-        // A few KB a track: keep the last 200.
         while self.lyrics_order.len() > 200 {
             if let Some(old) = self.lyrics_order.pop_front() {
                 self.lyrics.remove(&old);
             }
         }
-        self.refresh()
+        Ok(())
     }
 
-    /// The pill's lyric line for a playing `m` (`None` inside: between lines) and the ms until the
-    /// next starts; `None` without synced lines or with the setting off.
     fn pill_lyric(&self, m: &MediaSnapshot) -> Option<(Option<String>, Option<u64>)> {
         let s = settings::current();
-        if !(s.media_lyrics && s.media_pill_lyrics && m.playing) {
+        if true || !(s.media_lyrics && s.media_pill_lyrics && m.playing) {
             return None;
         }
         let lines = self.lyrics.get(&track_of(m)?.key())?.as_ref()?;
@@ -4038,9 +4359,8 @@ impl App {
         Some((line.map(str::to_string), next))
     }
 
-    /// The lines around the card's position, when its track has synced lyrics.
     fn lyrics_view(&self, card: &MediaCard) -> Option<LyricsView> {
-        if !settings::current().media_lyrics {
+        if true || !settings::current().media_lyrics {
             return None;
         }
         let track = track_of(&card.m)?;
@@ -4073,16 +4393,27 @@ impl App {
         let next = match from {
             // From the bar alone, the wheel goes to the first (or the last) of the others.
             Some(ActivityKind::Weather) | None => {
-                let order = stack_order(&live, now, None);
+                let order = crate::activities::stack_canonical_order(&live, now);
                 if step >= 0 { order.first().copied() } else { order.last().copied() }
             }
-            Some(kind) => wheel_step(&live, now, kind, step),
+            Some(kind) => wheel_step(&live, now, kind, step).or_else(|| {
+                // If the current card was just cleared (e.g. Clipboard or Shelf emptied),
+                // step to the first/last remaining activity in the stack.
+                let order = crate::activities::stack_canonical_order(&live, now);
+                if step >= 0 { order.first().copied() } else { order.last().copied() }
+            }),
         };
         let Some(next) = next else { return Ok(()) };
         if Some(next) == from {
             return Ok(());
         }
         self.user_front = Some((next, now_ms()));
+        match next {
+            ActivityKind::Shelf => crate::settings::update(|s| s.preferred_idle_activity = "shelf".into()),
+            ActivityKind::Clipboard => crate::settings::update(|s| s.preferred_idle_activity = "clipboard".into()),
+            ActivityKind::Media(_) => crate::settings::update(|s| s.preferred_idle_activity = "media".into()),
+            _ => {}
+        }
         self.refresh()?;
         if let (Some(OpenCard::Activity(_)), CardState::Open | CardState::Opening) = (self.open, self.card_state) {
             self.switch_card(next, step)?;
@@ -4116,10 +4447,11 @@ impl App {
         let now = now_ms();
         let which = OpenCard::Activity(kind);
         let Some(new) = self.card_content(which, now) else { return Ok(()) };
-        if self.card_state != CardState::Open {
+        if !matches!(self.card_state, CardState::Open | CardState::Opening) {
             self.hide_card_now()?;
             return self.open_card(which, true);
         }
+        self.card_state = CardState::Open;
         self.leave_output_page();
         let s = self.ui.card_scale;
         let old_size = self.open.and_then(|o| self.card_content(o, now)).map(|c| card_size_dip(&c));
@@ -4152,6 +4484,7 @@ impl App {
         // The pin is the media card's: another card closes as usual.
         if !matches!(kind, ActivityKind::Media(_)) && self.card_pinned {
             self.card_pinned = false;
+        self.app_volume_drag = false;
             self.arm_leave();
         }
         self.open = Some(which);
@@ -4203,6 +4536,7 @@ impl App {
             return Ok(());
         }
         let Some(content) = self.card_content(which, now_ms()) else { return Ok(()) };
+        self.open = Some(which);
         let s = self.ui.card_scale;
         let pill = self.pill_screen();
         // The pill may have moved aside for the taskbar's buttons since the window was made.
@@ -4220,27 +4554,17 @@ impl App {
         self.ui.morph.set_card(&self.ui.card.surface)?;
         self.card_tint_shown = card_tint(&content);
         self.ui.morph.set_card_tint(self.card_tint_shown)?;
-        // Show the card window, start the morph and hide the real pill in this one turn,
-        // so the compositor commits them in the same frame.
+        // Show the card window and slide up cleanly without hiding the taskbar pill or corner bar.
         self.ui.card_window.show();
-        if which.grows_from_pill() {
-            let front = self.front.clone().unwrap_or(PillContent::Timer { text: String::new(), label: "", paused: false });
-            self.ui.morph.set_pill(&self.ui.pill.look(&front, &self.ui.pill_layout))?;
-            self.ui.morph.open(rel(pill), self.ui.pill_layout.radius as f32, rel(to), to_r)?;
-            self.ui.pill.set_opacity(0.0)?;
-        } else {
-            self.ui.morph.set_no_pill(card_accent(&content))?;
-            let from = RectPx { y: to.y + s.px(PICKER_SLIDE_DIP) as i32, ..to };
-            self.ui.morph.open(rel(from), to_r, rel(to), to_r)?;
-        }
+        self.ui.morph.set_no_pill(card_accent(&content))?;
+        let from = RectPx { y: to.y + s.px(PICKER_SLIDE_DIP) as i32, ..to };
+        self.ui.morph.open(rel(from), to_r, rel(to), to_r)?;
         if matches!(content, CardContent::Shelf(_) | CardContent::Clipboard(_)) {
             self.ui.morph.plain_accent()?;
         }
         self.ui.card_window.set_hit(to, to_r as i32)?;
         self.card_screen = to;
-        self.open = Some(which);
-        // A pinned shelf stays out: not closed by the pointer leaving, a click elsewhere or another window.
-        self.card_pinned = which == OpenCard::Activity(ActivityKind::Shelf) && settings::current().shelf_pinned;
+        self.card_pinned = false;
         self.card_state = CardState::Opening;
         unsafe { SetTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE, OUTSIDE_POLL_MS, None) };
         if which.takes_keys() {
@@ -4261,6 +4585,7 @@ impl App {
             return Ok(());
         }
         self.card_pinned = false;
+        self.app_volume_drag = false;
         self.disarm_leave();
         unsafe {
             let _ = KillTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE);
@@ -4456,7 +4781,7 @@ impl App {
             // Ctrl and a click: a question to Claude, whatever the pill shows.
             UiEvent::Pill(PillEvent::Click { .. }) if unsafe { GetAsyncKeyState(VK_CONTROL.0 as i32) } as u16 & 0x8000 != 0 => self.open_question(),
             UiEvent::Pill(PillEvent::Click { x }) => {
-                let button = if self.card_state == CardState::Closed { self.ui.pill.button_at(x) } else { None };
+                let button = self.ui.pill.button_at(x);
                 match (self.front_kind(), button) {
                     (Some(kind), Some(PillButton::Toggle)) => {
                         self.toggle_pause(kind);
@@ -4597,14 +4922,8 @@ impl App {
                 }
                 if !over {
                     self.arm_leave();
-                    return Ok(());
-                }
-                if settings::current().open_on_hover && self.card_state == CardState::Closed {
-                    let delay = settings::current().open_delay_ms;
-                    if delay == 0 {
-                        return self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true);
-                    }
-                    unsafe { SetTimer(Some(self.main.hwnd), TIMER_BAR_OPEN, delay, None) };
+                } else {
+                    self.disarm_leave();
                 }
                 Ok(())
             }
@@ -4613,9 +4932,6 @@ impl App {
                 unsafe {
                     let _ = KillTimer(Some(self.main.hwnd), TIMER_BAR_OPEN);
                 }
-                if self.pill_hover && self.card_state == CardState::Closed {
-                    return self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true);
-                }
                 Ok(())
             }
             UiEvent::Pill(PillEvent::Wheel(_)) if !settings::current().wheel_switches_activity => Ok(()),
@@ -4623,10 +4939,37 @@ impl App {
                 Some(step) => self.step_front(step),
                 None => Ok(()),
             },
-            UiEvent::Pill(PillEvent::RightClick) if self.front_kind() == Some(ActivityKind::Shelf) && !self.shelf.is_empty() => self.shelf_menu(0),
-            // A right-click on the pill opens the settings of what it shows; the tray keeps the menu.
             UiEvent::Pill(PillEvent::RightClick) => {
-                open_settings_at(self.front_kind().map(settings_page_for));
+                match self.front_kind() {
+                    Some(ActivityKind::Clipboard) => {
+                        if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                            self.clipboard_stash.clear();
+                            self.clipboard_hover = None;
+                            self.refresh()?;
+                        }
+                    }
+                    Some(ActivityKind::Shelf) => {
+                        if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                            self.shelf.clear_unpinned();
+                            self.shelf_hover = None;
+                            self.forget_shelf_thumbs();
+                            self.refresh()?;
+                        }
+                    }
+                    Some(ActivityKind::Media(id)) => {
+                        if let Some((app_id, app_name)) = self.media_of(id).map(|m| (m.app_id.clone(), m.app_name.clone())) {
+                            if crate::platform::tray::show_media_menu(self.main.hwnd, &app_name) {
+                                crate::platform::fullscreen::focus_media_app(&app_id, &app_name);
+                            }
+                        }
+                    }
+                    Some(ActivityKind::Download) => {
+                        if crate::platform::tray::show_download_menu(self.main.hwnd) {
+                            self.open_download_folder();
+                        }
+                    }
+                    _ => {}
+                }
                 Ok(())
             }
             UiEvent::Tray { right: true } => self.menu(),
@@ -4643,12 +4986,14 @@ impl App {
                 }
                 self.move_hook.follow_foreground();
                 self.check_fullscreen()?;
+                // What the taskbar's buttons did while a flyout was up is taken once it has closed.
+                self.follow_taskbar_items();
                 // The player in front hides its pill; behind or minimized, it comes back.
                 self.refresh()
             }
             UiEvent::ForegroundMoved => self.check_fullscreen(),
             // A drag on a slider keeps the card open even when the mouse wanders off it.
-            UiEvent::Timer(TIMER_LEAVE) if self.volume_drag || self.seeking.is_some() || dragdrop::hover().is_some() => Ok(()),
+            UiEvent::Timer(TIMER_LEAVE) if self.volume_drag || self.app_volume_drag || self.clipboard_scroll_drag || self.seeking.is_some() || dragdrop::hover().is_some() => Ok(()),
             UiEvent::Timer(TIMER_LEAVE) => self.close_card(),
             UiEvent::TaskbarCreated => {
                 log("taskbar: TaskbarCreated");
@@ -4688,6 +5033,7 @@ impl App {
             UiEvent::Api => self.take_api(),
             UiEvent::ShelfTool => self.take_tools(),
             UiEvent::Transfer => self.take_transfer(),
+            UiEvent::Download => self.take_download(),
             UiEvent::QuestionHotkey => self.open_question(),
             UiEvent::Char(unit) if self.open == Some(OpenCard::Question) => self.question_key(unit),
             UiEvent::Question => self.take_question(),
@@ -4705,9 +5051,6 @@ impl App {
                 unsafe {
                     let _ = KillTimer(Some(self.main.hwnd), TIMER_HOVER_OPEN);
                 }
-                if self.pill_hover && settings::current().open_on_hover && self.card_state == CardState::Closed {
-                    return self.open_front_card();
-                }
                 Ok(())
             }
             UiEvent::Timer(TIMER_CLIPBOARD_RETRY) => {
@@ -4716,7 +5059,10 @@ impl App {
                 }
                 self.take_clipboard()
             }
-            UiEvent::EffectsChanged => self.ui.morph.set_blur(effects_enabled()),
+            UiEvent::EffectsChanged => {
+                self.ui.morph.set_blur(effects_enabled())?;
+                self.repaint()
+            }
             UiEvent::Timer(TIMER_OUTSIDE) if !self.card_pinned && self.clicked_outside() => self.close_card(),
             UiEvent::Pill(PillEvent::Hover(over)) | UiEvent::Card(CardEvent::Hover(over)) => {
                 let is_pill = matches!(e, UiEvent::Pill(_));
@@ -4734,16 +5080,7 @@ impl App {
                         let _ = KillTimer(Some(self.main.hwnd), TIMER_HOVER_OPEN);
                     }
                 }
-                if over && is_pill && settings::current().open_on_hover && self.card_state == CardState::Closed {
-                    let delay = settings::current().open_delay_ms;
-                    if delay == 0 {
-                        self.open_front_card()?;
-                    } else {
-                        // Open only if the pointer is still on the pill after the pause.
-                        unsafe { SetTimer(Some(self.main.hwnd), TIMER_HOVER_OPEN, delay, None) };
-                    }
-                }
-                if !over && !is_pill && self.shelf_hover.take().is_some() {
+                if !over && !is_pill && (self.shelf_hover.take().is_some() || self.clipboard_hover.take().is_some()) {
                     self.refresh()?;
                 }
                 if self.brief_auto && !is_pill {
@@ -4785,6 +5122,59 @@ impl App {
                 if let Some(i) = self.ui.card.tile_at(x, y) {
                     return self.shelf_menu(i);
                 }
+                if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                    self.shelf.clear_unpinned();
+                    self.shelf_hover = None;
+                    self.forget_shelf_thumbs();
+                    self.refresh()?;
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Right { .. }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                    self.clipboard_stash.clear();
+                    self.clipboard_hover = None;
+                    self.refresh()?;
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Right { .. }) if matches!(self.open, Some(OpenCard::Activity(ActivityKind::Media(_)))) => {
+                if let Some(OpenCard::Activity(ActivityKind::Media(id))) = self.open {
+                    if let Some((app_id, app_name)) = self.media_of(id).map(|m| (m.app_id.clone(), m.app_name.clone())) {
+                        if crate::platform::tray::show_media_menu(self.main.hwnd, &app_name) {
+                            crate::platform::fullscreen::focus_media_app(&app_id, &app_name);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Down { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if let Some(frac) = self.ui.card.clipboard_scroll_fraction(x, y) {
+                    let max_scroll = self.clipboard_max_scroll();
+                    self.clipboard_scroll_drag = true;
+                    self.clipboard_scroll = (frac * max_scroll).clamp(0.0, max_scroll);
+                    self.refresh()?;
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Move { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if self.clipboard_scroll_drag {
+                    if let Some(frac) = self.ui.card.clipboard_scroll_drag(y) {
+                        let max_scroll = self.clipboard_max_scroll();
+                        self.clipboard_scroll = (frac * max_scroll).clamp(0.0, max_scroll);
+                    }
+                    return self.refresh();
+                }
+                let hover = self.ui.card.tile_at(x, y);
+                if hover != self.clipboard_hover {
+                    self.clipboard_hover = hover;
+                    return self.refresh();
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Up { .. }) if self.clipboard_scroll_drag => {
+                self.clipboard_scroll_drag = false;
+                self.arm_leave();
                 Ok(())
             }
             UiEvent::Card(CardEvent::Down { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) => {
@@ -4814,15 +5204,34 @@ impl App {
                 Ok(())
             }
             UiEvent::Card(CardEvent::Down { x, y }) => {
+                let app_info = self.media_target().and_then(|id| self.media_of(id)).map(|m| (m.app_id.clone(), m.app_name.clone()));
+                if let (Some(fraction), Some((app_id, app_name))) = (self.ui.card.app_volume_fraction(x, y), app_info) {
+                    self.app_volume_drag = true;
+                    let _ = crate::platform::audio::set_app_volume(&app_id, &app_name, fraction);
+                    self.refresh()?;
+                    return Ok(());
+                }
                 if let Some(fraction) = self.ui.card.seek_fraction(x, y) {
                     self.seeking = Some(fraction);
                     self.refresh()?;
                 }
                 Ok(())
             }
+            UiEvent::Card(CardEvent::Move { x, .. }) if self.app_volume_drag => {
+                let app_info = self.media_target().and_then(|id| self.media_of(id)).map(|m| (m.app_id.clone(), m.app_name.clone()));
+                if let (Some(fraction), Some((app_id, app_name))) = (self.ui.card.app_volume_drag(x), app_info) {
+                    let _ = crate::platform::audio::set_app_volume(&app_id, &app_name, fraction);
+                }
+                self.refresh()
+            }
             UiEvent::Card(CardEvent::Move { x, .. }) if self.seeking.is_some() => {
                 self.seeking = self.ui.card.drag_fraction(x);
                 self.refresh()
+            }
+            UiEvent::Card(CardEvent::Up { .. }) if self.app_volume_drag => {
+                self.app_volume_drag = false;
+                self.arm_leave();
+                Ok(())
             }
             UiEvent::Card(CardEvent::Up { x, y }) => {
                 self.tile_press = None;
@@ -4851,12 +5260,38 @@ impl App {
                 self.question_scroll = (at < overflow - 0.5).then_some(at.max(0.0));
                 self.refresh()
             }
+            UiEvent::Card(CardEvent::Wheel { delta, .. })
+                if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard))
+                    && self.clipboard_max_scroll() > 0.0 =>
+            {
+                let max_scroll = self.clipboard_max_scroll();
+                self.clipboard_scroll = (self.clipboard_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
+                self.refresh()
+            }
+            UiEvent::Card(CardEvent::Wheel { delta, .. })
+                if self.open == Some(OpenCard::Activity(ActivityKind::Shelf))
+                    && self.shelf_max_scroll() > 0.0 =>
+            {
+                let max_scroll = self.shelf_max_scroll();
+                self.shelf_scroll = (self.shelf_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
+                self.refresh()
+            }
             UiEvent::Card(CardEvent::Wheel { x, y, delta }) => {
                 if let (Some(OpenCard::Picker), Some(CardAction::PickerField(field))) = (self.open, self.ui.card.hit_test(x, y)) {
                     let notches = if delta.abs() >= 120 { delta / 120 } else { delta.signum() };
                     self.picker.wheel(field, notches);
                     self.ui.card.set(&self.gfx, &CardContent::Picker(self.picker), &self.ui.card_scale)?;
                     return Ok(());
+                }
+                let app_info = self.media_target().and_then(|id| self.media_of(id)).map(|m| (m.app_id.clone(), m.app_name.clone()));
+                if let (Some(_), Some((app_id, app_name))) = (self.ui.card.app_volume_fraction(x, y), app_info) {
+                    let notches = if delta.abs() >= 120 { delta / 120 } else { delta.signum() };
+                    if let Some((curr, _)) = crate::platform::audio::app_volume(&app_id, &app_name) {
+                        let v = (curr + 0.02 * notches as f32).clamp(0.0, 1.0);
+                        let _ = crate::platform::audio::set_app_volume(&app_id, &app_name, v);
+                        self.refresh()?;
+                        return Ok(());
+                    }
                 }
                 // On the output page the wheel turns the volume over the slider and scrolls the list
                 // elsewhere; it never swipes to another activity.
@@ -4918,6 +5353,8 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         remove_tray(self.main.hwnd);
+        self.clipboard_stash.save_pinned();
+        self.shelf.save_pinned();
         self.save_music();
     }
 }
@@ -4965,7 +5402,7 @@ mod tests {
         let r = AwayReport { since_utc: 0, until_utc: 3 * 3600 + 720, items };
         let c = away_card(&r, 3 * 3600);
         assert_eq!((c.rows.len(), c.more), (6, 3));
-        assert_eq!(c.span, "03:00 – 06:12 · 3 sa 12 dk", "in local time");
+        assert_eq!(c.span, "03:00 – 06:12 · 3 h 12 min", "in local time");
         assert_eq!((c.rows[0].text.as_str(), c.rows[0].time.as_str()), ("t0", "03:16"));
     }
 
@@ -5054,6 +5491,28 @@ mod tests {
         };
         assert_eq!(walk(120), vec![Timer, Media(1), Buds, Timer]);
         assert_eq!(walk(-120), vec![Timer, Buds, Media(1), Timer]);
+    }
+
+    #[test]
+    fn wheel_steps_visit_all_three_idle_cards_in_turn() {
+        let live = [
+            Presence { kind: Media(IDLE_MEDIA), state: PresenceState::Paused, changed_ms: 0 },
+            Presence { kind: Shelf, state: PresenceState::Running, changed_ms: 0 },
+            Presence { kind: Clipboard, state: PresenceState::Running, changed_ms: 0 },
+        ];
+        let now = 60_000;
+        let walk = |delta: i32| {
+            let mut front = Media(IDLE_MEDIA);
+            let mut seen = vec![front];
+            for _ in 0..3 {
+                let next = wheel_step(&live, now, front, delta).unwrap();
+                front = next;
+                seen.push(front);
+            }
+            seen
+        };
+        assert_eq!(walk(120), vec![Media(IDLE_MEDIA), Clipboard, Shelf, Media(IDLE_MEDIA)]);
+        assert_eq!(walk(-120), vec![Media(IDLE_MEDIA), Shelf, Clipboard, Media(IDLE_MEDIA)]);
     }
 
     fn paused(changed_ms: u64) -> MediaSnapshot {

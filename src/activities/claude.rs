@@ -1,6 +1,6 @@
 //! What Claude Code is doing, from its hooks: the step (tool and target), the task list, the
 //! files it changed, its last answer and a permission it waits for. The pure part; the hook
-//! process (`nowbar.exe claude-hook`) builds a `ClaudeNote` and the Now Bar keeps a `ClaudeInfo`.
+//! process (`swifttab.exe claude-hook`) builds a `ClaudeNote` and the Swift Tab keeps a `ClaudeInfo`.
 
 use std::collections::BTreeSet;
 
@@ -231,7 +231,7 @@ pub fn error_text(error: &str) -> &'static str {
 
 /// A permission Claude waits for. `id` names the hook process waiting for the card's answer
 /// (empty: nothing waits, the card only shows it); `nonce` is the secret an answer must carry,
-/// which only the Now Bar learns (the id is a window title anyone can read).
+/// which only the Swift Tab learns (the id is a window title anyone can read).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ask {
     pub id: String,
@@ -256,7 +256,7 @@ pub fn decision_json(allow: bool) -> String {
     let decision = if allow {
         serde_json::json!({"behavior": "allow"})
     } else {
-        serde_json::json!({"behavior": "deny", "message": "Now Bar'dan reddedildi"})
+        serde_json::json!({"behavior": "deny", "message": "Denied from Swift Tab"})
     };
     serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}).to_string()
 }
@@ -355,7 +355,7 @@ pub struct ClaudeNote {
     pub new_prompt: bool,
 }
 
-/// A session's state on the Now Bar side.
+/// A session's state on the Swift Tab side.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ClaudeInfo {
     /// The last three, newest first.
@@ -423,18 +423,18 @@ mod tests {
 
     #[test]
     fn steps_say_what_and_on_what() {
-        assert_eq!(step("Edit", json!({"file_path": r"C:\Users\K\now-bar\src\app.rs"})), "Düzenliyor: app.rs");
-        assert_eq!(step("Write", json!({"file_path": "C:/x/notes.md"})), "Yazıyor: notes.md");
-        assert_eq!(step("Read", json!({"file_path": r"C:\x\pill.rs"})), "Okuyor: pill.rs");
-        assert_eq!(step("Bash", json!({"command": "cargo test --lib", "description": "Run the tests"})), "Çalıştırıyor: Run the tests");
-        assert_eq!(step("PowerShell", json!({"command": "Get-Process nowbar\nmore"})), "Çalıştırıyor: Get-Process nowbar");
-        assert_eq!(step("Grep", json!({"pattern": "paint_shelf"})), "Arıyor: paint_shelf");
-        assert_eq!(step("Glob", json!({"pattern": "**/*.rs"})), "Arıyor: **/*.rs");
-        assert_eq!(step("WebFetch", json!({"url": "https://code.claude.com/docs/en/hooks.md"})), "Okuyor: code.claude.com");
-        assert_eq!(step("WebSearch", json!({"query": "rust ole drag"})), "Arıyor: rust ole drag");
-        assert_eq!(step("Agent", json!({"description": "Review the shelf branch"})), "Alt ajan: Review the shelf branch");
-        assert_eq!(step("mcp__ccd_turn__update_plan", json!({})), "Araç: update_plan");
-        assert_eq!(step("Skill", json!({"skill": "brainstorming"})), "Araç: Skill");
+        assert_eq!(step("Edit", json!({"file_path": r"C:\Users\K\swifttab\src\app.rs"})), "Editing: app.rs");
+        assert_eq!(step("Write", json!({"file_path": "C:/x/notes.md"})), "Writing: notes.md");
+        assert_eq!(step("Read", json!({"file_path": r"C:\x\pill.rs"})), "Reading: pill.rs");
+        assert_eq!(step("Bash", json!({"command": "cargo test --lib", "description": "Run the tests"})), "Running: Run the tests");
+        assert_eq!(step("PowerShell", json!({"command": "Get-Process swifttab\nmore"})), "Running: Get-Process swifttab");
+        assert_eq!(step("Grep", json!({"pattern": "paint_shelf"})), "Searching: paint_shelf");
+        assert_eq!(step("Glob", json!({"pattern": "**/*.rs"})), "Searching: **/*.rs");
+        assert_eq!(step("WebFetch", json!({"url": "https://code.claude.com/docs/en/hooks.md"})), "Reading: code.claude.com");
+        assert_eq!(step("WebSearch", json!({"query": "rust ole drag"})), "Searching: rust ole drag");
+        assert_eq!(step("Agent", json!({"description": "Review the shelf branch"})), "Subagent: Review the shelf branch");
+        assert_eq!(step("mcp__ccd_turn__update_plan", json!({})), "Tool: update_plan");
+        assert_eq!(step("Skill", json!({"skill": "brainstorming"})), "Tool: Skill");
     }
 
     #[test]
@@ -483,17 +483,17 @@ mod tests {
     }
 
     #[test]
-    fn errors_in_turkish() {
-        assert_eq!(error_text("rate_limit"), "Kota doldu");
-        assert_eq!(error_text("overloaded"), "Sunucu yoğun");
-        assert_eq!(error_text("authentication_failed"), "Oturum açılmalı");
-        assert_eq!(error_text("max_output_tokens"), "Yanıt sınırı aşıldı");
-        assert_eq!(error_text("something_new"), "Bir hata oldu");
+    fn errors_in_english() {
+        assert_eq!(error_text("rate_limit"), "Usage limit reached");
+        assert_eq!(error_text("overloaded"), "Server busy");
+        assert_eq!(error_text("authentication_failed"), "Sign-in needed");
+        assert_eq!(error_text("max_output_tokens"), "Reply too long");
+        assert_eq!(error_text("something_new"), "Something went wrong");
     }
 
     #[test]
     fn asks_show_the_command_or_the_file() {
-        assert_eq!(ask_detail("Bash", &json!({"command": "cargo build --release\necho done"})), "cargo build --release (+1 satır)", "the lines it hides are counted");
+        assert_eq!(ask_detail("Bash", &json!({"command": "cargo build --release\necho done"})), "cargo build --release (+1 lines)", "the lines it hides are counted");
         assert_eq!(ask_detail("WebFetch", &json!({"url": "https://unpkg.com/x.svg"})), "https://unpkg.com/x.svg");
         assert_eq!(ask_detail("mcp__github__create_pr", &json!({})), "github: create_pr");
     }
@@ -511,14 +511,14 @@ mod tests {
             info.apply(&ClaudeNote { step: Some(step_of("Edit", &input)), file: file_of("Edit", &input), ..note() });
         }
         assert_eq!(info.steps.len(), 3, "the last three");
-        assert_eq!(step_label(&info.steps[0]), "Düzenliyor: c.rs", "newest first");
+        assert_eq!(step_label(&info.steps[0]), "Editing: c.rs", "newest first");
         assert_eq!(info.files.len(), 3, "a.rs counted once");
         assert_eq!(info.window, Some(42));
         info.apply(&ClaudeNote { ask: Some(Ask { tool: "Bash".into(), detail: "ls".into(), ..Default::default() }), ..note() });
         info.apply(&ClaudeNote { step: Some(step_of("Read", &json!({"file_path": "x"}))), ..note() });
         assert!(info.ask.is_none(), "an ask nothing waits on: the next step means it was answered");
-        info.apply(&ClaudeNote { summary: Some("Tamam".into()), ..note() });
-        assert_eq!(info.summary.as_deref(), Some("Tamam"));
+        info.apply(&ClaudeNote { summary: Some("Done".into()), ..note() });
+        assert_eq!(info.summary.as_deref(), Some("Done"));
         info.apply(&ClaudeNote { new_prompt: true, window: Some(43), ..note() });
         assert!(info.steps.is_empty() && info.files.is_empty() && info.summary.is_none(), "a new prompt starts a new run");
         assert_eq!(info.window, Some(43));
@@ -530,24 +530,24 @@ mod tests {
         assert_eq!(allow, json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}));
         let deny: Value = serde_json::from_str(&decision_json(false)).unwrap();
         assert_eq!(deny["hookSpecificOutput"]["decision"]["behavior"], "deny");
-        assert_eq!(deny["hookSpecificOutput"]["decision"]["message"], "Now Bar'dan reddedildi");
+        assert_eq!(deny["hookSpecificOutput"]["decision"]["message"], "Denied from Swift Tab");
     }
 
     #[test]
     fn run_lengths_read_like_a_person_says_them() {
-        assert_eq!(run_length(4_000), "4 sn");
-        assert_eq!(run_length(59_400), "59 sn");
-        assert_eq!(run_length(60_000), "1 dk");
-        assert_eq!(run_length(12 * 60_000 + 40_000), "12 dk");
-        assert_eq!(run_length(2 * 3_600_000 + 5 * 60_000), "2 sa 5 dk");
-        assert_eq!(run_length(3_600_000), "1 sa");
+        assert_eq!(run_length(4_000), "4 s");
+        assert_eq!(run_length(59_400), "59 s");
+        assert_eq!(run_length(60_000), "1 min");
+        assert_eq!(run_length(12 * 60_000 + 40_000), "12 min");
+        assert_eq!(run_length(2 * 3_600_000 + 5 * 60_000), "2 h 5 min");
+        assert_eq!(run_length(3_600_000), "1 h");
     }
 
     #[test]
     fn done_status_says_how_long_and_how_many_files() {
-        assert_eq!(done_status("Bitti", 12 * 60_000, 9), "Bitti · 12 dk · 9 dosya");
-        assert_eq!(done_status("Bitti", 30_000, 0), "Bitti · 30 sn");
-        assert_eq!(done_status("Kota doldu", 30_000, 2), "Kota doldu", "an error says only itself");
+        assert_eq!(done_status("Done", 12 * 60_000, 9), "Done · 12 min · 9 files");
+        assert_eq!(done_status("Done", 30_000, 0), "Done · 30 s");
+        assert_eq!(done_status("Usage limit reached", 30_000, 2), "Usage limit reached", "an error says only itself");
     }
 
     #[test]
@@ -566,13 +566,13 @@ mod tests {
 
     #[test]
     fn asks_show_their_whole_target() {
-        assert_eq!(ask_detail("Bash", &json!({"command": "cd build\nmake\nmake install"})), "cd build (+2 satır)");
+        assert_eq!(ask_detail("Bash", &json!({"command": "cd build\nmake\nmake install"})), "cd build (+2 lines)");
         assert_eq!(ask_detail("Monitor", &json!({"command": "tail -f log.txt"})), "tail -f log.txt");
         assert_eq!(ask_detail("Grep", &json!({"pattern": "TODO", "path": r"C:\Users\K"})), r"TODO · C:\Users\K");
         assert_eq!(ask_detail("WebSearch", &json!({"query": "rust ole"})), "rust ole");
         assert_eq!(ask_detail("Skill", &json!({"skill": "brainstorming"})), "brainstorming");
         assert_eq!(ask_detail("AskUserQuestion", &json!({"questions": [{"question": "Hangi renk?"}]})), "Hangi renk?");
-        assert_eq!(ask_detail("ExitPlanMode", &json!({"plan": "x"})), "Plan onayı");
+        assert_eq!(ask_detail("ExitPlanMode", &json!({"plan": "x"})), "Plan approval");
     }
 
     #[test]
@@ -616,7 +616,7 @@ mod tests {
         info.apply(&ClaudeNote { tool_done: Some(Call { tool: "Read".into(), detail: "a.rs".into() }), ..note() });
         info.apply(&ClaudeNote { step: Some(step_of("Edit", &json!({"file_path": "b.rs"}))), ..note() });
         let labels: Vec<String> = info.steps.iter().map(step_label).collect();
-        assert_eq!(labels, ["Düzenliyor: b.rs", "Okuyor: a.rs"]);
+        assert_eq!(labels, ["Editing: b.rs", "Reading: a.rs"]);
     }
 
     #[test]

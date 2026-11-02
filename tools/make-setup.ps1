@@ -1,5 +1,5 @@
-# Builds what a GitHub release carries, into dist\: nowbar-setup.exe (both exes inside),
-# nowbar.exe and nowbar-settings.exe (what the updater downloads) and SHA256SUMS.txt.
+# Builds what a GitHub release carries, into dist\: swifttab-setup.exe (both exes inside),
+# swifttab.exe and swifttab-settings.exe (what the updater downloads) and SHA256SUMS.txt.
 #
 #   powershell -ExecutionPolicy Bypass -File tools\make-setup.ps1 [-Jobs 2] [-Clean]
 #
@@ -25,27 +25,27 @@ try {
     $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
     Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
     $env:CARGO_ENCODED_RUSTFLAGS = @('-C', 'target-feature=+crt-static', "--remap-path-prefix=$cargoHome=cargo", "--remap-path-prefix=$repo=.") -join [char]0x1f
-    cargo build -j $Jobs --profile dist --bin nowbar --bin nowbar-settings
+    cargo build -j $Jobs --profile dist --bin swifttab --bin swifttab-settings
     if ($LASTEXITCODE) { throw 'the exes did not build' }
     New-Item -ItemType Directory -Force $payload | Out-Null
-    foreach ($exe in 'nowbar.exe', 'nowbar-settings.exe') { Copy-Item (Join-Path $built $exe) $payload -Force }
+    foreach ($exe in 'swifttab.exe', 'swifttab-settings.exe') { Copy-Item (Join-Path $built $exe) $payload -Force }
 
     $env:NOWBAR_SETUP_PAYLOAD = $payload
     $env:NOWBAR_VERSION = $version
     cargo build -j $Jobs --profile dist -p nowbar-setup
     if ($LASTEXITCODE) { throw 'the setup did not build' }
-    Copy-Item (Join-Path $built 'nowbar-setup.exe') $dist -Force
-    foreach ($exe in 'nowbar.exe', 'nowbar-settings.exe') { Copy-Item (Join-Path $payload $exe) $dist -Force }
+    Copy-Item (Join-Path $built 'swifttab-setup.exe') $dist -Force
+    foreach ($exe in 'swifttab.exe', 'swifttab-settings.exe') { Copy-Item (Join-Path $payload $exe) $dist -Force }
 
     # The updater's format: "<sha256>  <name>" per line.
-    $sums = foreach ($exe in 'nowbar-setup.exe', 'nowbar.exe', 'nowbar-settings.exe') {
+    $sums = foreach ($exe in 'swifttab-setup.exe', 'swifttab.exe', 'swifttab-settings.exe') {
         '{0}  {1}' -f (Get-FileHash (Join-Path $dist $exe) -Algorithm SHA256).Hash.ToLower(), $exe
     }
     Set-Content (Join-Path $dist 'SHA256SUMS.txt') $sums -Encoding ascii
 
     # No exe may need the Visual C++ runtime DLLs, or name the user's folder.
     $userPath = '(?i)' + [regex]::Escape($env:USERPROFILE) + '|[\\/]users[\\/]' + [regex]::Escape($env:USERNAME) + '[\\/]'
-    foreach ($exe in 'nowbar-setup.exe', 'nowbar.exe', 'nowbar-settings.exe') {
+    foreach ($exe in 'swifttab-setup.exe', 'swifttab.exe', 'swifttab-settings.exe') {
         $bytes = [System.IO.File]::ReadAllBytes((Join-Path $dist $exe))
         $text = [System.Text.Encoding]::ASCII.GetString($bytes)
         if ($text -match '(?i)vcruntime140|msvcp140') { throw "$exe still imports the Visual C++ runtime" }

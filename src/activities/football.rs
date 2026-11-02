@@ -553,7 +553,7 @@ pub fn next_poll_s(status: MatchStatus, secs_to_kickoff: i64, failures: u32) -> 
     (base << failures.min(16)).min(base.max(300))
 }
 
-/// Whether the Now Bar shows the match now (unix seconds): from `before_min` ahead of kickoff
+/// Whether the Swift Tab shows the match now (unix seconds): from `before_min` ahead of kickoff
 /// until `keep_min` after the end (or after kickoff, for matches called off).
 /// When a match ended: kept once known; `now` when it was seen live and is finished now; else
 /// unknown, so a result found late (a cold start, last night's match) isn't news again.
@@ -668,7 +668,7 @@ mod tests {
         let goals: Vec<(u16, Side, Option<&str>)> = m.events.iter().map(|e| (e.minute, e.side, e.player.as_deref())).collect();
         assert_eq!(goals, vec![(4, Side::Away, Some("Mikautadze")), (29, Side::Away, Some("Cardona"))]);
         assert_eq!(m.followed, None);
-        assert_eq!(m.competition, "Şampiyonlar Ligi");
+        assert_eq!(m.competition, "Champions League");
     }
 
     #[test]
@@ -707,9 +707,9 @@ mod tests {
         let live = parse_event(&fixture("live"), &ucl(), &[]).unwrap();
         assert_eq!(centre_text(&live, 0, tr), "33′");
         let mut m = live.clone();
-        for (status, text) in [(MatchStatus::HalfTime, "İY"), (MatchStatus::FullTime, "MS"), (MatchStatus::FullTimeAet, "MS"),
-            (MatchStatus::EtBreak, "UZ"), (MatchStatus::Pens, "PEN"), (MatchStatus::Postponed, "ERT"), (MatchStatus::Cancelled, "İPT"),
-            (MatchStatus::Abandoned, "TAT"), (MatchStatus::Suspended, "TAT")] {
+        for (status, text) in [(MatchStatus::HalfTime, "HT"), (MatchStatus::FullTime, "FT"), (MatchStatus::FullTimeAet, "FT"),
+            (MatchStatus::EtBreak, "ET"), (MatchStatus::Pens, "PEN"), (MatchStatus::Postponed, "PST"), (MatchStatus::Cancelled, "CAN"),
+            (MatchStatus::Abandoned, "ABD"), (MatchStatus::Suspended, "ABD")] {
             m.status = status;
             assert_eq!(centre_text(&m, 0, tr), text, "{status:?}");
         }

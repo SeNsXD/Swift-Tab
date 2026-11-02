@@ -1,5 +1,5 @@
-//! One command from `nowbar.exe push | claude-hook | update` to the running Now Bar: JSON in a
-//! WM_COPYDATA to its NowBarMain window (no pipe or port to keep open: the window is there anyway).
+//! One command from `swifttab.exe push | claude-hook | update` to the running Swift Tab: JSON in a
+//! WM_COPYDATA to its SwiftTabMain window (no pipe or port to keep open: the window is there anyway).
 
 use std::sync::Mutex;
 
@@ -22,7 +22,7 @@ pub enum Command {
     /// Apply the update the updater found (the settings window's button).
     Update,
     /// The card's answer to a permission, to the hook process waiting for it (`id`), with the
-    /// ask's nonce (proof it comes from the Now Bar).
+    /// ask's nonce (proof it comes from the Swift Tab).
     Answer { id: String, nonce: String, allow: bool },
     /// The hook stopped waiting (Claude's own dialog took over): the card drops its buttons.
     AskGone { id: String },
@@ -38,7 +38,7 @@ impl Command {
     }
 }
 
-/// What the Now Bar answers a command with: for a permission a hook waits on (it sent an ask
+/// What the Swift Tab answers a command with: for a permission a hook waits on (it sent an ask
 /// id), the seconds to wait for the card; otherwise 1, taken.
 pub fn answer_for(c: &Command, asks_on: bool, wait_s: u32) -> isize {
     match c {
@@ -81,16 +81,16 @@ pub fn send_answering(class: PCWSTR, title: PCWSTR, c: &Command) -> Option<usize
     unsafe {
         let Ok(hwnd) = FindWindowW(class, title) else { return None };
         let data = COPYDATASTRUCT { dwData: TAG, cbData: json.len() as u32, lpData: json.as_ptr() as *mut _ };
-        // A hung Now Bar must not hold a Claude hook: give up after a second.
+        // A hung Swift Tab must not hold a Claude hook: give up after a second.
         let mut answer = 0usize;
         let sent = SendMessageTimeoutW(hwnd, WM_COPYDATA, WPARAM(0), LPARAM(&data as *const _ as isize), SMTO_ABORTIFHUNG, 1000, Some(&mut answer));
         (sent.0 != 0 && answer != 0).then_some(answer)
     }
 }
 
-/// Sends `c` to the running Now Bar.
+/// Sends `c` to the running Swift Tab.
 pub fn send(c: &Command) -> bool {
-    send_to(windows::core::w!("NowBarMain"), c)
+    send_to(windows::core::w!("SwiftTabMain"), c)
 }
 
 /// The command in a WM_COPYDATA's `lparam`, if it is ours.
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn send_without_a_now_bar_is_false_and_quick() {
         let t = std::time::Instant::now();
-        assert!(!send_to(windows::core::w!("NowBarNoSuchWindow"), &Command::Update));
+        assert!(!send_to(windows::core::w!("SwiftTabNoSuchWindow"), &Command::Update));
         assert!(t.elapsed() < std::time::Duration::from_millis(200));
     }
 

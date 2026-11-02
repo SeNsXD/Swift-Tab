@@ -1,5 +1,5 @@
-//! Live activities other programs send (`nowbar.exe push`, Claude Code's hooks): the messages
-//! and their state. The pure part; platform/ipc.rs carries a message to the running Now Bar.
+//! Live activities other programs send (`swifttab.exe push`, Claude Code's hooks): the messages
+//! and their state. The pure part; platform/ipc.rs carries a message to the running Swift Tab.
 
 use serde::{Deserialize, Serialize};
 
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn claude_events_map_to_states() {
         let hook = |extra: serde_json::Value| {
-            let mut v = serde_json::json!({"session_id": "s1", "cwd": "C:\\Users\\Ekin\\Desktop\\now-bar", "transcript_path": "x"});
+            let mut v = serde_json::json!({"session_id": "s1", "cwd": "C:\\Users\\Ekin\\Desktop\\swifttab", "transcript_path": "x"});
             for (k, val) in extra.as_object().unwrap() {
                 v[k] = val.clone();
             }
@@ -534,12 +534,12 @@ mod tests {
         let note = |m: Option<LiveMsg>| m.and_then(|m| m.claude).unwrap_or_default();
 
         let prompt = hook(serde_json::json!({"hook_event_name": "UserPromptSubmit", "nowbar_window": 4242}));
-        assert_eq!(prompt.as_ref().map(|m| (m.id.as_str(), m.title.as_str())), Some(("claude:s1", "now-bar")));
-        assert_eq!(text(prompt.clone()), Some((LiveState::Run, "Düşünüyor".into())));
+        assert_eq!(prompt.as_ref().map(|m| (m.id.as_str(), m.title.as_str())), Some(("claude:s1", "swifttab")));
+        assert_eq!(text(prompt.clone()), Some((LiveState::Run, "Thinking".into())));
         assert_eq!(note(prompt), ClaudeNote { new_prompt: true, window: Some(4242), ..Default::default() });
 
         let edit = serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "Edit", "tool_input": {"file_path": "C:\\x\\app.rs"}});
-        assert_eq!(text(hook(edit.clone())), Some((LiveState::Run, "Düzenliyor: app.rs".into())));
+        assert_eq!(text(hook(edit.clone())), Some((LiveState::Run, "Editing: app.rs".into())));
         let n = note(hook(edit));
         assert!(n.step.is_some() && n.file.as_deref() == Some("C:\\x\\app.rs"));
         let plan = hook(serde_json::json!({"hook_event_name": "PreToolUse", "tool_name": "TodoWrite", "tool_input": {"todos": [{"content": "A", "status": "in_progress"}]}}));
@@ -557,19 +557,19 @@ mod tests {
         let ask = hook(serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash", "tool_input": {"command": "cargo build"}, "nowbar_ask_id": "77", "nowbar_ask_nonce": "s3cr3t"}));
         assert_eq!(note(ask).ask, Some(Ask { id: "77".into(), tool: "Bash".into(), detail: "cargo build".into(), nonce: "s3cr3t".into(), agent: String::new() }));
         let question = hook(serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Hangisi?"}]}}));
-        assert_eq!(text(question), Some((LiveState::Wait, "Soru soruyor".into())));
+        assert_eq!(text(question), Some((LiveState::Wait, "Asking a question".into())));
         let stop = hook(serde_json::json!({"hook_event_name": "Stop", "last_assistant_message": "## Özet\nRaf hazır."}));
         assert_eq!(note(stop).summary.as_deref(), Some("Raf hazır."));
-        assert_eq!(text(hook(serde_json::json!({"hook_event_name": "StopFailure", "error": "rate_limit"}))), Some((LiveState::Done, "Kota doldu".into())));
-        assert_eq!(text(hook(serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash"}))), Some((LiveState::Wait, "İzin istiyor: Bash".into())));
-        assert_eq!(text(event("PermissionRequest")), Some((LiveState::Wait, "İzin istiyor".into())));
+        assert_eq!(text(hook(serde_json::json!({"hook_event_name": "StopFailure", "error": "rate_limit"}))), Some((LiveState::Done, "Usage limit reached".into())));
+        assert_eq!(text(hook(serde_json::json!({"hook_event_name": "PermissionRequest", "tool_name": "Bash"}))), Some((LiveState::Wait, "Asking permission: Bash".into())));
+        assert_eq!(text(event("PermissionRequest")), Some((LiveState::Wait, "Asking permission".into())));
         let notice = |kind: &str| hook(serde_json::json!({"hook_event_name": "Notification", "notification_type": kind, "message": "Claude needs your permission"}));
-        assert_eq!(text(notice("elicitation_dialog")), Some((LiveState::Wait, "Yanıtını bekliyor".into())));
+        assert_eq!(text(notice("elicitation_dialog")), Some((LiveState::Wait, "Waiting for your answer".into())));
         assert_eq!(notice("permission_prompt"), None, "PermissionRequest said it 6 s earlier, with the tool");
         assert_eq!(notice("idle_prompt"), None, "a minute after Stop: it would bring the pill back");
         assert_eq!(notice("auth_success"), None);
-        assert_eq!(text(event("Stop")), Some((LiveState::Done, "Bitti".into())));
-        assert_eq!(text(event("StopFailure")), Some((LiveState::Done, "Bir hata oldu".into())));
+        assert_eq!(text(event("Stop")), Some((LiveState::Done, "Done".into())));
+        assert_eq!(text(event("StopFailure")), Some((LiveState::Done, "Something went wrong".into())));
         assert_eq!(event("SessionEnd").map(|m| m.state), Some(LiveState::Clear));
         assert_eq!(event("SessionStart"), None);
         assert_eq!(event("Whatever"), None);
@@ -595,9 +595,9 @@ mod tests {
         assert_eq!(set.ask_id(live_key("claude:a")).as_deref(), Some("1-1"));
         set.answered(live_key("claude:a"), true, 50);
         let a = set.get(live_key("claude:a")).unwrap();
-        assert_eq!((a.info.ask.is_none(), a.state, a.text.as_str()), (true, LiveState::Run, "İzin verildi"));
+        assert_eq!((a.info.ask.is_none(), a.state, a.text.as_str()), (true, LiveState::Run, "Allowed"));
         set.answered(live_key("claude:b"), false, 60);
-        assert_eq!(set.get(live_key("claude:b")).unwrap().text, "Reddedildi");
+        assert_eq!(set.get(live_key("claude:b")).unwrap().text, "Denied");
         set.apply(LiveMsg { claude: Some(ask("3-3")), ..msg("claude:a", LiveState::Wait) }, 70);
         set.drop_ask("9-9");
         assert!(set.get(live_key("claude:a")).unwrap().info.ask.is_some(), "another id: not this one");
@@ -611,11 +611,11 @@ mod tests {
         let mut set = LiveSet::default();
         let ask = |id: &str| ClaudeNote { ask: Some(Ask { id: id.into(), tool: "Bash".into(), detail: "ls".into(), nonce: "n".into(), agent: String::new() }), ..Default::default() };
         let step = ClaudeNote { step: Some(crate::activities::claude::step_of("Read", &serde_json::json!({"file_path": "a.rs"}))), agent: "sub-1".into(), ..Default::default() };
-        set.apply(LiveMsg { claude: Some(ask("1-1")), text: "İzin istiyor: Bash".into(), ..msg("claude:a", LiveState::Wait) }, 100);
-        set.apply(LiveMsg { claude: Some(step), text: "Okuyor: a.rs".into(), ..msg("claude:a", LiveState::Run) }, 200);
+        set.apply(LiveMsg { claude: Some(ask("1-1")), text: "Needs permission: Bash".into(), ..msg("claude:a", LiveState::Wait) }, 100);
+        set.apply(LiveMsg { claude: Some(step), text: "Reading: a.rs".into(), ..msg("claude:a", LiveState::Run) }, 200);
         let a = set.get(live_key("claude:a")).unwrap();
         assert_eq!((a.state, a.info.ask.is_some()), (LiveState::Wait, true), "a subagent's step doesn't hide the ask");
-        assert_eq!((a.text.as_str(), a.changed_ms), ("İzin istiyor: Bash", 100), "nor says its step in the wait, nor comes forward again");
+        assert_eq!((a.text.as_str(), a.changed_ms), ("Needs permission: Bash", 100), "nor says its step in the wait, nor comes forward again");
         set.apply(LiveMsg { claude: Some(ask("2-2")), ..msg("claude:a", LiveState::Wait) }, 300);
         assert_eq!(set.get(live_key("claude:a")).unwrap().changed_ms, 300, "a new ask is news: it comes forward again");
     }
@@ -666,11 +666,11 @@ mod tests {
         };
         assert_eq!(pill_status(&item(LiveState::Run, "", None), 252_000), "4:12");
         assert_eq!(pill_status(&item(LiveState::Run, "", None), 3_725_000), "1:02:05");
-        assert_eq!(pill_status(&item(LiveState::Run, "", Some(40)), 252_000), "%40");
-        assert_eq!(pill_status(&item(LiveState::Wait, "İzin istiyor: Bash", None), 0), "İzin istiyor");
-        assert_eq!(pill_status(&item(LiveState::Wait, "Yanıtını bekliyor", None), 0), "Yanıtını bekliyor");
-        assert_eq!(pill_status(&item(LiveState::Wait, "", None), 0), "Bekliyor");
-        assert_eq!(pill_status(&item(LiveState::Done, "Bitti", None), 0), "Bitti");
+        assert_eq!(pill_status(&item(LiveState::Run, "", Some(40)), 252_000), "40%");
+        assert_eq!(pill_status(&item(LiveState::Wait, "Needs permission: Bash", None), 0), "Needs permission");
+        assert_eq!(pill_status(&item(LiveState::Wait, "Waiting for your reply", None), 0), "Waiting for your reply");
+        assert_eq!(pill_status(&item(LiveState::Wait, "", None), 0), "Waiting");
+        assert_eq!(pill_status(&item(LiveState::Done, "Done", None), 0), "Done");
     }
 
     #[test]

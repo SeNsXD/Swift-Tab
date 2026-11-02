@@ -87,20 +87,86 @@ pub fn thumb_from_bytes(bytes: &[u8], side: u32) -> Option<(Crest, u32, u32)> {
     if side == 0 {
         return None;
     }
-    unsafe {
-        let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-        let stream = wic.CreateStream().ok()?;
-        stream.InitializeFromMemory(bytes).ok()?;
-        let decoder = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?;
-        let frame = decoder.GetFrame(0).ok()?;
-        let (mut w, mut h) = (0u32, 0u32);
-        frame.GetSize(&mut w, &mut h).ok()?;
-        if w == 0 || h == 0 || w > 32_000 || h > 32_000 {
-            return None;
-        }
-        let crest = square(&wic, &frame.cast().ok()?, (w, h), side)?;
-        Some((crest, w, h))
+    let decoded = unsafe {
+        (|| -> Option<(Crest, u32, u32)> {
+            let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
+            let stream = wic.CreateStream().ok()?;
+            stream.InitializeFromMemory(bytes).ok()?;
+            let decoder = wic.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?;
+            let frame = decoder.GetFrame(0).ok()?;
+            let (mut w, mut h) = (0u32, 0u32);
+            frame.GetSize(&mut w, &mut h).ok()?;
+            if w == 0 || h == 0 || w > 32_000 || h > 32_000 {
+                return None;
+            }
+            let crest = square(&wic, &frame.cast().ok()?, (w, h), side)?;
+            Some((crest, w, h))
+        })()
+    };
+    decoded.or_else(|| dib_thumb_from_bmp(bytes, side))
+}
+
+fn dib_thumb_from_bmp(bytes: &[u8], side: u32) -> Option<(Crest, u32, u32)> {
+    let dib = if bytes.starts_with(b"BM") && bytes.len() > 54 { &bytes[14..] } else { bytes };
+    if dib.len() < 40 {
+        return None;
     }
+    let header_size = u32::from_le_bytes(dib[0..4].try_into().ok()?) as usize;
+    if header_size < 40 || dib.len() < header_size {
+        return None;
+    }
+    let width = i32::from_le_bytes(dib[4..8].try_into().ok()?);
+    let height = i32::from_le_bytes(dib[8..12].try_into().ok()?);
+    let bpp = u16::from_le_bytes(dib[14..16].try_into().ok()?);
+    let compression = u32::from_le_bytes(dib[16..20].try_into().ok()?);
+    let w = width.unsigned_abs();
+    let h = height.unsigned_abs();
+    if w == 0 || h == 0 || w > 16_384 || h > 16_384 || (bpp != 32 && bpp != 24) {
+        return None;
+    }
+    let masks_extra = if compression == 3 && header_size == 40 {
+        if (dib.len() - header_size) >= (w * h * 4) as usize + 16 { 16 } else { 12 }
+    } else {
+        0
+    };
+    let pixel_offset = header_size + masks_extra;
+    if dib.len() <= pixel_offset {
+        return None;
+    }
+    let src = &dib[pixel_offset..];
+    let row_bytes = ((w as usize * bpp as usize + 31) / 32) * 4;
+    if src.len() < row_bytes * h as usize {
+        return None;
+    }
+    let top_down = height < 0;
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h as usize {
+        let src_y = if top_down { y } else { h as usize - 1 - y };
+        let row = &src[src_y * row_bytes..src_y * row_bytes + row_bytes];
+        let dst_row = &mut out[y * (w as usize * 4)..(y + 1) * (w as usize * 4)];
+        if bpp == 32 {
+            for x in 0..w as usize {
+                let b = row[x * 4];
+                let g = row[x * 4 + 1];
+                let r = row[x * 4 + 2];
+                let a = row[x * 4 + 3];
+                let alpha = if a == 0 { 255 } else { a };
+                dst_row[x * 4] = ((b as u32 * alpha as u32) / 255) as u8;
+                dst_row[x * 4 + 1] = ((g as u32 * alpha as u32) / 255) as u8;
+                dst_row[x * 4 + 2] = ((r as u32 * alpha as u32) / 255) as u8;
+                dst_row[x * 4 + 3] = alpha;
+            }
+        } else {
+            for x in 0..w as usize {
+                dst_row[x * 4] = row[x * 3];
+                dst_row[x * 4 + 1] = row[x * 3 + 1];
+                dst_row[x * 4 + 2] = row[x * 3 + 2];
+                dst_row[x * 4 + 3] = 255;
+            }
+        }
+    }
+    let crest = unsafe { fit_pixels(&out, (w, h), side)? };
+    Some((crest, w, h))
 }
 
 /// A PNG (or any picture WIC reads) as a DIB: a 40-byte header and bottom-up 32-bit pixels,

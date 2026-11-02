@@ -1,6 +1,6 @@
-# Now Bar app notifications API
+# Swift Tab app notifications API
 
-Your app can show things in the Now Bar, the pill in the Windows taskbar: a **notification** that
+Your app can show things in the Swift Tab, the pill in the Windows taskbar: a **notification** that
 comes and goes, or a **live activity** you keep updating (a backup at 40 %, a build, a download),
 with your icon, your colour and up to two buttons. It takes one HTTP request on this computer.
 
@@ -8,40 +8,40 @@ with your icon, your colour and up to two buttons. It takes one HTTP request on 
 curl -H "Content-Type: application/json" -d "{\"app\":\"Backup\",\"title\":\"Backup done\",\"text\":\"12 files, 48 MB\"}" http://127.0.0.1:20034/v1/notify
 ```
 
-- **Local only.** The Now Bar listens on `127.0.0.1` and `[::1]`, never on the network.
+- **Local only.** The Swift Tab listens on `127.0.0.1` and `[::1]`, never on the network.
 - **Off until the user turns it on**, in the setup ("Uygulama bildirimlerini aç" / "Turn on app
   notifications") or in Settings → System → App notifications. Off, nothing listens.
 - **The user says yes to each app.** The first request from your app shows a prompt in the pill;
   nothing of yours shows until the user allows it.
-- Needs the Now Bar 0.3.0 or later.
+- Needs the Swift Tab 0.3.0 or later.
 
 ## Responsibility
 
-The Now Bar only shows what apps send. **Which apps the user allows, and what those apps show,
+The Swift Tab only shows what apps send. **Which apps the user allows, and what those apps show,
 is the user's responsibility**; what an app sends is its developer's. The setup and the settings
 say so where the user turns the API on. Don't use it for anything a user could mistake for
 Windows or for another app: the card always says who sent it (below).
 
-## Finding the Now Bar
+## Finding the Swift Tab
 
 1. **The address is fixed:** `http://127.0.0.1:20034`. Use `127.0.0.1` rather than `localhost`.
-2. **If that port is taken** (another program, a Hyper-V reservation), the Now Bar listens
-   wherever Windows puts it and says where in `%LOCALAPPDATA%\NowBar\api.json`, which exists
+2. **If that port is taken** (another program, a Hyper-V reservation), the Swift Tab listens
+   wherever Windows puts it and says where in `%LOCALAPPDATA%\SwiftTab\api.json`, which exists
    only while it listens:
 
    ```json
-   {"name":"Now Bar","api":1,"version":"0.3.0","url":"http://127.0.0.1:20034","port":20034,"pid":4242}
+   {"name":"Swift Tab","api":1,"version":"0.3.0","url":"http://127.0.0.1:20034","port":20034,"pid":4242}
    ```
 
    A robust client reads `url` from that file and falls back to `http://127.0.0.1:20034`.
-3. **To check it is the Now Bar:** `GET /v1` answers `{"name":"Now Bar","api":1,"version":"0.3.0"}`.
+3. **To check it is the Swift Tab:** `GET /v1` answers `{"name":"Swift Tab","api":1,"version":"0.3.0"}`.
 
-**Connection refused** means the Now Bar isn't installed, isn't running, or the user hasn't turned
+**Connection refused** means the Swift Tab isn't installed, isn't running, or the user hasn't turned
 the API on. Skip quietly; don't ask the user to install anything.
 
 ## Permission
 
-The Now Bar knows your app by **the name you send (`app`) and the exe your request comes from**
+The Swift Tab knows your app by **the name you send (`app`) and the exe your request comes from**
 (it looks up the process behind the connection). Both count: the same name from another exe is
 another app.
 
@@ -83,10 +83,10 @@ then leaves by itself. A click on one of its buttons answers it and it goes.
 
 | Field | | |
 |---|---|---|
-| `app` | required | Your app's name as the user sees it, 1–32 characters. Names that would pass for Windows, the Now Bar or Claude are refused (`400`, `detail: "app"`): once only letters and digits are kept, they may not contain `nowbar`, `windows`, `microsoft`, `defender`, `claude`, `anthropic` or `samsung`, in any case. Invisible or direction characters, spaces other than a plain one, `·` and `•` are refused too. |
+| `app` | required | Your app's name as the user sees it, 1–32 characters. Names that would pass for Windows, the Swift Tab or Claude are refused (`400`, `detail: "app"`): once only letters and digits are kept, they may not contain `nowbar`, `windows`, `microsoft`, `defender`, `claude`, `anthropic` or `samsung`, in any case. Invisible or direction characters, spaces other than a plain one, `·` and `•` are refused too. |
 | `title` | required | Up to 40 characters. |
 | `text` | | Up to 120 characters: a line in the pill, up to three on the card. |
-| `id` | | Your id for it, 1–40 of `A–Z a–z 0–9 . _ -`. A notification with the same id replaces it. Without one, the Now Bar gives it one (in the answer). |
+| `id` | | Your id for it, 1–40 of `A–Z a–z 0–9 . _ -`. A notification with the same id replaces it. Without one, the Swift Tab gives it one (in the answer). |
 | `duration` | | Seconds on screen, 2–600. Default 5, or 60 with buttons. |
 | `icon` | | See [Icons](#icons). Default: your exe's own icon. |
 | `accent` | | `"#RRGGBB"`: the circle, the last button, the ring. Default: the user's accent. |
@@ -114,8 +114,8 @@ curl -X PUT -H "Content-Type: application/json" -d "{\"app\":\"Backup\",\"title\
 ```
 
 Your ids are yours: another app can't update, clear or read your items, and you can't touch
-theirs, the `nowbar.exe push` ones or Claude Code's. An app has at most 3 items at a time (a 4th
-takes the place of its quietest); the Now Bar keeps 8 in all.
+theirs, the `swifttab.exe push` ones or Claude Code's. An app has at most 3 items at a time (a 4th
+takes the place of its quietest); the Swift Tab keeps 8 in all.
 
 ### `POST /v1/events`: what the user did
 
@@ -137,7 +137,7 @@ blocked one gets `403 denied`.
 ### `GET /v1`
 
 ```json
-{"name":"Now Bar","api":1,"version":"0.3.0"}
+{"name":"Swift Tab","api":1,"version":"0.3.0"}
 ```
 
 ## Icons
@@ -179,7 +179,7 @@ If the app isn't allowed yet, the first 20 seconds of a `wait` are the prompt's 
 no waiting request takes goes to [`/v1/events`](#post-v1events-what-the-user-did).
 
 Don't take a click alone as the go-ahead for something that can't be undone: any program running
-as the user could have answered in the Now Bar's place (see [Security](#security)).
+as the user could have answered in the Swift Tab's place (see [Security](#security)).
 
 ## Errors
 
@@ -197,7 +197,7 @@ The body is always JSON: `{"ok":false,"error":"…","detail":"…"}` (`detail` o
 | `413` | `too_large` | Over 96 KB, an icon over 64 KB or 512 px. |
 | `415` | `unsupported_media_type` | Not `application/json`. |
 | `429` | `rate_limited`, `permission_busy`, `permission_cooldown` | See `Retry-After`. |
-| `503` | `disabled` | The Now Bar is switched off in its settings (or, with `detail: "busy"`, 16 requests are open). |
+| `503` | `disabled` | The Swift Tab is switched off in its settings (or, with `detail: "busy"`, 16 requests are open). |
 
 ## Limits
 
@@ -212,7 +212,7 @@ The body is always JSON: `{"ok":false,"error":"…","detail":"…"}` (`detail` o
 
 ## Security
 
-What the Now Bar keeps out:
+What the Swift Tab keeps out:
 
 - **Web pages.** A page can't reach the API: requests with `Origin`, `Sec-Fetch-Site` or
   `Sec-Fetch-Dest` (which browsers send) are refused, JSON can't be sent from a page without a
@@ -228,9 +228,9 @@ What the Now Bar keeps out:
 
 What it can't: a program already running as the user can do what the user can, so the permission
 is about consent and noise, not a wall against malware. Such a program could also take port
-20034 before the Now Bar starts, or answer a `wait` in its place.
+20034 before the Swift Tab starts, or answer a `wait` in its place.
 
-The Now Bar's log keeps your app's name, your exe's file name and the item's id, never the text.
+The Swift Tab's log keeps your app's name, your exe's file name and the item's id, never the text.
 
 ## Examples
 
@@ -250,7 +250,7 @@ import json, os, urllib.error, urllib.request
 
 def now_bar_url():
     try:
-        with open(os.path.expandvars(r"%LOCALAPPDATA%\NowBar\api.json"), encoding="utf-8") as f:
+        with open(os.path.expandvars(r"%LOCALAPPDATA%\SwiftTab\api.json"), encoding="utf-8") as f:
             return json.load(f)["url"]
     except (OSError, ValueError, KeyError):
         return "http://127.0.0.1:20034"
@@ -264,7 +264,7 @@ def now_bar(method, path, body):
     except urllib.error.HTTPError as e:
         return json.load(e)          # 403, 429, … with the reason
     except OSError:
-        return None                  # no Now Bar, or the API is off
+        return None                  # no Swift Tab, or the API is off
 
 now_bar("PUT", "/v1/activities/backup", {"app": "Backup", "title": "Backing up", "progress": 40})
 answer = now_bar("POST", "/v1/notify", {
@@ -282,7 +282,7 @@ const r = await fetch("http://127.0.0.1:20034/v1/notify", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ app: "Backup", title: "Backup done", text: "12 files, 48 MB", accent: "#1DB954" }),
-}).catch(() => null); // no Now Bar
+}).catch(() => null); // no Swift Tab
 console.log(r && (await r.json()));
 ```
 
@@ -297,21 +297,21 @@ try
     var r = await http.PostAsJsonAsync("/v1/notify", new { app = "Backup", title = "Backup done", text = "12 files, 48 MB" });
     Console.WriteLine(await r.Content.ReadAsStringAsync());
 }
-catch (HttpRequestException) { } // no Now Bar
+catch (HttpRequestException) { } // no Swift Tab
 ```
 
-## From a script: `nowbar.exe push`
+## From a script: `swifttab.exe push`
 
-Scripts you run yourself can also use the Now Bar's own exe, without HTTP and without a prompt
+Scripts you run yourself can also use the Swift Tab's own exe, without HTTP and without a prompt
 (it needs Settings → System → Live activities, which is on by default):
 
 ```bash
-nowbar.exe push --id backup --title "Backup" --text "Documents" --progress 40
-nowbar.exe push --id backup --title "Backup" --state done
+swifttab.exe push --id backup --title "Backup" --text "Documents" --progress 40
+swifttab.exe push --id backup --title "Backup" --state done
 ```
 
 `--state` is `run`, `wait`, `done` or `clear`, as above. It has no icons, colours or buttons, and
-exits at once (always 0) when the Now Bar isn't running.
+exits at once (always 0) when the Swift Tab isn't running.
 
 ## Versions
 

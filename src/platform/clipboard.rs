@@ -22,6 +22,10 @@ pub fn png_format() -> u32 {
     unsafe { RegisterClipboardFormatW(windows::core::w!("PNG")) }
 }
 
+pub fn mime_png_format() -> u32 {
+    unsafe { RegisterClipboardFormatW(windows::core::w!("image/png")) }
+}
+
 pub fn listen(hwnd: HWND) -> bool {
     unsafe { AddClipboardFormatListener(hwnd).is_ok() }
 }
@@ -82,24 +86,25 @@ pub fn read_snapshot(owner: HWND) -> Option<RawClipboardContent> {
     unsafe {
         open(owner).ok()?;
         let res = (|| -> Option<RawClipboardContent> {
-            let png_fmt = png_format();
-            if png_fmt != 0 && IsClipboardFormatAvailable(png_fmt).is_ok() {
-                if let Ok(handle) = GetClipboardData(png_fmt) {
-                    let hmem = HGLOBAL(handle.0);
-                    let size = GlobalSize(hmem);
-                    let ptr = GlobalLock(hmem) as *const u8;
-                    if !ptr.is_null() && size > 8 {
-                        let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
+            for png_fmt in [png_format(), mime_png_format()] {
+                if png_fmt != 0 && IsClipboardFormatAvailable(png_fmt).is_ok() {
+                    if let Ok(handle) = GetClipboardData(png_fmt) {
+                        let hmem = HGLOBAL(handle.0);
+                        let size = GlobalSize(hmem);
+                        let ptr = GlobalLock(hmem) as *const u8;
+                        if !ptr.is_null() && size > 8 {
+                            let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
+                            let _ = GlobalUnlock(hmem);
+                            return Some(RawClipboardContent::Image {
+                                raw_png: Some(bytes.clone()),
+                                raw_dib: None,
+                                bmp_bytes: Some(bytes),
+                                width: 0,
+                                height: 0,
+                            });
+                        }
                         let _ = GlobalUnlock(hmem);
-                        return Some(RawClipboardContent::Image {
-                            raw_png: Some(bytes.clone()),
-                            raw_dib: None,
-                            bmp_bytes: Some(bytes),
-                            width: 0,
-                            height: 0,
-                        });
                     }
-                    let _ = GlobalUnlock(hmem);
                 }
             }
 
@@ -125,7 +130,11 @@ pub fn read_snapshot(owner: HWND) -> Option<RawClipboardContent> {
                         } else {
                             0
                         };
-                        let masks_size = if compression == 3 && header_size == 40 { 12 } else { 0 };
+                        let masks_size = if compression == 3 && header_size == 40 {
+                            if bit_count == 32 { 16 } else { 12 }
+                        } else {
+                            0
+                        };
                         let off_bits = 14 + header_size + palette_colors * 4 + masks_size;
 
                         let mut bmp = Vec::with_capacity(14 + size);
@@ -147,6 +156,47 @@ pub fn read_snapshot(owner: HWND) -> Option<RawClipboardContent> {
                         });
                     }
                     let _ = GlobalUnlock(hmem);
+                }
+            }
+
+            if IsClipboardFormatAvailable(CF_HDROP).is_ok() {
+                if let Ok(handle) = GetClipboardData(CF_HDROP) {
+                    use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+                    let hdrop = HDROP(handle.0);
+                    let count = DragQueryFileW(hdrop, 0xFFFF_FFFF, None);
+                    for idx in 0..count {
+                        let len = DragQueryFileW(hdrop, idx, None);
+                        if len > 0 {
+                            let mut buf = vec![0u16; (len + 1) as usize];
+                            let read_len = DragQueryFileW(hdrop, idx, Some(&mut buf));
+                            if read_len > 0 {
+                                let path_str = String::from_utf16_lossy(&buf[..read_len as usize]);
+                                let path = std::path::Path::new(&path_str);
+                                let is_img = path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .is_some_and(|ext| {
+                                        matches!(
+                                            ext.to_ascii_lowercase().as_str(),
+                                            "png" | "jpg" | "jpeg" | "bmp" | "gif" | "webp" | "ico" | "tif" | "tiff"
+                                        )
+                                    });
+                                if is_img {
+                                    if let Ok(bytes) = std::fs::read(path) {
+                                        if bytes.len() > 8 {
+                                            return Some(RawClipboardContent::Image {
+                                                raw_png: Some(bytes.clone()),
+                                                raw_dib: None,
+                                                bmp_bytes: Some(bytes),
+                                                width: 0,
+                                                height: 0,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

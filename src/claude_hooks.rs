@@ -1,4 +1,4 @@
-//! Claude Code's hooks for the Now Bar in `~/.claude/settings.json`: `nowbar.exe claude-hooks
+//! Claude Code's hooks for the Swift Tab in `~/.claude/settings.json`: `swifttab.exe claude-hooks
 //! install | remove`, and the exe's path kept current at start (as autostart follows the exe).
 //! The pure part works on the settings' JSON; ours are the hooks whose first arg is `claude-hook`.
 
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Map, Value};
 
-/// The events the Now Bar listens to (PermissionRequest waits for the card's answer).
+/// The events the Swift Tab listens to (PermissionRequest waits for the card's answer).
 pub const EVENTS: [&str; 10] = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "PermissionDenied", "Notification", "Stop", "StopFailure", "SessionEnd"];
 
 /// A hook entry of ours.
@@ -57,7 +57,7 @@ pub fn install(settings: Value, exe: &str) -> Option<Value> {
     Some(settings)
 }
 
-/// Our hooks repointed at `exe` when the exe they point at is gone (the Now Bar was moved): the
+/// Our hooks repointed at `exe` when the exe they point at is gone (the Swift Tab was moved): the
 /// events, matchers and timeouts stay as the user left them. `None` when there are none, they
 /// point here, or their exe still exists (a dev build running from elsewhere must not take them
 /// over).
@@ -113,7 +113,7 @@ pub fn rewrite_at(path: &std::path::Path, change: impl FnOnce(Value) -> Option<V
         std::fs::create_dir_all(dir)?;
     }
     let backup = path.with_extension("json.before-nowbar");
-    // The first is the file before the Now Bar ever touched it; `.nowbar-last` is the one before this write.
+    // The first is the file before the Swift Tab ever touched it; `.nowbar-last` is the one before this write.
     if path.exists() {
         std::fs::copy(&path, if backup.exists() { path.with_extension("json.nowbar-last") } else { backup })?;
     }
@@ -129,7 +129,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    const EXE: &str = r"C:\Apps\NowBar\nowbar.exe";
+    const EXE: &str = r"C:\Apps\SwiftTab\swifttab.exe";
 
     fn ours(v: &Value, event: &str) -> Vec<Value> {
         v["hooks"][event].as_array().into_iter().flatten().flat_map(|e| e["hooks"].as_array().cloned().unwrap_or_default()).filter(is_ours).collect()
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn install_twice_is_once_and_moves_the_path() {
-        let v = install(install(json!({}), r"C:\old\nowbar.exe").unwrap(), EXE).unwrap();
+        let v = install(install(json!({}), r"C:\old\swifttab.exe").unwrap(), EXE).unwrap();
         assert_eq!(ours(&v, "PreToolUse").len(), 1);
         assert_eq!(ours(&v, "PreToolUse")[0]["command"], EXE);
     }
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn follow_only_repoints_what_is_there() {
-        let mut v = install(json!({}), r"C:\old\nowbar.exe").unwrap();
+        let mut v = install(json!({}), r"C:\old\swifttab.exe").unwrap();
         v["hooks"].as_object_mut().unwrap().remove("Notification");
         v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"] = json!(100);
         let moved = follow(v, EXE, |_| false).unwrap();
@@ -213,7 +213,7 @@ mod tests {
     fn follow_moves_only_existing_hooks() {
         let gone = |_: &str| false;
         assert_eq!(follow(json!({}), EXE, gone), None, "never installed: nothing to move");
-        let v = install(json!({}), r"C:\old\nowbar.exe").unwrap();
+        let v = install(json!({}), r"C:\old\swifttab.exe").unwrap();
         assert_eq!(follow(v.clone(), EXE, |_| true), None, "the other exe is still there (a dev build ran): leave them");
         let moved = follow(v, EXE, gone).expect("their exe is gone: the app was moved");
         assert_eq!(ours(&moved, "Stop")[0]["command"], EXE);

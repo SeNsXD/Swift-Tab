@@ -1,4 +1,4 @@
-//! Now Bar for Windows: a One UI 9 Now Bar that lives inside the taskbar.
+//! Swift Tab for Windows: a One UI 9 Swift Tab that lives inside the taskbar.
 
 pub mod activities;
 pub mod app;

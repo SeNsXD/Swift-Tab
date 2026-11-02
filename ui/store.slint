@@ -106,11 +106,24 @@ export global Store {
     callback language-picked(int);
     /// 0 picker, 1 settings.
     in-out property <int> tray-click: 0;
-    in-out property <bool> open-on-hover: true;
+    in-out property <bool> open-on-hover: false;
     in-out property <bool> clipboard-stash: true;
     in-out property <bool> clipboard-popup: true;
+    in-out property <bool> shelf-on: true;
     in-out property <bool> shelf-pinned: false;
+    in-out property <bool> clipboard-pinned: false;
+    in-out property <bool> media-pinned: false;
+    in-out property <bool> media-spotify-button: true;
     in-out property <bool> weather-bar: true;
+    in-out property <bool> cleaner-anim: true;
+    /// The Home page's live cards, read by the window itself every few seconds.
+    in-out property <string> home-media-app;
+    in-out property <string> home-media-title;
+    in-out property <bool> home-media-playing;
+    in-out property <string> home-headset;
+    /// -1: no headset connected.
+    in-out property <int> home-headset-pct: -1;
+    in-out property <string> home-weather;
     in-out property <bool> media-hide-front: true;
     in-out property <bool> clipboard-text: true;
     in-out property <bool> clipboard-links: true;
@@ -121,8 +134,8 @@ export global Store {
     in-out property <float> leave-ms: 600;
     in-out property <bool> wheel-switches: true;
     in-out property <bool> keep-user-front: true;
-    /// 0 system, 1 dark, 2 light.
-    in-out property <int> theme: 0;
+    /// Always dark mode (1).
+    in-out property <int> theme: 1;
     // Medya
     in-out property <bool> media-on: true;
     /// An app (not hidden) has a media session now: the list panel marks Medya.
@@ -182,7 +195,7 @@ export global Store {
     in-out property <bool> power-moment: true;
     /// Percent, 5–50.
     in-out property <float> power-low: 15;
-    in-out property <bool> privacy-on: true;
+    in-out property <bool> privacy-on: false;
     in-out property <bool> headsets-on: true;
     in-out property <bool> live-on: true;
     in-out property <bool> capture-moment: true;
@@ -199,9 +212,12 @@ export global Store {
     /// Nothing else on: the pill shows the clock and the weather instead of hiding.
     in-out property <bool> idle-clock: true;
     in-out property <bool> weather-in-stack: true;
+    in-out property <bool> clock-12h: false;
     in-out property <bool> weather-effects: true;
     /// Explorer's copies in the pill.
     in-out property <bool> transfer-on: true;
+    /// Downloads in the pill.
+    in-out property <bool> downloads-on: true;
     in-out property <bool> brief-morning: true;
     in-out property <string> brief-name;
     /// Back from a lock: what happened meanwhile.
@@ -214,7 +230,7 @@ export global Store {
     in-out property <[City]> city-results;
     /// 0 idle, 1 searching, 2 done, 3 failed.
     in-out property <int> city-search-state: 0;
-    /// Without a city, the weather where the PC is; the Now Bar's last look ("Kadıköy · Türkiye",
+    /// Without a city, the weather where the PC is; the Swift Tab's last look ("Kadıköy · Türkiye",
     /// "Windows'ta konum kapalı") and the place's name once found.
     in-out property <bool> weather-locate: true;
     in-out property <string> located;
@@ -253,7 +269,7 @@ export global Store {
     in-out property <string> update-line: "";
     /// A newer release is out: the row installs it.
     in-out property <bool> update-ready: false;
-    // Window state (remembered in settings.json, not settings of the Now Bar itself)
+    // Window state (remembered in settings.json, not settings of the Swift Tab itself)
     /// 0 Görünüm, 1 Genel, 2 Medya, 3 Zamanlayıcı, 4 Galaxy Buds, 5 Canlı maç, 6 Tam ekran, 7 Hakkında, 8 Sistem.
     in-out property <int> page: 0;
     in-out property <bool> preview-collapsed: false;
@@ -286,7 +302,7 @@ export global Store {
     pure callback search(string) -> [Hit];
     /// How many of `search`'s results are on a page.
     pure callback search-count(string, int) -> int;
-    /// `#RRGGBB` the Now Bar can use.
+    /// `#RRGGBB` the Swift Tab can use.
     pure callback hex-ok(string) -> bool;
     /// Running apps matching what's typed in the exception box, at most five.
     pure callback suggestions(string) -> [Item];

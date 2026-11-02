@@ -1,24 +1,23 @@
-﻿//! The pills the setup's stage turns through: what the Now Bar shows, drawn by its own painter.
+//! The pills the setup's stage turns through: what the Swift Tab shows, drawn by its own painter.
 
 use windows::core::Result;
 
-use super::color::team_palette;
 use super::layout::Scale;
 use super::offscreen::render;
-use super::pill::{paint_pill_content, MatchPill, PillContent, PillTeam, PillThumb};
+use super::pill::{paint_pill_content, PillContent, PillThumb};
 use crate::activities::buds::{BudsSnapshot, Worn};
-use crate::activities::live::LiveState;
 use crate::activities::media::{Caps, MediaSnapshot};
 use crate::activities::shelf::FileKind;
+use crate::activities::weather::WeatherFx;
 
-/// Music, Claude at work, a live match, the Buds, the shelf (names made up).
+/// Music, Weather, the Buds, the shelf (names made up).
 pub fn pills() -> Vec<PillContent> {
     let song = MediaSnapshot {
         id: 1,
         app_id: "Spotify.exe".into(),
         app_name: "Spotify".into(),
-        title: "Gece Yarısı Treni".into(),
-        artist: "Deniz Kaya".into(),
+        title: "Party On My Mind".into(),
+        artist: "Pritam".into(),
         playing: true,
         timeline: None,
         can: Caps { play_pause: true, prev: true, next: true, seek: true, shuffle: false, repeat: false },
@@ -29,29 +28,23 @@ pub fn pills() -> Vec<PillContent> {
         accent: [0x1D, 0xB9, 0x54],
         changed_ms: 0,
     };
-    let team = |code: &str, primary: [u8; 3], secondary: [u8; 3]| PillTeam { code: code.into(), palette: team_palette(primary, secondary), crest: None };
-    let game = MatchPill {
-        id: 1,
-        home: team("FB", [0x0E, 0x1E, 0x5B], [0xF5, 0xD1, 0x0D]),
-        away: team("GS", [0xA9, 0x0B, 0x2B], [0xFD, 0xB9, 0x12]),
-        score: Some((2, 1)),
-        centre: "67'".into(),
-        live: true,
-        stale: false,
-        dim: (false, false),
-        fresh: None,
-        moment: None,
-        followed: None,
-        wide: false,
-    };
     let file = |kind| PillThumb { thumb: None, kind };
     vec![
         PillContent::media(song),
-        PillContent::Live { key: 1, title: "now-bar".into(), status: "4:12".into(), claude: true, state: LiveState::Run, action: format!("{}: app.rs", crate::i18n::tr("Düzenliyor")) },
-        PillContent::Match(Box::new(game)),
+        PillContent::Weather {
+            symbol: "⛅".into(),
+            temp: "24°".into(),
+            desc: "Partly cloudy".into(),
+            fx: WeatherFx::Clouds,
+        },
         PillContent::Buds(BudsSnapshot { left: 80, right: 75, case: Some(60), noise: None, worn: Worn { left: true, right: true } }),
+        PillContent::Clipboard {
+            label: "swift-tab-v1.0.0.zip".into(),
+            count: 3,
+            thumb: None,
+        },
         PillContent::Shelf {
-            label: "sunum-final.pdf".into(),
+            label: "presentation-final.pdf".into(),
             count: 3,
             thumbs: vec![file(FileKind::Pdf), file(FileKind::Image), file(FileKind::Archive)],
             drop_hint: false,

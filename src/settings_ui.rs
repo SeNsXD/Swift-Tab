@@ -7,7 +7,7 @@ use crate::i18n::{n_, tr, trf};
 use crate::settings::BudsDevice;
 
 /// Sidebar order; `SearchHit::page` and the window's `Store.page` index this.
-pub const PAGES: [&str; 13] = [n_("Görünüm"), n_("Genel"), n_("Medya"), n_("Zamanlayıcı"), n_("Wireless Buds"), n_("Canlı maç"), n_("Tam ekran"), n_("Hakkında"), n_("Sistem"), n_("Oyunlar"), n_("Dijital Denge"), n_("Pano"), n_("Raf")];
+pub const PAGES: [&str; 15] = [n_("Görünüm"), n_("Genel"), n_("Medya"), n_("Zamanlayıcı"), n_("Wireless Buds"), n_("Canlı maç"), n_("Tam ekran"), n_("Hakkında"), n_("Weather"), n_("Oyunlar"), n_("Dijital Denge"), n_("Pano"), n_("Raf"), n_("Ana sayfa"), n_("System Events")];
 
 /// One searchable row: page, row key (the window scrolls to it), section, title, description,
 /// extra words people might type.
@@ -24,107 +24,56 @@ const fn e(page: u8, row: &'static str, section: &'static str, title: &'static s
     Entry { page, row, section, title, desc, keywords }
 }
 
-/// Every setting row, in page order (notes §10).
+/// Every setting row, in page order.
 pub const INDEX: &[Entry] = &[
-    e(0, "pill-size", n_("Pil"), n_("Pil boyutu"), n_("Yükseklik 32 DIP"), "büyük küçük normal boyut"),
+    e(0, "pill-size", n_("Pil"), n_("Pil boyutu"), n_("Küçük (%78), Normal (%88), Büyük (%100)"), "büyük küçük normal boyut"),
     e(0, "pill-offset", n_("Pil"), n_("Konum"), n_("Görev çubuğunun ortasından sola ya da sağa"), "ortala kaydır sol sağ yer"),
-    e(0, "pill-opacity", n_("Pil"), n_("Zemin opaklığı"), n_("Zamanlayıcı, kronometre, Buds ve maç pillerinde; medya pili kapağın renginde kalır"), "saydamlık şeffaflık opacity zemin"),
-    e(0, "pill-slivers", n_("Pil"), n_("Arkadaki etkinlikleri göster"), n_("Öndeki pilin sağından taşan ince şeritler"), "şerit yığın arka"),
-    e(0, "wallpaper-accent", n_("Renk"), n_("Duvar kâğıdından"), n_("Vurgu rengi duvar kâğıdının renginden gelir; gri bir duvar kâğıdında seçtiğin renk"), "duvar kağıdı arka plan masaüstü renk palet one ui material you"),
-    e(0, "accent", n_("Renk"), n_("Vurgu rengi"), n_("Zamanlayıcı, kronometre ve seçici"), "renk accent mor mavi"),
-    e(0, "cover-color", n_("Renk"), n_("Kapak rengini kullan"), n_("Medya pili ve kartı albüm kapağının rengini alır; kapalıyken uygulamanın rengini"), "albüm kapak renk"),
+    e(0, "pill-opacity", n_("Pil"), n_("Zemin opaklığı"), n_("Pilin saydamlığı"), "saydamlık şeffaflık opacity zemin"),
     e(0, "card-size", n_("Kart"), n_("Kart boyutu"), n_("Kompakt ya da büyük"), "kompakt büyük boyut"),
     e(0, "card-blur", n_("Kart"), n_("Bulanıklık"), n_("Kartın arkasındaki masaüstü bulanıklaşır"), "blur saydam akrilik malzeme"),
-    e(0, "darkness", n_("Kart"), n_("Malzeme koyuluğu"), n_("Bulanık zeminin ne kadar karartılacağı"), "koyu karanlık malzeme"),
-    e(0, "saturation", n_("Kart"), n_("Renk doygunluğu"), n_("Bulanık zeminin renk canlılığı"), "doygunluk canlı malzeme saturation"),
     e(0, "speed", n_("Hareket"), n_("Animasyon hızı"), n_("Pilin büyüyüp küçülmesi, kartın açılması, içerik geçişleri"), "animasyon hız yavaş hızlı kapalı"),
     e(0, "marquee", n_("Hareket"), n_("Kayan başlık"), n_("Pile sığmayan şarkı adı"), "kayma marquee başlık"),
     e(0, "marquee-speed", n_("Hareket"), n_("Kayma hızı"), n_("Kayan başlığın hızı"), "kayma hız marquee"),
-    e(1, "language", n_("Dil"), n_("Arayüzün dili"), n_("Otomatik: Windows'unki; Türkçe ya da İngilizce"), "dil language english ingilizce türkçe turkish arayüz"),
-    e(1, "autostart", n_("Başlangıç"), n_("Windows ile başlat"), n_("Oturum açınca Syro kendiliğinden çalışır"), "başlangıç açılış otomatik"),
-    e(0, "open-delay", n_("Açılış"), n_("Açılma gecikmesi"), n_("Üzerine gelince açmadan önce beklenen süre"), "gecikme bekleme hover delay ms"),
-    e(0, "open-on-hover", n_("Açılış"), n_("Pil nasıl açılsın"), n_("Tıklayınca ya da üzerine gelince"), "hover fare tıkla click üzerine aç"),
-    e(12, "shelf-pinned", n_("Raf"), n_("Rafı sabitle"), n_("Raf boşken bile kaydırınca açılır"), "raf shelf sabitle pin sabit"),
+    e(1, "autostart", n_("Başlangıç"), n_("Windows ile başlat"), n_("Oturum açınca Swift Tab kendiliğinden çalışır"), "başlangıç açılış otomatik"),
     e(11, "clipboard-text", n_("Neleri tutsun"), n_("Metin"), n_("Kopyaladığın yazılar"), "pano metin yazı text"),
     e(11, "clipboard-links", n_("Neleri tutsun"), n_("Bağlantılar"), n_("Web adresleri"), "pano bağlantı link url"),
     e(11, "clipboard-images", n_("Neleri tutsun"), n_("Görseller"), n_("Resimler ve ekran görüntüleri"), "pano görsel resim image"),
     e(11, "clipboard-rich", n_("Neleri tutsun"), n_("Biçimlendirme"), n_("Kapalıyken yalnızca yazı kalır"), "pano biçim kalın rich html"),
     e(11, "clipboard-stash", n_("Pano"), n_("Pano geçmişi"), n_("Kopyaladığın son 20 şeyi tutar; kapatınca kaydetmeyi bırakır"), "pano clipboard kopyala geçmiş"),
     e(11, "clipboard-popup", n_("Pano"), n_("Kopyalayınca pilde göster"), n_("Kopyaladığında pil kısa süre öne çıkar"), "pano clipboard pop açıl göster"),
+    e(11, "clipboard-pinned", n_("Behavior"), n_("Always show"), n_("Even when nothing is copied"), "clipboard always show pinned empty hep görünür sabit boş pano"),
+    e(12, "shelf-on", n_("Raf"), n_("Rafı göster"), n_("Dosyaları pile bırakıp tutar; kapatınca raf gizlenir"), "raf shelf dosya bırak tut"),
+    e(12, "shelf-pinned", n_("Pill"), n_("Always show"), n_("Even when the shelf is empty"), "shelf always show pinned empty hep görünür sabit boş raf"),
     e(1, "close-on-leave", n_("Kart ve etkileşim"), n_("Fare ayrılınca kartı kapat"), n_("Fare karttan uzaklaşınca kart kapanır"), "kapat fare"),
     e(1, "leave-ms", n_("Kart ve etkileşim"), n_("Kapanma gecikmesi"), n_("Fare ayrıldıktan sonra kartın kapanma süresi"), "gecikme süre kapanma"),
     e(1, "wheel-switches", n_("Kart ve etkileşim"), n_("Tekerlek ve kaydırma etkinlik değiştirir"), n_("Pilin ve kartın üstünde; dokunmatik yüzeyde iki parmakla"), "tekerlek kaydırma fare touchpad"),
     e(1, "keep-user-front", n_("Kart ve etkileşim"), n_("Seçtiğim etkinlik önde kalsın"), n_("Tekerlekle öne aldığın etkinlik yeni bir şey olana dek önde kalır"), "öne al seçim"),
-    e(1, "theme", n_("Bu pencere"), n_("Tema"), n_("Pil ve kartlar her zaman koyudur"), "koyu açık sistem tema karanlık"),
-    e(2, "media-hide-front", n_("Etkinlik"), n_("Oynatıcı öndeyken gizle"), n_("Oynatıcının penceresi önündeyken pil görünmez; küçülünce ya da arkada kalınca görünür"), "medya gizle ön plan pencere oynatıcı öndeyken"),
     e(2, "media-on", n_("Medya"), n_("Medyayı göster"), n_("Çalan şarkı pilde; tıklayınca medya kartı"), "müzik şarkı spotify youtube"),
     e(2, "pill-buttons", n_("Pil"), n_("Pil düğmeleri"), n_("Başlık, düğmelere kadar uzar"), "önceki sonraki oynat düğme"),
-    e(2, "pill-artist", n_("Pil"), n_("Sanatçıyı göster"), n_("Başlığın yanında, soluk"), "sanatçı"),
-    e(2, "pill-lyrics", n_("Pil"), n_("Pilde şarkı sözü"), n_("Eşzamanlı söz varken pilde şarkının adı yerine o anki satır kayar"), "söz sözler şarkı sözü lyrics karaoke satır pil"),
-    e(2, "media-waveform", n_("Pil"), n_("Ses dalgası"), n_("Kapakla başlık arasındaki çubuklar sesle birlikte oynar"), "dalga dalgası çubuk ses seviye ekolayzır equalizer"),
-    e(2, "card-wave", n_("Kart"), n_("Dalgalı ilerleme çubuğu"), n_("Çalarken dalgalanır; kapalıyken düz çizgi"), "dalga ilerleme çubuk"),
-    e(2, "media-lyrics", n_("Kart"), n_("Şarkı sözleri"), n_("Kartta «Sözler» çipi; eşzamanlı sözler lrclib.net'ten gelir"), "söz sözler şarkı sözü lyrics lrclib karaoke"),
     e(2, "middle-click", n_("Davranış"), n_("Orta tıkla oynat/durdur"), n_("Medya pilinin üstünde farenin orta tuşu"), "orta tık fare duraklat"),
     e(2, "paused-keep", n_("Davranış"), n_("Duraklatınca pilde kalma süresi"), n_("Sonra pil kaybolur; çalınca geri gelir"), "duraklat kalma süre"),
     e(2, "apps", n_("Uygulamalar"), n_("Uygulamalar"), n_("Pilde gösterilecek medya uygulamaları"), "spotify brave chrome gizle uygulama"),
     e(2, "devices", n_("Ses çıkışı seçicisi"), n_("Ses çıkışı seçicisi"), n_("Medya kartındaki çıkış sayfasında görünen cihazlar"), "hoparlör kulaklık çıkış cihaz ses"),
-    e(3, "timer-on", n_("Zamanlayıcı"), n_("Zamanlayıcı"), n_("Geri sayım; süre dolunca alarm"), "geri sayım timer"),
-    e(3, "stopwatch-on", n_("Zamanlayıcı"), n_("Kronometre"), n_("İleri sayım ve tur"), "kronometre stopwatch tur"),
-    e(3, "sound", n_("Süre dolunca"), n_("Alarm sesi"), n_("Windows'un alarm ve zil sesleri"), "ses alarm zil"),
-    e(3, "done-card", n_("Süre dolunca"), n_("Kartı aç"), n_("Süre dolunca kart kendiliğinden açılır"), "kart açılış bitiş"),
-    e(3, "add-minutes", n_("Süre dolunca"), n_("Ekle düğmesi"), n_("Biten zamanlayıcının kartında"), "dakika ekle"),
-    e(3, "presets", n_("Seçici"), n_("Hazır süreler"), n_("Seçicideki çipler, dakika olarak (1–180)"), "hazır süre dakika ön ayar"),
-    e(3, "tenths", n_("Kronometre"), n_("Saliseyi göster"), n_("Kartta 00:12,4 gibi; kapalıyken saniyede bir güncellenir"), "salise onda"),
-    e(4, "buds-on", n_("Wireless Buds"), n_("Buds'ı göster"), n_("Kulaklığın pili; bağlanınca ve pil azalınca pilde"), "kulaklık pil buds samsung"),
-    e(4, "buds-device", n_("Etkinlik"), n_("Kulaklık"), n_("Hangi Buds: bağlanan ilki ya da seçilen eşleşmiş cihaz"), "cihaz seç eşleşmiş bluetooth buds pro adı"),
-    e(4, "buds-low", n_("Pil uyarısı"), n_("Düşük pil uyarısı"), n_("Bunun altında Buds öne gelir, halkalar kırmızı olur"), "düşük pil uyarı"),
-    e(4, "buds-front", n_("Pilde"), n_("Bağlanınca öne gel"), n_("Kulaklık bağlanınca pil kısa süre önde"), "bağlantı öne"),
-    e(4, "buds-case", n_("Pilde"), n_("Kutu pilini göster"), n_("Bir kulaklık kutudayken"), "kutu şarj"),
-    e(4, "buds-ear-pause", n_("Müzik"), n_("Kulaktan çıkınca duraklat"), n_("Bir kulaklık çıkınca müzik durur, geri takınca devam eder"), "kulak çıkar tak duraklat devam müzik otomatik"),
-    e(5, "match-on", n_("Canlı maç"), n_("Canlı maçı göster"), n_("Yalnızca takip ettiğin takımlar"), "futbol maç skor"),
-    e(5, "team-add", n_("Takım ekle"), n_("Takım ekle"), n_("Sonuçlar ESPN'den gelir"), "takım ara fenerbahçe galatasaray"),
-    e(5, "teams", n_("Takip edilenler"), n_("Takip edilen takımlar"), n_("Takip ettiğin takımlar"), "takım takip"),
-    e(5, "show-before", n_("Ne zaman"), n_("Maçtan önce göster"), n_("Pilde başlama saatiyle"), "önce başlama saat"),
-    e(5, "keep-after", n_("Ne zaman"), n_("Maç bitince kalma süresi"), n_("Maç sonu pilde kalma süresi"), "bitiş sonra"),
-    e(5, "opponent-moment", n_("Anlar"), n_("Rakip golünde de an göster"), n_("Pil kısa süre büyür, parıltı olmadan"), "gol rakip an"),
-    e(5, "goal-sound", n_("Anlar"), n_("Gol sesi"), n_("Takımın gol atınca kısa bir ses çalar"), "gol ses tada"),
+    e(2, "media-pinned", n_("Pil"), n_("Always show"), n_("Even when nothing is playing"), "media always show pinned nothing playing hep görünür sabit boş"),
     e(6, "fullscreen-hide", n_("Tam ekran"), n_("Tam ekranda gizle"), n_("Pil ve kartlar, tam ekran bir uygulama öndeyken gizlenir"), "oyun video sunum gizle"),
-    e(6, "exceptions", n_("İstisnalar"), n_("İstisnalar"), n_("Bu uygulamalar tam ekran olsa da Syro görünür kalır"), "istisna uygulama exe"),
-    e(7, "update", n_("Güncelleme"), n_("Güncelle"), n_("Yeni sürüm varsa indirir, doğrular ve Syro'yu yeniden başlatır"), "güncelle güncelleme sürüm versiyon yeni indir github"),
-    e(7, "update-check", n_("Güncelleme"), n_("Güncellemeleri denetle"), n_("Günde bir kez GitHub'a yeni sürüm var mı diye sorar"), "güncelleme denetle otomatik github internet"),
-    e(7, "log", n_("Dosyalar"), n_("Günlük"), n_("Syro'nun günlük dosyası"), "log kayıt"),
+    e(6, "exceptions", n_("İstisnalar"), n_("İstisnalar"), n_("Bu uygulamalar tam ekran olsa da Swift Tab görünür kalır"), "istisna uygulama exe"),
+    e(7, "log", n_("Dosyalar"), n_("Günlük"), n_("Swift Tab'ın günlük dosyası"), "log kayıt"),
     e(7, "file", n_("Dosyalar"), n_("Ayar dosyası"), n_("settings.json"), "json dosya"),
-    e(7, "reset", n_("Sıfırla"), n_("Varsayılanlara dön"), n_("Takımlar ve listeler de sıfırlanır"), "sıfırla varsayılan reset"),
-    e(8, "volume-moment", n_("Ses seviyesi"), n_("Ses seviyesini göster"), n_("Ses değişince seviye kısa bir an pilde görünür"), "ses seviye volume yükselt kıs sessiz hoparlör"),
-    e(8, "power-moment", n_("Şarj"), n_("Şarjı göster"), n_("Şarj aleti takılınca ve pil azalınca pil kısa bir an öne gelir"), "şarj pil batarya güç adaptör priz dizüstü laptop"),
-    e(8, "power-low", n_("Şarj"), n_("Düşük pil"), n_("Dizüstünün pili bunun altına inince bir kez uyarır"), "düşük pil batarya uyarı yüzde"),
-    e(8, "privacy-on", n_("Mikrofon / kamera"), n_("Mikrofon ve kamera kullanımı"), n_("Bir uygulama mikrofonu ya da kamerayı kullanırken pilde, uygulamanın adıyla"), "mikrofon kamera gizlilik webcam kayıt discord zoom"),
-    e(8, "live-on", n_("Canlı etkinlikler"), n_("Canlı etkinlikler"), n_("nowbar.exe push ve Claude Code'un hook'ları pilde bir etkinlik gösterir"), "claude betik script canlı etkinlik hook push derleme"),
-    e(8, "capture-moment", n_("Ekran görüntüleri"), n_("Ekran görüntüsünü göster"), n_("ShareX ya da Ekran Alıntısı Aracı yeni bir görüntü kaydedince pilde kısa bir an; sürükleyip atabilirsin"), "ekran görüntüsü screenshot sharex alıntı snipping kırpma yakalama"),
-    e(8, "transfer-on", n_("Dosya kopyalama"), n_("Kopyalama ilerlemesi"), n_("Explorer kopyalar, taşır ya da silerken pilde yüzde ve kalan süre; penceresi küçültülse de"), "kopyala kopyalama taşı sil dosya ilerleme explorer gezgin yüzde kalan süre copy"),
-    e(8, "capture-to-shelf", n_("Ekran görüntüleri"), n_("Ekran görüntülerini rafa ekle"), n_("Yeni görüntüler rafa düşer, sonra sürükleyip atmak için"), "ekran görüntüsü raf shelf sharex screenshot"),
-    e(8, "claude-ask", n_("Canlı etkinlikler"), n_("Claude izinleri"), n_("Claude izin isteyince kartında İzin ver / Reddet çıkar"), "claude izin onay reddet permission hook"),
-    e(8, "claude-ask-wait", n_("Canlı etkinlikler"), n_("İzin için bekleme"), n_("Kart bu kadar cevap bekler, sonra Claude kendi penceresinde sorar"), "claude izin bekleme süre saniye zaman aşımı"),
-    e(8, "api-on", n_("Uygulama bildirimleri"), n_("Uygulama bildirimleri"), n_("Diğer uygulamalar 127.0.0.1:20034 üzerinden pilde bildirim gösterebilir; önce sana sorulur"), "api bildirim uygulama izni notification http localhost 20034 geliştirici developer docs"),
-    e(8, "api-apps", n_("Uygulama bildirimleri"), n_("İzin verilen uygulamalar"), n_("Sorduklarında verdiğin cevaplar; tıkla: izin ver / engelle"), "api uygulama izin engelle sustur liste"),
-    e(8, "headsets-on", n_("Diğer kulaklıklar"), n_("Diğer kulaklıkları göster"), n_("Galaxy Buds dışındaki Bluetooth kulaklıklar, pilleriyle"), "kulaklık bluetooth pil sony airpods jbl"),
-    e(8, "brief-morning", n_("Now Brief"), n_("Sabah Now Brief"), n_("Günün ilk kilit açılışında günaydın kartı: hava, maçlar, müzik"), "brief now brief sabah özet ozet günaydın gunaydin kart kilit"),
-    e(8, "brief-name", n_("Now Brief"), n_("Selamlamadaki adın"), n_("Boşsa Windows hesabındaki ad"), "ad adın isim selamlama günaydın brief"),
-    e(8, "away-summary", n_("Now Brief"), n_("Sen yokken"), n_("Kilidi açınca, kilitliyken olanlar pilde bir an ve bir listede: Claude, goller, yağmur, indirmeler"), "sen yokken kilit kaçırdım özet ne oldu claude gol yağmur indirme"),
-    e(8, "idle-clock", n_("Saat ve hava"), n_("Boşta saat ve hava"), n_("Etkinlik yokken pil gizlenmez; saati, tarihi ve havayı gösterir"), "saat tarih hava durumu boşta idle clock"),
-    e(8, "weather-in-stack", n_("Hava çubuğu"), n_("Hava çubuğu"), n_("Pilin ve kulaklık pilinin yanında, hep görünür"), "hava durumu çubuk pil yanında her zaman"),
+    e(7, "reset", n_("Sıfırla"), n_("Varsayılanlara dön"), n_("Bütün ayarlar sıfırlanır"), "sıfırla varsayılan reset"),
+    e(14, "capture-moment", n_("Ekran görüntüleri"), n_("Ekran görüntüsünü göster"), n_("ShareX ya da Ekran Alıntısı Aracı yeni bir görüntü kaydedince pilde kısa bir an; sürükleyip atabilirsin"), "ekran görüntüsü screenshot sharex alıntı snipping kırpma yakalama"),
+    e(14, "transfer-on", n_("Dosya kopyalama"), n_("Kopyalama ilerlemesi"), n_("Explorer kopyalar, taşır ya da silerken pilde yüzde ve kalan süre; penceresi küçültülse de"), "kopyala kopyalama taşı sil dosya ilerleme explorer gezgin yüzde kalan süre copy"),
+    e(14, "capture-to-shelf", n_("Ekran görüntüleri"), n_("Ekran görüntülerini rafa ekle"), n_("Yeni görüntüler rafa düşer, sonra sürükleyip atmak için"), "ekran görüntüsü raf shelf sharex screenshot"),
+    e(9, "games-downloads", n_("Pilde"), n_("Game downloads"), n_("Progress and speed of Steam and Epic Games downloads in the pill"), "oyun indirme download steam epic ilerleme hız speed progress game"),
+    e(9, "games-steam", n_("Mağazalar"), "Steam", n_("Reads the Steam library on this PC"), "steam oyun kütüphane library game"),
+    e(9, "games-epic", n_("Mağazalar"), "Epic Games", n_("Reads the Epic Games launcher on this PC"), "epic games oyun kütüphane library launcher game"),
+    e(9, "games-playtime", n_("Pilde"), n_("Playtime"), n_("During and after gameplay"), "oyun süre playtime oynama zamanı game time"),
+    e(4, "headsets-on", n_("Kulaklıklar"), n_("Diğer kulaklıkları göster"), n_("Bluetooth kulaklıklar, pilleriyle köşe çubuğunda"), "kulaklık bluetooth pil sony airpods jbl"),
+    e(8, "idle-clock", n_("Saat ve hava"), n_("Boşta hava ve konum"), n_("Etkinlik yokken köşede sıcaklığı ve şehri gösterir"), "saat tarih hava durumu boşta idle clock"),
+    e(8, "clock-12h", n_("Saat ve hava"), n_("12-hour clock"), n_("7:42 PM instead of 19:42"), "12 saat 24 saat am pm öğleden sonra saat biçimi format 12-hour 24-hour clock"),
+    e(8, "weather-in-stack", n_("Hava çubuğu"), n_("Hava çubuğu"), n_("Köşede kulaklık pilinin yanında, hep görünür"), "hava durumu çubuk pil yanında her zaman"),
     e(8, "weather-effects", n_("Saat ve hava"), n_("Hava efektleri"), n_("Kar, yağmur, güneş ve yıldızlar havanın arkasında hareket eder"), "efekt animasyon kar yağmur güneş yıldız fırtına sis bulut"),
     e(8, "rain-moment", n_("Saat ve hava"), n_("Yağmur uyarısı"), n_("Şehrinde yağmur ya da kar başlamadan önce pil bir an öne gelir"), "yağmur kar yağış uyarı şemsiye hava"),
     e(8, "weather-alerts", n_("Saat ve hava"), n_("Hava uyarıları"), n_("Fırtına, kuvvetli rüzgâr, aşırı sıcak, don ve kötü hava kalitesi öncesinde pil bir an öne gelir"), "fırtına şimşek gök gürültüsü rüzgar rüzgâr fırtına sıcak sıcaklık don buz kirlilik hava kalitesi aqi uyarı"),
-    e(9, "games-downloads", n_("Pilde"), n_("İndirmeler"), n_("Steam ve Epic'te ilerleme, hız ve duraklatma; bitince Güncellendi"), "indirme güncelleme güncellendi steam epic oyun download"),
-    e(9, "games-playtime", n_("Pilde"), n_("Oyun süresi"), n_("Oyun açıkken pilde; kapanınca ne kadar oynadığın"), "oyun süre oynama oynadın fortnite steam epic"),
-    e(9, "island-on", n_("Tam ekran"), n_("Oyun içi ada"), n_("Tam ekranda gol, Claude'un izni, biten zamanlayıcı gibi acil anlar ekranın üstünde birkaç saniye; tıklamayı engellemez"), "oyun içi ada tam ekran üst bildirim gol claude zamanlayıcı dynamic island"),
-    e(9, "games-steam", n_("Mağazalar"), n_("Steam"), n_("Steam'in kayıt defteri ve kütüphane dosyaları"), "steam valve oyun kütüphane"),
-    e(9, "games-epic", n_("Mağazalar"), n_("Epic Games"), n_("Yeni Epic launcher'ın klasörü"), "epic games launcher fortnite oyun"),
-    e(10, "wellbeing-on", n_("Dijital Denge"), n_("Ekran süresi"), n_("Hangi uygulamanın ne kadar önde kaldığı; bu bilgisayarda kalır"), "ekran süresi dijital denge kullanım uygulama süre screen time"),
-    e(10, "wellbeing-in-brief", n_("Dijital Denge"), n_("Now Brief'te göster"), n_("Brief'te dünün ya da bugünün ekran süresi"), "brief ekran süresi sabah"),
-    e(10, "wellbeing-limits", n_("Sınırlar"), n_("Uygulama sınırları"), n_("Bir uygulama günlük sınırını geçince pilde bir an"), "sınır limit süre uyarı discord oyun mola"),
-    e(10, "music-week", n_("Müzik"), n_("Haftanın müziği"), n_("En çok dinlenen şarkılar ve sanatçılar; çalanlar bu bilgisayarda sayılır, internete gitmez"), "müzik şarkı sanatçı haftalık özet wrapped spotify en çok dinlenen"),
     e(8, "weather-locate", n_("Saat ve hava"), n_("Konumumu kullan"), n_("Şehir seçilmemişse hava bilgisayarın bulunduğu yerin; konum Windows'tan, yer adı OpenStreetMap'ten"), "konum otomatik yer neredeyim gps location"),
     e(8, "weather-city", n_("Saat ve hava"), n_("Hava için şehir"), n_("Sıcaklık ve gökyüzü bu şehrin; veriler Open-Meteo'dan gelir"), "şehir il konum hava durumu sıcaklık derece weather"),
 ];
@@ -198,11 +147,11 @@ pub fn exception_name(text: &str, existing: &[String]) -> Result<Option<String>,
         return Ok(None);
     }
     if name.chars().any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
-        return Err(tr("Geçersiz ad").into());
+        return Err("Invalid name".into());
     }
     let exe = if name.to_lowercase().ends_with(".exe") { name.to_string() } else { format!("{name}.exe") };
     match existing.iter().find(|x| x.eq_ignore_ascii_case(&exe)) {
-        Some(have) => Err(trf("{} zaten listede", &[&have])),
+        Some(have) => Err(format!("{have} is already in the list")),
         None => Ok(Some(exe)),
     }
 }
@@ -296,10 +245,10 @@ pub struct BudsChoices {
 pub fn buds_choices(paired: &[Paired], chosen: Option<&BudsDevice>) -> BudsChoices {
     let mut order: Vec<&Paired> = paired.iter().collect();
     order.sort_by_key(|p| !p.samsung);
-    let mut labels = vec![tr("Otomatik").to_string()];
+    let mut labels = vec!["Automatic".to_string()];
     let mut values = vec![None];
     for p in &order {
-        let name = if p.name.trim().is_empty() { tr("Adsız cihaz") } else { p.name.trim() };
+        let name = if p.name.trim().is_empty() { "Unnamed device" } else { p.name.trim() };
         let shared = order.iter().filter(|o| o.name.trim() == p.name.trim()).count() > 1;
         let end = &p.address[p.address.len().saturating_sub(5)..];
         labels.push(if shared { format!("{name} · {end}") } else { name.to_string() });
@@ -342,25 +291,14 @@ mod tests {
         let p = |address: &str, name: &str, samsung| Paired { address: address.into(), name: name.into(), samsung };
         let all = [p("02:00:00:00:00:03", "HC-05", false), p("02:00:00:00:00:01", "Galaxy Buds2", true), p("02:00:00:00:00:02", "Galaxy Buds2", true), p("02:00:00:00:00:04", "", false)];
         let c = buds_choices(&all, None);
-        assert_eq!(c.labels, ["Otomatik", "Galaxy Buds2 · 00:01", "Galaxy Buds2 · 00:02", "HC-05", "Adsız cihaz"]);
+        assert_eq!(c.labels, ["Automatic", "Galaxy Buds2 · 00:01", "Galaxy Buds2 · 00:02", "HC-05", "Unnamed device"]);
         assert_eq!((c.current, &c.values[0]), (0, &None));
         assert_eq!(c.values[3], Some(BudsDevice { address: "02:00:00:00:00:03".into(), name: "HC-05".into() }));
         let chosen = BudsDevice { address: "02:00:00:00:00:02".into(), name: "Galaxy Buds2".into() };
         assert_eq!(buds_choices(&all, Some(&chosen)).current, 2);
         let lost = BudsDevice { address: "02:00:00:00:00:09".into(), name: "Eski Buds".into() };
         let c = buds_choices(&all, Some(&lost));
-        assert_eq!((c.labels.last().map(String::as_str), c.current, c.values.last()), (Some("Eski Buds · eşleşmemiş"), 5, Some(&Some(lost.clone()))));
-    }
-
-    #[test]
-    fn search_finds_the_app_api() {
-        for q in ["api", "bildirim", "20034", "uygulama izni"] {
-            assert!(search(q).iter().any(|h| h.row == "api-on" && h.page == 8), "{q}");
-        }
-        assert!(search("izin verilen").iter().any(|h| h.row == "api-apps"));
-        crate::i18n::in_language(crate::i18n::Language::English, || {
-            assert!(search("notifications").iter().any(|h| h.row == "api-on" && h.title == "App notifications"));
-        });
+        assert_eq!((c.labels.last().map(String::as_str), c.current, c.values.last()), (Some("Eski Buds · not paired"), 5, Some(&Some(lost.clone()))));
     }
 
     #[test]
@@ -372,92 +310,48 @@ mod tests {
 
     #[test]
     fn search_finds_rows_by_title_description_and_keywords() {
-        let hits = search("opak");
-        assert_eq!(hits[0].title, "Zemin opaklığı");
+        let hits = search("opacity");
+        assert_eq!(hits[0].title, "Background opacity");
         assert_eq!(hits[0].page, 0);
-        assert_eq!((hits[0].mark_start, hits[0].mark_len), (6, 4));
+        assert_eq!((hits[0].mark_start, hits[0].mark_len), (11, 7));
         // A keyword only ("blur") still finds the row.
-        assert!(search("blur").iter().any(|h| h.title == "Bulanıklık"));
-        // Accent-insensitive: "gecmis" finds "Pano geçmişi".
-        assert!(search("gecmis").iter().any(|h| h.title == "Pano geçmişi"));
+        assert!(search("blur").iter().any(|h| h.title == "Blur"));
+        // Accent-insensitive / search: "clipboard" finds "Clipboard history".
+        assert!(search("clipboard").iter().any(|h| h.title == "Clipboard history"));
         assert!(search("").is_empty());
         assert!(search("zzzz").is_empty());
     }
 
     #[test]
-    fn search_finds_the_games_and_screen_time() {
+    fn search_finds_the_games() {
         let rows = |q: &str, page: u8| search(q).into_iter().filter(|h| h.page == page).map(|h| h.row).collect::<Vec<_>>();
-        assert_eq!((PAGES[9], PAGES[10]), ("Oyunlar", "Dijital Denge"));
+        assert_eq!(tr(PAGES[9]), "Games");
         assert!(rows("steam", 9).contains(&"games-steam"), "{:?}", rows("steam", 9));
-        assert!(rows("fortnite", 9).contains(&"games-epic"), "{:?}", rows("fortnite", 9));
-        assert!(rows("indirme", 9).contains(&"games-downloads"), "{:?}", rows("indirme", 9));
-        assert!(rows("ada", 9).contains(&"island-on"), "{:?}", rows("ada", 9));
-        assert!(rows("tam ekran", 9).contains(&"island-on"), "{:?}", rows("tam ekran", 9));
-        assert!(rows("ekran süresi", 10).contains(&"wellbeing-on"), "{:?}", rows("ekran süresi", 10));
-        assert!(rows("sınır", 10).contains(&"wellbeing-limits"), "{:?}", rows("sınır", 10));
-        assert_eq!(LAST_PAGE, 12);
-    }
-
-    #[test]
-    fn search_finds_the_wallpaper_accent() {
-        for q in ["duvar", "duvar kağıdı", "palet", "arka plan"] {
-            assert!(search(q).iter().any(|h| h.row == "wallpaper-accent" && h.page == 0), "{q}");
-        }
+        assert!(rows("epic", 9).contains(&"games-epic"), "{:?}", rows("epic", 9));
+        assert!(rows("download", 9).contains(&"games-downloads"), "{:?}", rows("download", 9));
+        assert_eq!(LAST_PAGE, 14);
     }
 
     #[test]
     fn search_ranks_title_starts_first() {
-        let hits = search("kart");
-        assert!(hits[0].title.to_lowercase().starts_with("kart"), "{:?}", hits[0].title);
-        assert_eq!(hits[0].path, format!("{} › {}", PAGES[hits[0].page as usize], hits[0].section));
-    }
-
-    #[test]
-    fn search_finds_the_system_settings() {
-        let rows = |q: &str, page: u8| search(q).into_iter().filter(|h| h.page == page).map(|h| h.row).collect::<Vec<_>>();
-        assert_eq!(PAGES.get(8), Some(&"Sistem"));
-        assert!(rows("şarj", 8).contains(&"power-moment"), "{:?}", rows("şarj", 8));
-        assert!(rows("pil", 8).contains(&"power-low"), "{:?}", rows("pil", 8));
-        assert!(rows("ses", 8).contains(&"volume-moment"), "{:?}", rows("ses", 8));
-        assert!(rows("mikrofon", 8).contains(&"privacy-on"), "{:?}", rows("mikrofon", 8));
-        assert!(rows("kamera", 8).contains(&"privacy-on"), "{:?}", rows("kamera", 8));
-        assert!(rows("kulaklık", 8).contains(&"headsets-on"), "{:?}", rows("kulaklık", 8));
-        assert!(rows("claude", 8).contains(&"live-on"), "{:?}", rows("claude", 8));
-        assert!(rows("betik", 8).contains(&"live-on"), "{:?}", rows("betik", 8));
-        assert!(rows("söz", 2).contains(&"media-lyrics"), "{:?}", rows("söz", 2));
-        assert!(rows("dalga", 2).contains(&"media-waveform"), "{:?}", rows("dalga", 2));
-        // Every entry's page has a name (the hit's path is "Sistem › Şarj").
-        assert!(INDEX.iter().all(|x| (x.page as usize) < PAGES.len()));
-        assert_eq!(search("mikrofon")[0].path, "Sistem › Mikrofon / kamera");
-    }
-
-    #[test]
-    fn search_finds_the_brief() {
-        let rows = |q: &str| search(q).into_iter().filter(|h| h.page == 8).map(|h| h.row).collect::<Vec<_>>();
-        for q in ["brief", "sabah", "günaydın", "ozet"] {
-            assert!(rows(q).contains(&"brief-morning"), "{q}: {:?}", rows(q));
-        }
-        assert!(rows("adın").contains(&"brief-name"), "{:?}", rows("adın"));
-        assert_eq!(search("günaydın")[0].path, "Sistem › Now Brief");
+        let hits = search("card");
+        assert!(hits[0].title.to_lowercase().starts_with("card"), "{:?}", hits[0].title);
+        assert_eq!(hits[0].path, format!("{} › {}", tr(PAGES[hits[0].page as usize]), hits[0].section));
     }
 
     #[test]
     fn search_finds_the_clock_and_weather() {
         let rows = |q: &str| search(q).into_iter().filter(|h| h.page == 8).map(|h| h.row).collect::<Vec<_>>();
-        assert!(rows("saat").contains(&"idle-clock"), "{:?}", rows("saat"));
-        assert!(rows("hava").contains(&"idle-clock"), "{:?}", rows("hava"));
-        assert!(rows("şehir").contains(&"weather-city"), "{:?}", rows("şehir"));
-        assert!(rows("sehir").contains(&"weather-city"), "{:?}", rows("sehir"));
-        assert!(rows("sıcaklık").contains(&"weather-city"), "{:?}", rows("sıcaklık"));
-        assert!(rows("yağmur").contains(&"rain-moment"), "{:?}", rows("yağmur"));
-        assert!(rows("şemsiye").contains(&"rain-moment"), "{:?}", rows("şemsiye"));
-        assert_eq!(search("şehir")[0].path, "Sistem › Saat ve hava");
-        assert!(rows("efekt").contains(&"weather-effects"), "{:?}", rows("efekt"));
-        for q in ["fırtına", "rüzgar", "don", "hava kalitesi", "uyarı"] {
+        assert!(rows("clock").contains(&"idle-clock"), "{:?}", rows("clock"));
+        assert!(rows("weather").contains(&"idle-clock"), "{:?}", rows("weather"));
+        assert!(rows("city").contains(&"weather-city"), "{:?}", rows("city"));
+        assert!(rows("rain").contains(&"rain-moment"), "{:?}", rows("rain"));
+        assert_eq!(search("city")[0].path, "Weather › Clock and weather");
+        assert!(rows("effects").contains(&"weather-effects"), "{:?}", rows("effects"));
+        for q in ["storm", "wind", "frost", "air quality", "alert"] {
             assert!(rows(q).contains(&"weather-alerts"), "{q}: {:?}", rows(q));
         }
-        assert!(rows("kar").contains(&"weather-effects"), "{:?}", rows("kar"));
-        assert!(rows("hava").contains(&"weather-in-stack"), "{:?}", rows("hava"));
+        assert!(rows("snow").contains(&"weather-effects"), "{:?}", rows("snow"));
     }
 
     #[test]
@@ -466,8 +360,8 @@ mod tests {
         assert_eq!(exception_name("  mpv ", &have), Ok(Some("mpv.exe".into())));
         assert_eq!(exception_name("Game.EXE", &have), Ok(Some("Game.EXE".into())));
         assert_eq!(exception_name("   ", &have), Ok(None));
-        assert_eq!(exception_name("VLC", &have), Err("vlc.exe zaten listede".into()));
-        assert_eq!(exception_name("a/b.exe", &have), Err("Geçersiz ad".into()));
+        assert_eq!(exception_name("VLC", &have), Err("vlc.exe is already in the list".into()));
+        assert_eq!(exception_name("a/b.exe", &have), Err("Invalid name".into()));
     }
 
     #[test]
@@ -480,8 +374,8 @@ mod tests {
     #[test]
     fn page_arg_parses() {
         let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(page_arg(&args(&["nowbar-settings.exe", "--page", "5"])), Some(5));
-        assert_eq!(page_arg(&args(&["nowbar-settings.exe"])), None);
+        assert_eq!(page_arg(&args(&["swifttab-settings.exe", "--page", "5"])), Some(5));
+        assert_eq!(page_arg(&args(&["swifttab-settings.exe"])), None);
         assert_eq!(page_arg(&args(&["x", "--page", &(LAST_PAGE + 1).to_string()])), None, "no such page");
         assert_eq!(page_arg(&args(&["x", "--page", "ekin"])), None);
         assert_eq!(page_arg(&args(&["x", "--page"])), None);

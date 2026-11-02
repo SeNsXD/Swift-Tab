@@ -206,7 +206,7 @@ pub fn parse_reverse(v: &Value) -> Option<(String, String)> {
     Some((name.trim().to_string(), a["country"].as_str().unwrap_or_default().to_string()))
 }
 
-/// How the Now Bar's last look for where the PC is went.
+/// How the Swift Tab's last look for where the PC is went.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LocateState {
@@ -341,7 +341,8 @@ pub fn describe(code: u8) -> &'static str {
     }
 }
 
-/// "19:42" and "Sal 21 Eki" for a local time (unix seconds already shifted to local).
+/// "19:42" (or "7:42 PM" with the 12-hour setting) and "Sal 21 Eki" for a local time (unix seconds
+/// already shifted to local).
 pub fn clock_text(local: i64) -> (String, String) {
     const DAYS: [&str; 7] = [n_("Pzt"), n_("Sal"), n_("Çar"), n_("Per"), n_("Cum"), n_("Cmt"), n_("Paz")];
     const MONTHS: [&str; 12] = [n_("Oca"), n_("Şub"), n_("Mar"), n_("Nis"), n_("May"), n_("Haz"), n_("Tem"), n_("Ağu"), n_("Eyl"), n_("Eki"), n_("Kas"), n_("Ara")];
@@ -349,7 +350,13 @@ pub fn clock_text(local: i64) -> (String, String) {
     let (_, month, day) = super::football::civil_from_days(days);
     // 1 January 1970 was a Thursday (index 3).
     let weekday = tr(DAYS[(days + 3).rem_euclid(7) as usize]);
-    (format!("{:02}:{:02}", secs / 3600, secs % 3600 / 60), format!("{weekday} {day} {}", tr(MONTHS[(month - 1) as usize])))
+    let (hour, minute) = (secs / 3600, secs % 3600 / 60);
+    let time = if crate::settings::current().clock_12h {
+        format!("{}:{:02} {}", if hour % 12 == 0 { 12 } else { hour % 12 }, minute, if hour < 12 { "AM" } else { "PM" })
+    } else {
+        format!("{hour:02}:{minute:02}")
+    };
+    (time, format!("{weekday} {day} {}", tr(MONTHS[(month - 1) as usize])))
 }
 
 /// Whether an answer fetched at `fetched_utc` still says what the weather is now (two hours).
@@ -466,10 +473,10 @@ mod tests {
 
     #[test]
     fn rain_when_rounds_to_five_minutes() {
-        assert_eq!(rain_when(1), "~5 dk içinde");
-        assert_eq!(rain_when(22), "~20 dk içinde");
-        assert_eq!(rain_when(23), "~25 dk içinde");
-        assert_eq!(rain_when(58), "~1 saat içinde");
+        assert_eq!(rain_when(1), "in ~5 min");
+        assert_eq!(rain_when(22), "in ~20 min");
+        assert_eq!(rain_when(23), "in ~25 min");
+        assert_eq!(rain_when(58), "in ~1 hour");
     }
 
     #[test]
@@ -514,16 +521,14 @@ mod tests {
     fn only_a_rough_point_leaves_the_pc() {
         assert_eq!(rough(40.98765), 40.99);
         assert_eq!(rough(-0.004), -0.0);
-        let url = crate::i18n::in_language(crate::i18n::Language::Turkish, || reverse_url(40.98765, 29.03123));
-        assert_eq!(url, "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=40.99&lon=29.03&zoom=10&accept-language=tr");
+        let url = reverse_url(40.98765, 29.03123);
+        assert_eq!(url, "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=40.99&lon=29.03&zoom=10&accept-language=en");
     }
 
     #[test]
     fn place_names_come_in_the_interfaces_language() {
-        use crate::i18n::{in_language, Language};
-        assert!(in_language(Language::English, || reverse_url(48.14, 11.58)).ends_with("&accept-language=en"), "Munich, not München or Münih");
-        assert!(in_language(Language::English, || geocode_url("Munich")).contains("&language=en&"));
-        assert!(in_language(Language::Turkish, || geocode_url("Münih")).contains("&language=tr&"));
+        assert!(reverse_url(48.14, 11.58).ends_with("&accept-language=en"), "Munich, not München or Münih");
+        assert!(geocode_url("Munich").contains("&language=en&"));
     }
 
     #[test]
@@ -532,10 +537,10 @@ mod tests {
         let l = |state, city: Option<&WeatherCity>| Located { state, city: city.cloned() };
         assert_eq!(located_text(&l(LocateState::Found, Some(&kadikoy))), ("Kadıköy · Türkiye".into(), "Kadıköy".into()));
         assert_eq!(located_text(&l(LocateState::Failed, Some(&kadikoy))), ("Kadıköy · Türkiye".into(), "Kadıköy".into()), "the last place stands");
-        assert_eq!(located_text(&l(LocateState::Failed, None)), ("Konum bulunamadı".into(), String::new()));
-        assert_eq!(located_text(&l(LocateState::Denied, None)), ("Windows'ta konum kapalı".into(), String::new()));
-        assert_eq!(located_text(&l(LocateState::Finding, None)), ("Bulunuyor…".into(), String::new()));
-        assert_eq!(located_text(&l(LocateState::Off, None)), ("Bulunuyor…".into(), String::new()), "just switched on: the Now Bar hasn't looked yet");
+        assert_eq!(located_text(&l(LocateState::Failed, None)), ("Location not found".into(), String::new()));
+        assert_eq!(located_text(&l(LocateState::Denied, None)), ("Location is off in Windows".into(), String::new()));
+        assert_eq!(located_text(&l(LocateState::Finding, None)), ("Finding…".into(), String::new()));
+        assert_eq!(located_text(&l(LocateState::Off, None)), ("Finding…".into(), String::new()), "just switched on: the Swift Tab hasn't looked yet");
         let unnamed = WeatherCity { name: "Konumun".into(), country: String::new(), lat: 40.99, lon: 29.03 };
         assert_eq!(located_text(&l(LocateState::Found, Some(&unnamed))).0, "Konumun", "no country, no dot");
         let file: Located = serde_json::from_str(r#"{"state": "found", "city": {"name": "Berlin", "country": "Almanya", "lat": 52.52, "lon": 13.4}}"#).expect("parses");
@@ -555,18 +560,18 @@ mod tests {
     #[test]
     fn codes_in_colour_emoji_and_words() {
         // Emoji presentation (U+FE0F) so the colour font draws them, not the text glyphs.
-        assert_eq!((symbol(0, true), describe(0)), ("☀\u{FE0F}", "Açık"));
+        assert_eq!((symbol(0, true), describe(0)), ("☀\u{FE0F}", "Clear"));
         assert_eq!(symbol(0, false), "🌙");
         assert_eq!(symbol(1, true), "🌤\u{FE0F}");
-        assert_eq!((symbol(2, true), describe(2)), ("⛅", "Parçalı bulutlu"));
+        assert_eq!((symbol(2, true), describe(2)), ("⛅", "Partly cloudy"));
         assert_eq!(symbol(2, false), "☁\u{FE0F}", "no sun at night");
-        assert_eq!((symbol(3, true), describe(3)), ("☁\u{FE0F}", "Kapalı"));
-        assert_eq!((symbol(63, true), describe(63)), ("🌧\u{FE0F}", "Yağmurlu"));
+        assert_eq!((symbol(3, true), describe(3)), ("☁\u{FE0F}", "Overcast"));
+        assert_eq!((symbol(63, true), describe(63)), ("🌧\u{FE0F}", "Rainy"));
         assert_eq!(symbol(81, true), "🌦\u{FE0F}", "showers with sun");
-        assert_eq!((symbol(73, true), describe(73)), ("❄\u{FE0F}", "Karlı"));
-        assert_eq!((symbol(95, true), describe(95)), ("⛈\u{FE0F}", "Gök gürültülü"));
+        assert_eq!((symbol(73, true), describe(73)), ("❄\u{FE0F}", "Snowy"));
+        assert_eq!((symbol(95, true), describe(95)), ("⛈\u{FE0F}", "Thunderstorm"));
         // Segoe's fog emoji is a pale square: at 20 DIP it reads as a missing glyph.
-        assert_eq!((symbol(45, true), describe(45)), ("☁\u{FE0F}", "Sisli"));
+        assert_eq!((symbol(45, true), describe(45)), ("☁\u{FE0F}", "Foggy"));
     }
 
     #[test]
@@ -596,9 +601,9 @@ mod tests {
     }
 
     #[test]
-    fn clock_and_date_in_turkish() {
+    fn clock_and_date_in_english() {
         // 21 Oct 2026 20:00 in İstanbul.
-        assert_eq!(clock_text(1_792_602_000 + 10_800), ("20:00".to_string(), "Çar 21 Eki".to_string()));
-        assert_eq!(clock_text(0), ("00:00".to_string(), "Per 1 Oca".to_string()), "1 Jan 1970 was a Thursday");
+        assert_eq!(clock_text(1_792_602_000 + 10_800), ("20:00".to_string(), "Wed 21 Oct".to_string()));
+        assert_eq!(clock_text(0), ("00:00".to_string(), "Thu 1 Jan".to_string()), "1 Jan 1970 was a Thursday");
     }
 }

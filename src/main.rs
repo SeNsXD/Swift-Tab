@@ -1,9 +1,8 @@
-﻿#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 use nowbar::activities::claude::{card_can_answer, decision_json};
 use nowbar::activities::live::{claude_msg, parse_push};
 use nowbar::app::App;
-use nowbar::i18n::{tr, trf};
 use nowbar::platform::ipc::{self, Command};
 use nowbar::platform::autostart::{autostart_enabled, set_autostart};
 use nowbar::platform::log::{log, log_path};
@@ -97,8 +96,8 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// `nowbar.exe push …`, `claude-hook` (Claude Code's hook JSON on stdin) and `update` hand one
-/// command to the running Now Bar and
+/// `swifttab.exe push …`, `claude-hook` (Claude Code's hook JSON on stdin) and `update` hand one
+/// command to the running Swift Tab and
 /// end: for the scripts and hooks that run them they never take the mutex, never show anything
 /// and always exit 0. Whether this run was one.
 fn forward(args: &[String]) -> bool {
@@ -121,7 +120,7 @@ fn forward(args: &[String]) -> bool {
     true
 }
 
-/// `nowbar.exe claude-hooks install | remove`: Claude Code's hooks for this exe, said in a box
+/// `swifttab.exe claude-hooks install | remove`: Claude Code's hooks for this exe, said in a box
 /// (the exe has no console).
 fn claude_hooks_command(what: Option<&str>) {
     use nowbar::claude_hooks::{install, remove, rewrite};
@@ -129,14 +128,14 @@ fn claude_hooks_command(what: Option<&str>) {
     nowbar::i18n::set_language(nowbar::i18n::chosen(nowbar::settings::load().language));
     let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let (done, text) = match what {
-        Some("install") => (rewrite(|v| install(v, &exe)), tr("Claude Code hook'ları kuruldu. Yeni oturumlarda pilde görünür.")),
-        Some("remove") => (rewrite(|v| Some(remove(v))), tr("Claude Code hook'ları kaldırıldı.")),
-        _ => (Ok(true), tr("Kullanım: nowbar.exe claude-hooks install | remove")),
+        Some("install") => (rewrite(|v| install(v, &exe)), "Claude Code hooks installed. Active sessions will appear in the pill."),
+        Some("remove") => (rewrite(|v| Some(remove(v))), "Claude Code hooks removed."),
+        _ => (Ok(true), "Usage: swifttab.exe claude-hooks install | remove"),
     };
     let text = match done {
-        Err(e) => trf("Claude Code ayarları yazılamadı: {}", &[&e]),
+        Err(e) => format!("Could not write Claude Code settings: {e}"),
         // Only install declines: its "hooks" isn't an object.
-        Ok(false) => tr("Claude Code ayarlarındaki \"hooks\" alanı tanınmadı; dosyaya dokunulmadı.").to_string(),
+        Ok(false) => "The 'hooks' field in Claude Code settings was not recognized; file unchanged.".to_string(),
         Ok(true) => text.to_string(),
     };
     message_box(&text);
@@ -145,13 +144,13 @@ fn claude_hooks_command(what: Option<&str>) {
 fn message_box(text: &str) {
     use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
     unsafe {
-        MessageBoxW(None, &windows::core::HSTRING::from(text), w!("Syro"), MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(None, &windows::core::HSTRING::from(text), w!("Swift Tab"), MB_OK | MB_ICONINFORMATION);
     }
 }
 
 /// One Claude Code hook call. UserPromptSubmit notes the window the prompt was typed in; with
 /// `--ask` (the synchronous PermissionRequest hook) it waits for the card's answer as long as the
-/// Now Bar says, prints Claude Code's decision, or lets Claude's own dialog take over.
+/// Swift Tab says, prints Claude Code's decision, or lets Claude's own dialog take over.
 fn claude_hook(asks: bool) {
     use std::io::{Read, Write};
     // A hook's JSON is small; a runaway one is cut, not waited on.
@@ -180,7 +179,7 @@ fn claude_hook(asks: bool) {
     }
     let Some(msg) = claude_msg(&hook) else { return };
     let command = ipc::fitted(Command::Live(Box::new(msg)));
-    let answer = ipc::send_answering(w!("NowBarMain"), windows::core::PCWSTR::null(), &command);
+    let answer = ipc::send_answering(w!("SwiftTabMain"), windows::core::PCWSTR::null(), &command);
     if let (Some((id, _)), Some(window), Some(secs)) = (ask, window, answer.filter(|a| *a >= 2)) {
         match window.wait(secs as u32) {
             Some(allow) => {
@@ -210,12 +209,13 @@ fn main() {
     if forward(&std::env::args().collect::<Vec<_>>()) {
         return;
     }
+    nowbar::platform::frame::register_app_identity();
     // One instance: a second launch exits silently. Started by an update, it waits (up to 30 s)
     // for the old one to quit instead.
     let after_update = std::env::args().any(|a| a == "--after-update");
     let started = std::time::Instant::now();
     let _instance = loop {
-        let mutex = unsafe { CreateMutexW(None, true, w!(r"Local\NowBar.SingleInstance")) };
+        let mutex = unsafe { CreateMutexW(None, true, w!(r"Local\SwiftTab.SingleInstance")) };
         if unsafe { GetLastError() } != ERROR_ALREADY_EXISTS {
             break mutex;
         }
@@ -226,9 +226,7 @@ fn main() {
         }
         if !after_update {
             // Launched again while running: the settings are what one is looking for.
-            if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe.with_file_name("nowbar-settings.exe")).spawn();
-            }
+            nowbar::app::open_settings_at(None);
             return;
         }
         if started.elapsed() > std::time::Duration::from_secs(30) {
@@ -246,7 +244,7 @@ fn main() {
     log(&format!("windows build {build:?} ({:?})", nowbar::platform::os::generation()));
     if build.is_some_and(|b| !nowbar::platform::os::supported(b)) {
         nowbar::i18n::set_language(nowbar::i18n::chosen(nowbar::settings::load().language));
-        return message_box(tr("Syro, Windows 10 sürüm 1809 veya sonrasını gerektirir."));
+        return message_box("Swift Tab requires Windows 10 version 1809 or later.");
     }
     // The app was moved: Claude's hooks still point at the old exe, which is gone.
     if let Ok(exe) = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()) {
@@ -257,8 +255,8 @@ fn main() {
     }
     if let Err(e) = run() {
         log(&format!("fatal: {e:?}"));
-        message_box(&trf("Syro açılamadı: {}\nAyrıntılar: {}", &[&e, &log_path().display()]));
+        message_box(&format!("Swift Tab couldn't start: {}\nDetails: {}", e, log_path().display()));
     }
-    // An update quit the loop: start the new Now Bar (it waits for this one's mutex).
+    // An update quit the loop: start the new Swift Tab (it waits for this one's mutex).
     nowbar::platform::updater::restart_after_update();
 }

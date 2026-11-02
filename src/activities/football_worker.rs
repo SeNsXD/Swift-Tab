@@ -51,7 +51,7 @@ impl Espn {
         // Live data must never come from the WinINet cache.
         filter.CacheControl()?.SetReadBehavior(HttpCacheReadBehavior::MostRecent)?;
         let client = HttpClient::Create(&filter)?;
-        let _ = client.DefaultRequestHeaders()?.UserAgent()?.TryParseAdd(&HSTRING::from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) NowBar"));
+        let _ = client.DefaultRequestHeaders()?.UserAgent()?.TryParseAdd(&HSTRING::from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) SwiftTab"));
         Ok(Espn { client })
     }
 
@@ -272,7 +272,7 @@ pub(crate) fn fetch_text(url: &str) -> Result<String, String> {
     }
 }
 
-/// %LOCALAPPDATA%\NowBar\crests\{team id}.png
+/// %LOCALAPPDATA%\SwiftTab\crests\{team id}.png
 pub fn crest_path(team_id: &str) -> PathBuf {
     crate::platform::log::log_path().with_file_name("crests").join(format!("{team_id}.png"))
 }

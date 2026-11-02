@@ -111,9 +111,9 @@ impl Drop for ApiServer {
     }
 }
 
-/// `%LOCALAPPDATA%\NowBar\api.json`.
+/// `%LOCALAPPDATA%\SwiftTab\api.json`.
 fn discovery_path() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("NowBar").join("api.json"))
+    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("SwiftTab").join("api.json"))
 }
 
 fn accept(listener: TcpListener, shared: Arc<Shared>) {
@@ -484,7 +484,7 @@ mod tests {
         let (s, _) = server(Duration::from_secs(1));
         let r = ask(s.port(), &format!("GET /v1 HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n", s.port()));
         assert!(r.starts_with("HTTP/1.1 200 OK\r\n"), "{r}");
-        assert!(r.contains(r#""name":"Now Bar""#), "{r}");
+        assert!(r.contains(r#""name":"Swift Tab""#), "{r}");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-﻿//! Pill ⇄ card morph, drawn entirely in the card window. One scalar `t` (0 = pill, 1 = card),
+//! Pill ⇄ card morph, drawn entirely in the card window. One scalar `t` (0 = pill, 1 = card),
 //! driven by a sampled spring (see `motion`), decides every rect, radius and opacity through expression animations,
 //! so the whole morph runs in the compositor at the display's refresh rate.
 //!
@@ -21,16 +21,16 @@ use super::motion::{scaled_ticks, spring_samples, SPRING_DURATION_S};
 use crate::platform::windows::{push_event, UiEvent};
 use crate::render::layout::RectPx;
 
-/// Page turn inside an open card: out, then in (One UI Basic easing on the way in).
-pub const PAGE_OUT_MS: i64 = 90;
+/// Page turn inside an open card: out, then in (Windows 11 Fluent `cubic-bezier(0, 0, 0, 1)`).
+pub const PAGE_OUT_MS: i64 = 80;
 const PAGE_IN_MS: i64 = 160;
 
 /// Key frames per morph; linear between them is indistinguishable from the curve at 144 Hz.
 const SPRING_FRAMES: usize = 32;
-/// Shadow under the card: 24 DIP blur, 6 DIP down, black 35 %.
-pub const SHADOW_BLUR_DIP: f32 = 24.0;
-pub const SHADOW_DY_DIP: f32 = 6.0;
-const SHADOW_OPACITY: f32 = 0.35;
+/// Shadow under the card: 32 DIP blur, 12 DIP down, black 28 % (+ 6 DIP / 2 DIP ambient in surface).
+pub const SHADOW_BLUR_DIP: f32 = 32.0;
+pub const SHADOW_DY_DIP: f32 = 12.0;
+const SHADOW_OPACITY: f32 = 0.28;
 /// Source radius of the shadow nine-grid, in px; inset scales map it to the live radius.
 const SHADOW_R: f32 = 48.0;
 
@@ -41,7 +41,7 @@ pub struct Morph {
     props: CompositionPropertySet,
     /// The pill's material (flat or album-tinted, top→bottom); fades out as the card's comes in.
     pill_base: CompositionLinearGradientBrush,
-    /// Album tint of the media card over the blur (transparent for other cards).
+    /// Panel base / tint over the Acrylic blur (`#202020` at 80 %, or 24 % tint mixed into `#202020`).
     tint: CompositionLinearGradientBrush,
     /// Copies of the pill's content layers.
     pill_copy: ContainerVisual,
@@ -49,14 +49,18 @@ pub struct Morph {
     card_brush: CompositionSurfaceBrush,
     blur: SpriteVisual,
     blurred: CompositionMaskBrush,
-    /// Opaque fallback when Windows transparency effects are off (or Energy Saver is on).
+    /// Opaque fallback (`#202020`) when Windows transparency effects are off, Battery Saver is on, or High Contrast is on.
     flat: CompositionMaskBrush,
+    /// Outer 1px border brush (`#FFFFFF17` or `#FFFFFF59` in solid fallback).
+    border_brush: CompositionColorBrush,
     /// The weather card's moving background, under the card's content.
     fx: ContainerVisual,
 }
 
-/// Card body when transparency effects are off: #1C1C1E at 96 %.
-const FLAT_MATERIAL: Color = Color { A: 245, R: 0x1C, G: 0x1C, B: 0x1E };
+/// Solid panel fallback when transparency effects are off, Battery Saver is on, or High Contrast is on: `#202020`.
+const FLAT_MATERIAL: Color = Color { A: 255, R: 0x20, G: 0x20, B: 0x20 };
+/// Translucent Acrylic panel base over blurred_card_brush (which already darkens by 35%).
+const PANEL_BASE: Color = Color { A: 64, R: 0x20, G: 0x20, B: 0x20 };
 
 fn color(a: u8, (r, g, b): (u8, u8, u8)) -> Color {
     Color { A: a, R: r, G: g, B: b }
@@ -126,7 +130,7 @@ impl Morph {
         bind(&so, "Opacity", &format!("Clamp(p.o,0,1)*{SHADOW_OPACITY}"))?;
         kids.InsertAtTop(&shadow)?;
 
-        // Blurred One UI material (card), cross-fading in over the pill's flat material.
+        // Blurred Windows 11 Acrylic material (card), cross-fading in over the pill's material.
         let (blur_brush, nine) = blurred_card_brush(g)?;
         for side in ["LeftInsetScale", "TopInsetScale", "RightInsetScale", "BottomInsetScale"] {
             bind(&nine.cast()?, side, &format!("{r}/p.mr"))?;
@@ -182,7 +186,7 @@ impl Morph {
         card_content.SetBrush(&card_brush)?;
         let co: CompositionObject = card_content.cast()?;
         bind(&co, "Offset", &format!("Vector3({l}+p.px,{t},0)"))?;
-        bind(&co, "Size", "Vector2(p.tw,p.th)")?;
+        bind(&co, "Size", "Vector2(Max(p.fw,p.tw),Max(p.fh,p.th))")?;
         bind(&co, "Opacity", "Clamp((p.o-0.35)/0.45,0,1)*p.pg")?;
         let fx = c.CreateContainerVisual()?;
         let fo: CompositionObject = fx.cast()?;
@@ -192,7 +196,23 @@ impl Morph {
         card_holder.Children()?.InsertAtTop(&card_content)?;
         kids.InsertAtTop(&card_holder)?;
 
-        Ok(Morph { c, props, pill_base, tint, pill_copy, accent, card_brush, blur, blurred: blur_brush, flat, fx })
+        // Outer 1px border (`#FFFFFF17` ~9% white, or `#FFFFFF59` ~35% white in solid fallback).
+        let border_brush = c.CreateColorBrushWithColor(Color {
+            A: if crate::platform::os::solid_fallback() { 0x59 } else { 0x17 },
+            R: 255,
+            G: 255,
+            B: 255,
+        })?;
+        let border_vis = c.CreateShapeVisual()?;
+        border_vis.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
+        let border_shape = c.CreateSpriteShapeWithGeometry(&geometry()?)?;
+        border_shape.SetStrokeBrush(&border_brush)?;
+        border_shape.SetStrokeThickness(1.0)?;
+        border_vis.Shapes()?.Append(&border_shape)?;
+        bind(&border_vis.cast()?, "Opacity", "Clamp(p.o*2,0,1)")?;
+        kids.InsertAtTop(&border_vis)?;
+
+        Ok(Morph { c, props, pill_base, tint, pill_copy, accent, card_brush, blur, blurred: blur_brush, flat, border_brush, fx })
     }
 
     fn set_stops(&self, brush: &CompositionLinearGradientBrush, stops: &[(f32, Color)]) -> Result<()> {
@@ -216,10 +236,11 @@ impl Morph {
             let sprite = self.c.CreateSpriteVisual()?;
             sprite.SetBrush(&self.c.CreateSurfaceBrushWithSurface(&live)?)?;
             sprite.SetSize(Vector2 { X: w, Y: h })?;
-            // The pill's own clip is on its parent, which the surface doesn't see.
+            // The pill's own clip is on its parent, which the surface doesn't see (8px radius).
             let shape = self.c.CreateRoundedRectangleGeometry()?;
             shape.SetSize(Vector2 { X: w, Y: h })?;
-            shape.SetCornerRadius(Vector2 { X: h / 2.0, Y: h / 2.0 })?;
+            let r = (h * 8.0 / 44.0).round().max(8.0);
+            shape.SetCornerRadius(Vector2 { X: r, Y: r })?;
             sprite.SetClip(&self.c.CreateGeometricClipWithGeometry(&shape)?)?;
             children.InsertAtTop(&sprite)?;
         }
@@ -239,17 +260,17 @@ impl Morph {
         self.set_accent(look.accent)
     }
 
-    /// Album tint over the card's blur (media), or none.
+    /// Panel tint over the card's blur (`#202020` at 80% when untinted, or 24% tint mixed into `#202020`).
     pub fn set_card_tint(&self, tint: Option<(Color, Color)>) -> Result<()> {
-        let clear = Color { A: 0, R: 0, G: 0, B: 0 };
-        let (top, bottom) = tint.unwrap_or((clear, clear));
+        let base = if crate::platform::os::solid_fallback() { FLAT_MATERIAL } else { PANEL_BASE };
+        let (top, bottom) = tint.unwrap_or((base, base));
         self.set_stops(&self.tint, &[(0.0, top), (1.0, bottom)])
     }
 
     /// Moves the album tint to new colours over `ms` while the card stays open (a new track).
     pub fn fade_card_tint(&self, tint: Option<(Color, Color)>, ms: i64) -> Result<()> {
-        let clear = Color { A: 0, R: 0, G: 0, B: 0 };
-        let (top, bottom) = tint.unwrap_or((clear, clear));
+        let base = if crate::platform::os::solid_fallback() { FLAT_MATERIAL } else { PANEL_BASE };
+        let (top, bottom) = tint.unwrap_or((base, base));
         let stops = self.tint.ColorStops()?;
         if stops.Size()? != 2 {
             return self.set_card_tint(tint);
@@ -263,8 +284,14 @@ impl Morph {
         Ok(())
     }
 
-    /// Blurred One UI material, or the flat fallback when transparency effects are off.
+    /// Blurred Windows 11 Acrylic material, or the solid `#202020` fallback when transparency effects are off.
     pub fn set_blur(&self, enabled: bool) -> Result<()> {
+        let _ = self.border_brush.SetColor(Color {
+            A: if enabled { 0x17 } else { 0x59 },
+            R: 255,
+            G: 255,
+            B: 255,
+        });
         if enabled {
             self.blur.SetBrush(&self.blurred)
         } else {
@@ -298,11 +325,10 @@ impl Morph {
         self.card_brush.SetSurface(surface)
     }
 
-    /// Left accent gradient (timers, Buds, picker); none for media.
-    fn set_accent(&self, accent: Option<(u8, u8, u8)>) -> Result<()> {
-        let accent_color = accent.unwrap_or((0, 0, 0));
-        let start = if accent.is_some() { 97 } else { 0 };
-        self.set_stops(&self.accent, &[(0.0, color(start, accent_color)), (0.5, color(0, accent_color))])
+    /// Windows 11 Fluent panels do not use a full-height coloured side flood; keep accent subtle.
+    fn set_accent(&self, _accent: Option<(u8, u8, u8)>) -> Result<()> {
+        let clear = Color { A: 0, R: 0, G: 0, B: 0 };
+        self.set_stops(&self.accent, &[(0.0, clear), (0.5, clear)])
     }
 
     /// Turns the open card's page: the content fades and slides `slide_px` out (negative = left)
@@ -310,7 +336,7 @@ impl Morph {
     pub fn page_turn(&self, slide_px: f32) -> Result<()> {
         let total = PAGE_OUT_MS + PAGE_IN_MS;
         let mid = PAGE_OUT_MS as f32 / total as f32;
-        let ease = self.c.CreateCubicBezierEasingFunction(Vector2 { X: 0.22, Y: 0.25 }, Vector2 { X: 0.0, Y: 1.0 })?;
+        let ease = self.c.CreateCubicBezierEasingFunction(Vector2 { X: 0.0, Y: 0.0 }, Vector2 { X: 0.0, Y: 1.0 })?;
         let fade = self.c.CreateScalarKeyFrameAnimation()?;
         fade.InsertKeyFrame(0.0, 1.0)?;
         fade.InsertKeyFrame(mid, 0.0)?;

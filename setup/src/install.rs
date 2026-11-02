@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use nowbar::i18n::{n_, tr, trf};
+use nowbar::i18n::{tr, trf};
 
 use crate::payload::unpack;
 use crate::plan::{place_steps, uninstall_values, SETUP_EXE, STAGED};
@@ -17,31 +17,31 @@ pub struct Options {
     pub desktop: bool,
     /// Other apps' notifications (the API); `None` leaves the setting as it is (`--quiet`).
     pub api: Option<bool>,
-    /// Start the Now Bar at the end (not in the sandbox, not with `--no-launch`).
+    /// Start the Swift Tab at the end (not in the sandbox, not with `--no-launch`).
     pub launch: bool,
 }
 
-pub const NO_FILES: &str = n_("Bu setup dosyasız derlendi (NOWBAR_SETUP_PAYLOAD olmadan).");
-const NOT_WRITABLE: &str = n_("Bu klasöre yazılamıyor; başka bir yer seç.");
+pub const NO_FILES: &str = "This setup was built without files (no NOWBAR_SETUP_PAYLOAD).";
+const NOT_WRITABLE: &str = "Cannot write to this folder; choose another location.";
 
 /// Installs `payload` into `places.dir`; `progress(step, 0..1)` as it goes. The notes are what
-/// didn't work but doesn't stop the Now Bar (a shortcut, Claude Code).
+/// didn't work but doesn't stop the Swift Tab (a shortcut, Claude Code).
 pub fn run(places: &Places, opts: &Options, payload: &[u8], version: &str, progress: impl Fn(&str, f32)) -> Result<Vec<String>, String> {
     if payload.is_empty() {
         return Err(NO_FILES.into());
     }
-    progress(tr("Hazırlanıyor"), 0.05);
+    progress("Preparing", 0.05);
     let (_, files) = unpack(payload)?;
     let dir = places.dir.clone();
     std::fs::create_dir_all(&dir).map_err(|_| NOT_WRITABLE.to_string())?;
 
     if !places.sandbox {
-        progress(tr("Syro kapatılıyor"), 0.15);
+        progress("Closing Swift Tab", 0.15);
         quit_now_bar(Duration::from_secs(10))?;
         close_settings(&dir, Duration::from_secs(3));
     }
 
-    progress(tr("Dosyalar kopyalanıyor"), 0.3);
+    progress("Copying files", 0.3);
     let staged = dir.join(STAGED);
     let _ = std::fs::remove_dir_all(&staged);
     std::fs::create_dir_all(&staged).map_err(|_| NOT_WRITABLE.to_string())?;
@@ -56,17 +56,19 @@ pub fn run(places: &Places, opts: &Options, payload: &[u8], version: &str, progr
     let done = placed?;
     copy_self(&dir).inspect_err(|_| undo(&done))?;
 
-    progress(tr("Kaydediliyor"), 0.6);
+    progress("Registering application", 0.6);
     let date = today();
     write_values(&places.uninstall_key, &uninstall_values(&dir, version, folder_kb(&dir), &date))?;
 
     let mut notes = Vec::new();
-    progress(tr("Kısayollar"), 0.7);
-    let exe = dir.join("nowbar.exe");
-    if let Err(e) = shortcut(&places.start_menu.join("Now Bar.lnk"), &exe) {
+    progress("Creating shortcuts", 0.7);
+    let exe = dir.join("swifttab.exe");
+    let _ = std::fs::remove_file(places.start_menu.join("Swift Tab.lnk"));
+    if let Err(e) = shortcut(&places.start_menu.join("Swift Tab.lnk"), &exe) {
         notes.push(e);
     }
-    let on_desktop = places.desktop.join("Now Bar.lnk");
+    let _ = std::fs::remove_file(places.desktop.join("Swift Tab.lnk"));
+    let on_desktop = places.desktop.join("Swift Tab.lnk");
     if opts.desktop {
         if let Err(e) = shortcut(&on_desktop, &exe) {
             notes.push(e);
@@ -75,7 +77,7 @@ pub fn run(places: &Places, opts: &Options, payload: &[u8], version: &str, progr
         let _ = std::fs::remove_file(&on_desktop);
     }
 
-    progress(tr("Windows'la başlatma"), 0.78);
+    progress("Setting up start with Windows", 0.78);
     set_autostart(places, &exe, opts.autostart)?;
     if let Some(on) = opts.api {
         set_api(&places.roaming.join("settings.json"), on)?;
@@ -89,20 +91,20 @@ pub fn run(places: &Places, opts: &Options, payload: &[u8], version: &str, progr
             nowbar::claude_hooks::rewrite_at(path, without_ours)
         };
         if changed.is_err() {
-            notes.push(tr("Claude Code bağlanamadı: ayar dosyası açık ya da okunamıyor.").into());
+            notes.push(tr("Could not connect to Claude Code: settings file is open or unreadable.").into());
         }
     }
 
     if opts.launch {
-        progress(tr("Syro başlatılıyor"), 0.94);
+        progress("Starting Swift Tab", 0.94);
         if !start_and_watch(&exe, &[], Duration::from_secs(2)) {
-            return Err(tr("Syro açılmadı. Yeniden başlatıp tekrar dene.").into());
+            return Err("Swift Tab could not start. Please reboot and try again.".into());
         }
     }
     for e in crate::plan::EXES {
         let _ = std::fs::remove_file(dir.join(format!("{e}.old.exe")));
     }
-    progress(tr("Bitti"), 1.0);
+    progress("Done", 1.0);
     Ok(notes)
 }
 
@@ -112,19 +114,22 @@ pub fn without_ours(v: serde_json::Value) -> Option<serde_json::Value> {
     (next != v).then_some(next)
 }
 
-/// The Now Bar's own setting (its first start would otherwise turn starting with Windows back
+/// The Swift Tab's own setting (its first start would otherwise turn starting with Windows back
 /// on) and the Run value.
 pub fn set_autostart(places: &Places, exe: &Path, on: bool) -> Result<(), String> {
     let file = places.roaming.join("settings.json");
     let mut s = nowbar::settings::load_from(&file);
+    if s.preferred_idle_activity.is_empty() {
+        s.preferred_idle_activity = "media".into();
+    }
     if s.autostart != on || !file.exists() {
         s.autostart = on;
-        nowbar::settings::save_to(&file, &s).map_err(|e| trf("Ayarlar yazılamadı: {}", &[&e]))?;
+        nowbar::settings::save_to(&file, &s).map_err(|e| trf("Could not save settings: {}", &[&e]))?;
     }
-    nowbar::platform::autostart::set_autostart_for(&places.run_name, exe, on).map_err(|e| trf("Windows'la başlatma ayarlanamadı: {}", &[&e]))
+    nowbar::platform::autostart::set_autostart_for(&places.run_name, exe, on).map_err(|e| trf("Could not configure start with Windows: {}", &[&e]))
 }
 
-/// The user's answer to "Uygulama bildirimlerini aç", in the Now Bar's settings (the rest stays).
+/// The user's answer to "Enable application notifications", in Swift Tab's settings (the rest stays).
 pub fn set_api(file: &Path, on: bool) -> Result<(), String> {
     // A file there that can't be read now (half written, locked) stays as it is: the defaults
     // must never go over the user's settings.
@@ -137,7 +142,7 @@ pub fn set_api(file: &Path, on: bool) -> Result<(), String> {
         return Ok(());
     }
     s.api_enabled = on;
-    nowbar::settings::save_to(file, &s).map_err(|e| trf("Ayarlar yazılamadı: {}", &[&e]))
+    nowbar::settings::save_to(file, &s).map_err(|e| trf("Could not save settings: {}", &[&e]))
 }
 
 /// Renames along `place_steps`; on a failure the done ones are undone and the error says so.
@@ -147,7 +152,7 @@ fn place(dir: &Path, staged: &Path) -> Result<Vec<(PathBuf, PathBuf)>, String> {
         let moved = std::fs::rename(&from, &to).or_else(|_| std::fs::copy(&from, &to).map(|_| ()));
         if moved.is_err() {
             undo(&done);
-            return Err(tr("Syro'nun dosyaları değiştirilemedi; Syro'yu kapatıp tekrar dene.").into());
+            return Err("Could not replace Swift Tab files; please close Swift Tab and try again.".into());
         }
         done.push((from, to));
     }
@@ -160,7 +165,7 @@ fn undo(done: &[(PathBuf, PathBuf)]) {
     }
 }
 
-/// The setup beside the Now Bar: the installed apps list runs it to uninstall. Skipped when it
+/// The setup beside the Swift Tab: the installed apps list runs it to uninstall. Skipped when it
 /// is already the one running from there (a repair).
 fn copy_self(dir: &Path) -> Result<(), String> {
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -168,10 +173,10 @@ fn copy_self(dir: &Path) -> Result<(), String> {
     if crate::system::inside(&me, &target) {
         return Ok(());
     }
-    let _ = std::fs::remove_file(dir.join("nowbar-setup.old.exe"));
+    let _ = std::fs::remove_file(dir.join("swifttab-setup.old.exe"));
     if target.exists() && std::fs::remove_file(&target).is_err() {
         // In use (an uninstaller window open): step it aside.
-        let _ = std::fs::rename(&target, dir.join("nowbar-setup.old.exe"));
+        let _ = std::fs::rename(&target, dir.join("swifttab-setup.old.exe"));
     }
     std::fs::copy(&me, &target).map(|_| ()).map_err(|_| NOT_WRITABLE.to_string())
 }

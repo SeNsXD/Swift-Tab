@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
-//! `nowbar-setup.exe`: installs the Now Bar for this user (no elevation), upgrades or repairs it,
+//! `swifttab-setup.exe`: installs the Swift Tab for this user (no elevation), upgrades or repairs it,
 //! and, as `--uninstall`, takes it out again. One Slint window in the settings window's style;
-//! `--quiet` does the same without it. The Now Bar's exes travel inside (payload.bin).
+//! `--quiet` does the same without it. The Swift Tab's exes travel inside (payload.bin).
 
 mod install;
 mod payload;
@@ -26,7 +26,7 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, MessageBoxW, SetForegroundWindow, MB_ICONERROR, MB_OK};
 
 use install::Options;
-use nowbar::i18n::{tr, trf};
+
 use plan::{kind, short_path, Kind};
 use system::Places;
 
@@ -35,9 +35,10 @@ slint::include_modules!();
 static PAYLOAD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.bin"));
 const VERSION: &str = nowbar::platform::updater::VERSION;
 const SIZE: (f32, f32) = (700.0, 496.0);
+const UNINSTALL_SIZE: (f32, f32) = (380.0, 380.0);
 /// payload.rs's DAMAGED (the build script shares that file, so it can't reach i18n): marked here,
 /// and shown through tr like the other step messages.
-const _DAMAGED: &str = nowbar::i18n::n_("Kurulum dosyası bozuk; yeniden indir.");
+const _DAMAGED: &str = nowbar::i18n::n_("Setup file is damaged; please download again.");
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -45,12 +46,13 @@ fn main() {
     let (quiet, no_launch) = (has("--quiet"), has("--no-launch"));
     let from = args.iter().position(|a| a == "--uninstall-from").and_then(|i| args.get(i + 1)).map(PathBuf::from);
     let uninstalling = has("--uninstall") || from.is_some();
-    // The language the Now Bar's settings pick (a first install has none: Windows' own).
+    nowbar::platform::frame::register_app_identity();
+    // The language the Swift Tab's settings pick (a first install has none: Windows' own).
     nowbar::i18n::set_language(nowbar::i18n::chosen(nowbar::settings::load().language));
-    // Older Windows 10s lack what the Now Bar runs on; removing it still works there.
+    // Older Windows 10s lack what the Swift Tab runs on; removing it still works there.
     if !uninstalling && nowbar::platform::os::build().is_some_and(|b| !nowbar::platform::os::supported(b)) {
         if !quiet {
-            message(tr("Syro, Windows 10 sürüm 1809 veya sonrasını gerektirir."));
+            message("Swift Tab requires Windows 10 version 1809 or later.");
         }
         std::process::exit(1);
     }
@@ -77,7 +79,7 @@ fn main() {
             uninstall::run(&places, false, |_, _| {}).is_ok()
         } else {
             // The API as it was (off on a first install): nobody was asked.
-            let opts = Options { autostart: true, claude: places.claude.is_some(), desktop: false, api: None, launch };
+            let opts = Options { autostart: true, claude: false, desktop: false, api: None, launch };
             install::run(&places, &opts, PAYLOAD, VERSION, |_, _| {}).is_ok()
         };
         if from.is_some() {
@@ -86,7 +88,7 @@ fn main() {
         std::process::exit(if ok { 0 } else { 1 });
     }
     if let Err(e) = window(places, uninstalling, launch) {
-        message(&trf("Kurulum penceresi açılamadı: {}", &[&e]));
+        message(&format!("Failed to open setup window: {e}"));
     }
     if from.is_some() {
         system::delete_self_later();
@@ -95,7 +97,7 @@ fn main() {
 
 fn message(text: &str) {
     unsafe {
-        MessageBoxW(None, &HSTRING::from(text), &HSTRING::from("Syro"), MB_OK | MB_ICONERROR);
+        MessageBoxW(None, &HSTRING::from(text), &HSTRING::from("Swift Tab"), MB_OK | MB_ICONERROR);
     }
 }
 
@@ -104,36 +106,37 @@ fn describe(ui: &SetupWindow, places: &Places, uninstalling: bool) {
     let home = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default();
     ui.set_version(format!("v{VERSION}").into());
     ui.set_location(short_path(&places.dir, &home).into());
-    ui.set_claude_available(places.claude.is_some());
+    ui.set_claude_available(false);
     if uninstalling {
         ui.set_mode("uninstall".into());
-        ui.set_heading(tr("Syro'yu kaldır").into());
-        ui.set_subtitle(tr("Syro, kısayolları ve Claude Code bağlantısı kaldırılacak.").into());
-        ui.set_primary(tr("Kaldır").into());
+        ui.set_heading("Uninstall Swift Tab".into());
+        ui.set_subtitle("Swift Tab and its shortcuts will be removed.".into());
+        ui.set_primary("Uninstall".into());
         return;
     }
     let installed = places.installed();
     let old = installed.as_ref().map(|(_, v)| v.clone()).unwrap_or_default();
     let (subtitle, primary) = match kind(installed.as_ref().map(|(_, v)| v.as_str()), VERSION) {
-        Kind::Fresh => (tr("Görev çubuğunda canlı etkinlikler").to_string(), tr("Kur")),
-        Kind::Upgrade => (trf("v{} kurulu · v{} sürümüne güncellenecek", &[&old, &VERSION]), tr("Güncelle")),
-        Kind::Repair => (tr("Bu sürüm zaten kurulu; dosyalar yeniden yazılacak.").to_string(), tr("Onar")),
-        Kind::Downgrade => (trf("Daha yeni bir sürüm kurulu (v{}).", &[&old]), tr("Yine de kur")),
+        Kind::Fresh => ("Live activities in the taskbar".to_string(), "Install"),
+        Kind::Upgrade => (format!("v{} installed · will update to v{}", old, VERSION), "Update"),
+        Kind::Repair => ("This version is already installed; files will be rewritten.".to_string(), "Repair"),
+        Kind::Downgrade => (format!("A newer version is installed (v{}).", old), "Install anyway"),
     };
     ui.set_subtitle(subtitle.into());
     ui.set_primary(primary.into());
     if installed.is_some() {
         // As it is set up now; the folder stays.
-        let exe = places.dir.join("nowbar.exe");
+        let exe = places.dir.join("swifttab.exe");
         ui.set_location_visible(false);
         ui.set_autostart(nowbar::platform::autostart::run_value(&places.run_name).is_some_and(|v| nowbar::platform::autostart::points_at(&v, &exe)));
-        ui.set_desktop(places.desktop.join("Now Bar.lnk").exists());
-        ui.set_claude(places.claude.as_deref().is_some_and(has_our_hooks));
+        ui.set_desktop(places.desktop.join("Swift Tab.lnk").exists() || places.desktop.join("Swift Tab.lnk").exists());
+        ui.set_claude(false);
         ui.set_api(nowbar::settings::load_from(&places.roaming.join("settings.json")).api_enabled);
         ui.set_open_settings(false);
     }
 }
 
+#[allow(dead_code)]
 fn has_our_hooks(path: &Path) -> bool {
     let text = std::fs::read_to_string(path).unwrap_or_default();
     let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default();
@@ -146,7 +149,7 @@ fn window(places: Places, uninstalling: bool, launch: bool) -> Result<(), slint:
     // Windows 10 has no Segoe Fluent Icons: the glyphs would be boxes.
     nowbar::set_slint_faces!(ui.global::<Theme>());
     let _ = slint::select_bundled_translation(if nowbar::i18n::lang() == nowbar::i18n::Language::English { "en" } else { "" });
-    let (position, scale) = centre_at_mouse();
+    let (position, scale) = centre_at_mouse(if uninstalling { UNINSTALL_SIZE } else { SIZE });
     stage::fill(&ui, scale);
     describe(&ui, &places, uninstalling);
     let places = Rc::new(RefCell::new(places));
@@ -161,6 +164,18 @@ fn window(places: Places, uninstalling: bool, launch: bool) -> Result<(), slint:
     }
     ui.on_close_clicked(|| {
         let _ = slint::quit_event_loop();
+    });
+    ui.on_open_url(|url| {
+        unsafe {
+            let _ = windows::Win32::UI::Shell::ShellExecuteW(
+                None,
+                windows::core::w!("open"),
+                &windows::core::HSTRING::from(url.as_str()),
+                None,
+                None,
+                windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            );
+        }
     });
     {
         let (weak, places) = (ui.as_weak(), places.clone());
@@ -180,9 +195,10 @@ fn window(places: Places, uninstalling: bool, launch: bool) -> Result<(), slint:
             if ui.get_phase() == "done" {
                 let dir = places.borrow().dir.clone();
                 if !uninstalling && launch && ui.get_open_settings() {
-                    let _ = std::process::Command::new(dir.join("nowbar-settings.exe")).spawn();
+                    let _ = std::process::Command::new(dir.join("swifttab-settings.exe")).spawn();
                 }
                 let _ = slint::quit_event_loop();
+
                 return;
             }
             start(&ui, places.borrow().clone(), uninstalling, launch);
@@ -233,9 +249,9 @@ fn window(places: Places, uninstalling: bool, launch: bool) -> Result<(), slint:
 fn start(ui: &SetupWindow, places: Places, uninstalling: bool, launch: bool) {
     ui.set_phase("working".into());
     ui.set_progress(0.0);
-    ui.set_step(tr("Hazırlanıyor").into());
+    ui.set_step("Preparing".into());
     let weak = ui.as_weak();
-    let opts = Options { autostart: ui.get_autostart(), claude: ui.get_claude() && places.claude.is_some(), desktop: ui.get_desktop(), api: Some(ui.get_api()), launch };
+    let opts = Options { autostart: ui.get_autostart(), claude: false, desktop: ui.get_desktop(), api: Some(ui.get_api()), launch };
     let wipe = ui.get_wipe();
     std::thread::spawn(move || {
         unsafe {
@@ -249,11 +265,11 @@ fn start(ui: &SetupWindow, places: Places, uninstalling: bool, launch: bool) {
             });
         };
         let result = if uninstalling {
-            uninstall::run(&places, wipe, progress).map(|_| String::new())
+            uninstall::run(&places, wipe, progress).map(|_| "Swift Tab and its shortcuts have been removed.".to_string())
         } else {
             install::run(&places, &opts, PAYLOAD, VERSION, progress).map(|notes| match (notes.is_empty(), launch) {
-                (true, true) => tr("Syro görev çubuğunda. Her şeyi ayarlar penceresinden değiştirebilirsin.").to_string(),
-                (true, false) => tr("Dosyalar yerinde; Syro başlatılmadı.").to_string(),
+                (true, true) => "Swift Tab is on the taskbar. You can customize everything from settings.".to_string(),
+                (true, false) => "Files installed; Swift Tab was not launched.".to_string(),
                 (false, _) => notes.join("\n"),
             })
         };
@@ -261,20 +277,20 @@ fn start(ui: &SetupWindow, places: Places, uninstalling: bool, launch: bool) {
             Ok(text) => {
                 ui.set_phase("done".into());
                 ui.set_message(text.into());
-                ui.set_primary(if uninstalling { tr("Kapat") } else { tr("Bitir") }.into());
+                ui.set_primary(if uninstalling { "Close" } else { "Finish" }.into());
             }
             Err(e) => {
                 ui.set_phase("error".into());
                 // The steps' fixed messages (payload.rs's too) are translated here.
-                ui.set_message(tr(&e).into());
-                ui.set_primary(tr("Tekrar dene").into());
+                ui.set_message(e.into());
+                ui.set_primary("Try again".into());
             }
         });
     });
 }
 
 /// Where the window opens (centred on the monitor under the mouse) and that monitor's scale.
-fn centre_at_mouse() -> (slint::PhysicalPosition, f32) {
+fn centre_at_mouse(size: (f32, f32)) -> (slint::PhysicalPosition, f32) {
     unsafe {
         let mut mouse = POINT::default();
         let _ = GetCursorPos(&mut mouse);
@@ -285,7 +301,7 @@ fn centre_at_mouse() -> (slint::PhysicalPosition, f32) {
         let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
         let scale = dx as f32 / 96.0;
         let w = info.rcWork;
-        let (pw, ph) = ((SIZE.0 * scale) as i32, (SIZE.1 * scale) as i32);
+        let (pw, ph) = ((size.0 * scale) as i32, (size.1 * scale) as i32);
         (slint::PhysicalPosition::new(w.left + (w.right - w.left - pw) / 2, w.top + (w.bottom - w.top - ph) / 2), scale)
     }
 }
@@ -304,50 +320,50 @@ fn shoot(ui: &SetupWindow, dir: &str) -> Result<(), slint::PlatformError> {
     let pills = stage::count(ui).max(1) as i32;
     type SetUp = Box<dyn Fn(&SetupWindow)>;
     let states: Vec<(&str, SetUp)> = vec![
-        ("1-kur", Box::new(|_| {})),
-        ("2-kur-claude-yok", Box::new(|ui| ui.set_claude_available(false))),
-        ("3-kuruluyor", Box::new(|ui| {
+        ("1-install", Box::new(|_| {})),
+        ("2-install-no-claude", Box::new(|ui| ui.set_claude_available(false))),
+        ("3-installing", Box::new(|ui| {
             ui.set_claude_available(true);
             ui.set_phase("working".into());
-            ui.set_step(tr("Dosyalar kopyalanıyor").into());
+            ui.set_step("Copying files".into());
             ui.set_progress(0.45);
         })),
-        ("4-kuruldu", Box::new(|ui| {
+        ("4-installed", Box::new(|ui| {
             ui.set_phase("done".into());
-            ui.set_primary(tr("Bitir").into());
-            ui.set_message(tr("Syro görev çubuğunda. Her şeyi ayarlar penceresinden değiştirebilirsin.").into());
+            ui.set_primary("Finish".into());
+            ui.set_message("Swift Tab is on the taskbar. You can customize everything from settings.".into());
         })),
-        ("5-hata", Box::new(|ui| {
+        ("5-error", Box::new(|ui| {
             ui.set_phase("error".into());
-            ui.set_primary(tr("Tekrar dene").into());
-            ui.set_message(tr("Syro kapanmadı; görev çubuğundan kapatıp tekrar dene.").into());
+            ui.set_primary("Try again".into());
+            ui.set_message("Swift Tab did not close; close it from the taskbar and try again.".into());
         })),
-        ("6-guncelle", Box::new(|ui| {
+        ("6-update", Box::new(|ui| {
             ui.set_phase("ready".into());
-            ui.set_subtitle(trf("v{} kurulu · v{} sürümüne güncellenecek", &[&"0.2.0", &VERSION]).into());
-            ui.set_primary(tr("Güncelle").into());
+            ui.set_subtitle(format!("v0.2.0 installed · will update to v{VERSION}").into());
+            ui.set_primary("Update".into());
             ui.set_location_visible(false);
             ui.set_open_settings(false);
         })),
-        ("7-onar", Box::new(|ui| {
-            ui.set_subtitle(tr("Bu sürüm zaten kurulu; dosyalar yeniden yazılacak.").into());
-            ui.set_primary(tr("Onar").into());
+        ("7-repair", Box::new(|ui| {
+            ui.set_subtitle("This version is already installed; files will be rewritten.".into());
+            ui.set_primary("Repair".into());
         })),
-        ("8-kaldir", Box::new(|ui| {
+        ("8-uninstall", Box::new(|ui| {
             ui.set_mode("uninstall".into());
-            ui.set_heading(tr("Syro'yu kaldır").into());
-            ui.set_subtitle(tr("Syro, kısayolları ve Claude Code bağlantısı kaldırılacak.").into());
-            ui.set_primary(tr("Kaldır").into());
+            ui.set_heading("Uninstall Swift Tab".into());
+            ui.set_subtitle("Swift Tab and its shortcuts will be removed.".into());
+            ui.set_primary("Uninstall".into());
         })),
-        ("9-kaldiriliyor", Box::new(|ui| {
+        ("9-uninstalling", Box::new(|ui| {
             ui.set_phase("working".into());
-            ui.set_step(tr("Dosyalar siliniyor").into());
+            ui.set_step("Removing files".into());
             ui.set_progress(0.7);
         })),
-        ("10-kaldirildi", Box::new(|ui| {
+        ("10-uninstalled", Box::new(|ui| {
             ui.set_phase("done".into());
-            ui.set_primary(tr("Kapat").into());
-            ui.set_message(String::new().into());
+            ui.set_primary("Close".into());
+            ui.set_message("Swift Tab and its shortcuts have been removed.".into());
         })),
     ];
     let step = Rc::new(std::cell::Cell::new(0usize));

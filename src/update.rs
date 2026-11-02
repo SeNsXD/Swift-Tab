@@ -9,10 +9,10 @@ use serde_json::Value;
 
 /// "owner/name" of the repository whose releases are the updates (asked without a token: it
 /// answers once the repository is public); empty: none asked.
-pub const REPO: &str = "nixesty/now-bar";
+pub const REPO: &str = "SeNsXD/Swift-Tab";
 
 /// The files a release must carry: the two exes and their checksums.
-pub const ASSETS: [&str; 3] = ["nowbar.exe", "nowbar-settings.exe", "SHA256SUMS.txt"];
+pub const ASSETS: [&str; 3] = ["swifttab.exe", "swifttab-settings.exe", "SHA256SUMS.txt"];
 
 pub type Version = (u32, u32, u32);
 
@@ -90,7 +90,7 @@ pub fn parse_sums(text: &str) -> Vec<(String, String)> {
 /// The renames, in order, that put the exes staged in `staged` in place of the ones in `dir`:
 /// the running ones step aside first (a running exe can be renamed, not overwritten).
 pub fn swap_plan(dir: &Path, staged: &Path) -> Vec<(PathBuf, PathBuf)> {
-    let exes = ["nowbar", "nowbar-settings"];
+    let exes = ["swifttab", "swifttab-settings"];
     let aside = exes.iter().map(|e| (dir.join(format!("{e}.exe")), dir.join(format!("{e}.old.exe"))));
     let new_in = exes.iter().map(|e| (staged.join(format!("{e}.exe")), dir.join(format!("{e}.exe"))));
     aside.chain(new_in).collect()
@@ -101,7 +101,7 @@ pub fn rollback(done: &[(PathBuf, PathBuf)]) -> Vec<(PathBuf, PathBuf)> {
     done.iter().rev().map(|(from, to)| (to.clone(), from.clone())).collect()
 }
 
-/// `%LOCALAPPDATA%\NowBar\update.json`: what the last check found, for the settings window.
+/// `%LOCALAPPDATA%\SwiftTab\update.json`: what the last check found, for the settings window.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateState {
     /// The latest release's version ("0.3.0").
@@ -137,7 +137,7 @@ mod tests {
             "tag_name": "v0.3.0", "html_url": "https://github.com/k/nowbar/releases/tag/v0.3.0",
             "draft": false, "prerelease": false,
             "assets": [
-                {"name": "nowbar.exe", "browser_download_url": "https://github.com/k/nowbar/releases/download/v0.3.0/nowbar.exe", "size": 9000000},
+                {"name": "swifttab.exe", "browser_download_url": "https://github.com/k/nowbar/releases/download/v0.3.0/swifttab.exe", "size": 9000000},
                 {"name": "SHA256SUMS.txt", "browser_download_url": "https://github.com/k/nowbar/releases/download/v0.3.0/SHA256SUMS.txt"}
             ]
         })
@@ -148,8 +148,8 @@ mod tests {
         let r = parse_release(&answer()).unwrap();
         assert_eq!((r.version, r.tag.as_str()), ((0, 3, 0), "v0.3.0"));
         assert_eq!(r.page, "https://github.com/k/nowbar/releases/tag/v0.3.0");
-        assert_eq!(r.asset("nowbar.exe"), Some("https://github.com/k/nowbar/releases/download/v0.3.0/nowbar.exe"));
-        assert_eq!(r.asset("nowbar-settings.exe"), None);
+        assert_eq!(r.asset("swifttab.exe"), Some("https://github.com/k/nowbar/releases/download/v0.3.0/swifttab.exe"));
+        assert_eq!(r.asset("swifttab-settings.exe"), None);
         let mut draft = answer();
         draft["draft"] = true.into();
         assert_eq!(parse_release(&draft), None);
@@ -163,15 +163,15 @@ mod tests {
     #[test]
     fn the_about_line_says_where_it_stands() {
         let state = |latest: &str| UpdateState { latest: latest.into(), page: String::new(), checked: 1 };
-        assert_eq!(update_line(None, "0.2.0"), ("0.2.0 · denetlenmedi".to_string(), false));
-        assert_eq!(update_line(Some(&state("0.2.0")), "0.2.0"), ("0.2.0 · güncel".to_string(), false));
-        assert_eq!(update_line(Some(&state("0.3.0")), "0.2.0"), ("0.3.0 hazır · şimdiki 0.2.0".to_string(), true));
+        assert_eq!(update_line(None, "0.2.0"), ("0.2.0 · not checked".to_string(), false));
+        assert_eq!(update_line(Some(&state("0.2.0")), "0.2.0"), ("0.2.0 · up to date".to_string(), false));
+        assert_eq!(update_line(Some(&state("0.3.0")), "0.2.0"), ("0.3.0 ready · now 0.2.0".to_string(), true));
     }
 
     #[test]
     fn sums_read_both_formats() {
-        let text = "AB12cd  nowbar.exe\r\nef34 *nowbar-settings.exe\n\nnot a line\n";
-        assert_eq!(parse_sums(text), vec![("nowbar.exe".into(), "ab12cd".into()), ("nowbar-settings.exe".into(), "ef34".into())]);
+        let text = "AB12cd  swifttab.exe\r\nef34 *swifttab-settings.exe\n\nnot a line\n";
+        assert_eq!(parse_sums(text), vec![("swifttab.exe".into(), "ab12cd".into()), ("swifttab-settings.exe".into(), "ef34".into())]);
     }
 
     #[test]
@@ -180,10 +180,10 @@ mod tests {
         assert_eq!(
             swap_plan(dir, staged),
             vec![
-                (dir.join("nowbar.exe"), dir.join("nowbar.old.exe")),
-                (dir.join("nowbar-settings.exe"), dir.join("nowbar-settings.old.exe")),
-                (staged.join("nowbar.exe"), dir.join("nowbar.exe")),
-                (staged.join("nowbar-settings.exe"), dir.join("nowbar-settings.exe")),
+                (dir.join("swifttab.exe"), dir.join("swifttab.old.exe")),
+                (dir.join("swifttab-settings.exe"), dir.join("swifttab-settings.old.exe")),
+                (staged.join("swifttab.exe"), dir.join("swifttab.exe")),
+                (staged.join("swifttab-settings.exe"), dir.join("swifttab-settings.exe")),
             ]
         );
     }

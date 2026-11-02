@@ -1,4 +1,4 @@
-﻿//! Now playing, from Windows' media sessions (GSMTC: Spotify, browsers, players).
+//! Now playing, from Windows' media sessions (GSMTC: Spotify, browsers, players).
 //! A worker thread owns the WinRT objects; the UI only ever sees immutable snapshots.
 
 use super::media_paused_keep_ms;
@@ -22,10 +22,11 @@ pub fn live_sessions(s: &[SessionInfo], now_ms: u64) -> Vec<usize> {
 }
 
 /// A session that went away stays this long, so a player that recreates its session on a track
-/// change (YouTube Music does, for ~600 ms) neither blinks out of the Now Bar nor closes its card.
+/// change (YouTube Music does, for ~600 ms) neither blinks out of the Swift Tab nor closes its card.
 pub const SESSION_GRACE_MS: u64 = 2_000;
+pub const IDLE_MEDIA: u32 = u32::MAX;
 
-/// Now Bar ids belong to the app (its AUMID), not to the GSMTC session object: a recreated
+/// Swift Tab ids belong to the app (its AUMID), not to the GSMTC session object: a recreated
 /// session keeps its stack item and an open card.
 #[derive(Default)]
 pub struct SessionIds {
@@ -483,7 +484,7 @@ mod tests {
         assert_eq!(app_name("Spotify.exe"), "Spotify");
         assert_eq!(app_name("Brave.Q2ZK4XWM7H3PNA6TBV5RCE4YDU"), "Brave");
         assert_eq!(app_name("308046B0AF4A39CB"), "Firefox");
-        assert_eq!(app_name("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"), "Medya Oynatıcı");
+        assert_eq!(app_name("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"), "Media Player");
         assert_eq!(app_name("vlc.exe"), "vlc");
         assert_eq!(app_name("com.github.th-ch.youtube-music"), "YouTube Music");
         assert_eq!(app_name("org.example.cool-player"), "Cool Player");

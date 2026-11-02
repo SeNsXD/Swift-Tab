@@ -1,5 +1,5 @@
-//! Everything the user can configure, stored as JSON in %APPDATA%\NowBar\settings.json and
-//! shared with the settings window (`nowbar-settings.exe`), which tells the app to reload.
+//! Everything the user can configure, stored as JSON in %APPDATA%\SwiftTab\settings.json and
+//! shared with the settings window (`swifttab-settings.exe`), which tells the app to reload.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Registered window message the settings window posts after saving.
-pub const SETTINGS_CHANGED: &str = "NowBar.SettingsChanged";
+pub const SETTINGS_CHANGED: &str = "SwiftTab.SettingsChanged";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,7 +118,7 @@ pub struct ApiApp {
     pub allowed: bool,
 }
 
-/// A team whose matches come to the Now Bar (ESPN team id, its display name and its league
+/// A team whose matches come to the Swift Tab (ESPN team id, its display name and its league
 /// slug, which the settings window shows under the name).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FollowedTeam {
@@ -145,10 +145,22 @@ pub struct Settings {
     pub clipboard_stash: bool,
     pub clipboard_popup: bool,
     pub open_delay_ms: u32,
+    /// Whether the shelf module is enabled at all.
+    pub shelf_enabled: bool,
     /// The shelf stays in the stack (and opens by scrolling) even when it is empty.
     pub shelf_pinned: bool,
+    /// The clipboard stays in the stack even when nothing is copied (while its history is on).
+    pub clipboard_pinned: bool,
+    /// The media pill stays in the stack even when nothing is playing.
+    pub media_pinned: bool,
+    /// Shows a Spotify launch button on the media player card.
+    pub media_spotify_button: bool,
+    /// Persistent idle activity preference ("clipboard", "shelf", "media").
+    pub preferred_idle_activity: String,
     /// The weather as a small bar beside the pill (and the earbuds' battery).
     pub weather_bar: bool,
+    /// Glass cleaner guy animation on the empty/idle pill.
+    pub pill_cleaner_animation: bool,
     /// The media pill steps aside while the player's own window is in front.
     pub media_hide_in_front: bool,
     /// What the clipboard history keeps.
@@ -240,6 +252,8 @@ pub struct Settings {
     pub weather_locate: bool,
     /// The weather waits at the back of the stack while other things are on.
     pub weather_in_stack: bool,
+    /// Clock times as "7:42 PM" instead of "19:42".
+    pub clock_12h: bool,
     /// Snow, rain, sun and stars moving behind the weather.
     pub weather_effects: bool,
     /// Now Brief opens by itself on the day's first unlock.
@@ -252,7 +266,7 @@ pub struct Settings {
     pub rain_moment: bool,
     /// Thunder, gales, heat, frost and bad air there show for a moment (and on the weather card).
     pub weather_alerts: bool,
-    /// Live activities other programs send (`nowbar.exe push`, Claude Code's hooks).
+    /// Live activities other programs send (`swifttab.exe push`, Claude Code's hooks).
     pub live_enabled: bool,
     /// A new screenshot (ShareX, Windows' Screenshots folder) shows in the pill for a moment.
     pub capture_moment: bool,
@@ -260,6 +274,8 @@ pub struct Settings {
     pub capture_to_shelf: bool,
     /// Explorer copying, moving or deleting shows in the pill with its progress.
     pub transfer_on: bool,
+    /// Active downloads in the system show in the pill with progress and can be opened.
+    pub downloads_on: bool,
     /// Claude's permission requests get "İzin ver" / "Reddet" on its card.
     pub claude_ask: bool,
     /// Other apps may ask to show notifications over loopback HTTP (DOCS.md); off until the
@@ -315,12 +331,18 @@ impl Default for Settings {
             hotkey_picker: Hotkey::WinAltN,
             hotkey_question: QuestionHotkey::WinAltC,
             tray_left_click: TrayClick::Picker,
-            open_on_hover: true,
+            open_on_hover: false,
             clipboard_stash: true,
             clipboard_popup: true,
             open_delay_ms: 500,
-            shelf_pinned: false,
+            shelf_enabled: true,
+            shelf_pinned: true,
+            clipboard_pinned: true,
+            media_pinned: true,
+            media_spotify_button: true,
+            preferred_idle_activity: "media".into(),
             weather_bar: true,
+            pill_cleaner_animation: true,
             media_hide_in_front: true,
             clipboard_text: true,
             clipboard_links: true,
@@ -342,7 +364,7 @@ impl Default for Settings {
             animation_speed: AnimationSpeed::Normal,
             marquee: Marquee::ChangeHover,
             marquee_speed_dip_s: 30,
-            settings_theme: Theme::System,
+            settings_theme: Theme::Dark,
             media_enabled: true,
             timer_enabled: true,
             stopwatch_enabled: true,
@@ -378,12 +400,13 @@ impl Default for Settings {
             volume_moment: true,
             power_moment: true,
             power_low_pct: 15,
-            privacy_on: true,
+            privacy_on: false,
             headsets_on: true,
             idle_clock: true,
             weather_city: None,
             weather_locate: true,
             weather_in_stack: true,
+            clock_12h: false,
             weather_effects: true,
             brief_morning: true,
             brief_name: String::new(),
@@ -394,6 +417,7 @@ impl Default for Settings {
             capture_moment: true,
             capture_to_shelf: true,
             transfer_on: true,
+            downloads_on: true,
             claude_ask: true,
             api_enabled: false,
             api_apps: Vec::new(),
@@ -429,6 +453,8 @@ impl Settings {
         self.material_darkness_pct = self.material_darkness_pct.clamp(10, 60);
         self.material_saturation_pct = self.material_saturation_pct.clamp(100, 250);
         self.marquee_speed_dip_s = self.marquee_speed_dip_s.clamp(15, 60);
+        self.open_on_hover = false;
+        self.settings_theme = Theme::Dark;
         if parse_hex(&self.accent_color).is_none() {
             self.accent_color = Settings::default().accent_color;
         }
@@ -522,7 +548,7 @@ fn from_value(value: Value) -> Settings {
 
 pub fn settings_path() -> PathBuf {
     let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    base.join("NowBar").join("settings.json")
+    base.join("SwiftTab").join("settings.json")
 }
 
 /// Missing file → defaults; unreadable JSON → defaults, and the file is kept as `settings.json.bad`.
@@ -565,7 +591,7 @@ pub fn merge(base: &Settings, mine: &Settings, disk: &Settings) -> Settings {
     serde_json::from_value(Value::Object(d)).unwrap_or_else(|_| mine.clone())
 }
 
-/// What the Now Bar saves for an app's answer (a prompt, "Sustur"): the file as it is now, since
+/// What the Swift Tab saves for an app's answer (a prompt, "Sustur"): the file as it is now, since
 /// the settings window may have saved after the last reload, with only the answer added.
 pub fn with_api_answer(disk: Option<Settings>, running: &Settings, answer: ApiApp) -> Settings {
     let mut s = disk.unwrap_or_else(|| running.clone());
@@ -573,7 +599,7 @@ pub fn with_api_answer(disk: Option<Settings>, running: &Settings, answer: ApiAp
     s.sanitized()
 }
 
-/// The settings window's answers before it changes one: the file's (the Now Bar may have kept
+/// The settings window's answers before it changes one: the file's (the Swift Tab may have kept
 /// one since the window opened), in its working copy and in what it last saved, so its save
 /// changes only the one it touched.
 pub fn rebase_api_apps(working: &mut Settings, saved: &mut Settings, disk: Option<&Settings>) {
@@ -615,6 +641,13 @@ pub fn install(s: Settings) {
     if let Ok(mut c) = CURRENT.write() {
         *c = Some(Arc::new(s));
     }
+}
+
+pub fn update<F: FnOnce(&mut Settings)>(f: F) {
+    let mut s = (*current()).clone();
+    f(&mut s);
+    install(s.clone());
+    let _ = save(&s);
 }
 
 #[cfg(test)]
@@ -725,7 +758,7 @@ mod tests {
 
     #[test]
     fn merge_keeps_api_apps_written_by_the_app() {
-        // The window is open; meanwhile the Now Bar saved the user's answer to a prompt.
+        // The window is open; meanwhile the Swift Tab saved the user's answer to a prompt.
         let base = Settings::default();
         let disk = Settings { api_apps: vec![ApiApp { name: "Ekin".into(), exe: r"C:\Apps\ekin.exe".into(), allowed: true }], ..Settings::default() };
         let mine = Settings { idle_clock: false, ..Settings::default() };
@@ -735,7 +768,7 @@ mod tests {
 
     #[test]
     fn an_answer_lands_on_the_file_as_it_is() {
-        // The window saved the clock off; the Now Bar hasn't reloaded it yet.
+        // The window saved the clock off; the Swift Tab hasn't reloaded it yet.
         let disk = Settings { idle_clock: false, ..Settings::default() };
         let ekin = ApiApp { name: "Ekin".into(), exe: r"C:\Apps\ekin.exe".into(), allowed: true };
         let s = with_api_answer(Some(disk), &Settings::default(), ekin.clone());
@@ -746,7 +779,7 @@ mod tests {
     #[test]
     fn the_window_edits_the_files_answers() {
         let app = |name: &str, allowed| ApiApp { name: name.into(), exe: r"C:\Apps\a.exe".into(), allowed };
-        // The window opened with Deniz; meanwhile the Now Bar kept an answer for Ekin.
+        // The window opened with Deniz; meanwhile the Swift Tab kept an answer for Ekin.
         let (mut working, mut saved) = (Settings { api_apps: vec![app("Deniz", true)], ..Settings::default() }, Settings { api_apps: vec![app("Deniz", true)], ..Settings::default() });
         let disk = Settings { api_apps: vec![app("Deniz", true), app("Ekin", false)], ..Settings::default() };
         rebase_api_apps(&mut working, &mut saved, Some(&disk));
@@ -831,7 +864,7 @@ mod tests {
     #[test]
     fn new_settings_default_and_clamp() {
         let old: Settings = serde_json::from_str(r#"{"enabled": true, "media_card_wave": false}"#).unwrap();
-        assert!(old.media_lyrics && old.media_waveform && old.volume_moment && old.power_moment && old.privacy_on && old.headsets_on);
+        assert!(old.media_lyrics && old.media_waveform && old.volume_moment && old.power_moment && old.headsets_on);
         assert!(old.weather_in_stack && old.weather_effects, "an older file: the weather in the stack, moving");
         assert!(old.brief_morning && old.brief_name.is_empty(), "an older file: the morning brief, the Windows name");
         let s = Settings { brief_name: "  Ekin Mehmet Ali Yılmaz Uzun Bir Ad  ".into(), ..Settings::default() }.sanitized();

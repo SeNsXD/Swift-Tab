@@ -1,4 +1,4 @@
-// The Now Bar's pills drawn at 1:1 for the preview pane (src/render/pill.rs geometry), with the
+// The Swift Tab's pills drawn at 1:1 for the preview pane (src/render/pill.rs geometry), with the
 // window's settings applied: size, opacity, slivers, accent, cover colour, media buttons, artist.
 // Content is a fixed sample (the settings window doesn't see the live activities).
 
@@ -6,10 +6,10 @@ import { Store } from "store.slint";
 import { Theme } from "theme.slint";
 
 export global Pills {
-    /// Pill scale for the size setting (176/300 × 28/32/36).
-    out property <float> k: Store.pill-size == 0 ? 0.875 : Store.pill-size == 2 ? 1.125 : 1;
+    /// Pill scale for the size setting (Compact 0.78 / Normal 0.88 / Large 1.0).
+    out property <float> k: Store.pill-size == 0 ? 0.78 : Store.pill-size == 2 ? 1.0 : 0.88;
     public pure function base-w(kind: int) -> length {
-        return kind == 0 ? 300px : kind == 1 || kind == 2 || kind == 4 ? 176px : kind == 9 ? 220px : kind >= 10 ? 260px : 200px;
+        return kind == 0 ? 300px : kind == 12 || kind == 13 ? 196px : kind == 1 || kind == 2 || kind == 4 ? 176px : kind == 9 ? 220px : kind >= 10 ? 260px : 200px;
     }
     /// The circle's colour (and the body's left glow) of every pill but media's.
     public pure function tint(kind: int) -> color {
@@ -17,7 +17,7 @@ export global Pills {
             : kind == 10 ? #2A9FEB : kind == 11 ? #9C9CA4 : Store.accent-color;
     }
     /// The sample cover's colour, or the app's when "Kapak rengini kullan" is off.
-    out property <color> media-accent: Store.cover-color ? #E23E48 : #1DB954;
+    out property <color> media-accent: Store.cover-color ? #38BDF8 : #1DB954;
     public pure function scale(c: color, f: float) -> color {
         return rgb(Math.round(c.red * f), Math.round(c.green * f), Math.round(c.blue * f));
     }
@@ -53,7 +53,7 @@ export component Art inherits Rectangle {
     property <length> r0: Math.sqrt(0.68 * w * 0.68 * w + 0.7 * h * 0.7 * h) * 1px;
     property <length> cx0: self.width * 0.32;
     property <length> cy0: self.height * 0.3;
-    background: @radial-gradient(circle r0 at cx0 cy0, #FFB7AA 0%, #FFB7AA 5%, #E8434F 24%, #8C1222 50%, #2A0408 82%);
+    background: @radial-gradient(circle r0 at cx0 cy0, #7DD3FC 0%, #7DD3FC 5%, #38BDF8 24%, #0284C7 50%, #0F172A 82%);
 }
 
 /// A crest: the cached image, or initials on the club colour.
@@ -85,6 +85,72 @@ component Crest inherits Rectangle {
     }
 }
 
+/// The corner Weather & Earbuds bar (`[ ☁ 24° | 🎧 100% ]`) that always stays anchored on the corner side.
+export component CornerBar inherits Rectangle {
+    in property <bool> show-weather: true;
+    in property <bool> show-buds: true;
+    in property <string> temp: "24°";
+    in property <string> city: "Giridih";
+    in property <string> buds-pct: "100%";
+    in property <bool> idle: false;
+    property <float> k: Pills.k;
+    property <length> u: 1px * k;
+    property <bool> show-city: root.idle && !root.show-buds && root.city != "";
+    width: (root.show-weather && root.show-buds ? 140 : root.show-city ? 128 : 68) * u;
+    height: 44 * u;
+    border-radius: 8 * u;
+    border-width: 1px;
+    border-color: #FFFFFF17;
+    background: rgba(32, 32, 32, Store.pill-opacity / 100);
+
+    // Weather half
+    if root.show-weather: HorizontalLayout {
+        x: 10 * root.u;
+        width: (root.show-city ? 108 : 50) * root.u;
+        height: parent.height;
+        spacing: 6 * root.u;
+        alignment: start;
+        PGlyph {
+            text: "\u{E753}";
+            font-size: 14 * root.u;
+            color: #60CDFF;
+        }
+        PLabel {
+            text: root.show-city ? root.temp + " · " + root.city : root.temp;
+            font-size: 12.5 * root.u;
+            font-weight: 600;
+        }
+    }
+
+    // Vertical divider when both Weather and Earbuds are shown
+    if root.show-weather && root.show-buds: Rectangle {
+        x: 68 * root.u;
+        y: 8 * root.u;
+        width: 1px;
+        height: parent.height - 16 * root.u;
+        background: #FFFFFF1A;
+    }
+
+    // Earbuds half
+    if root.show-buds: HorizontalLayout {
+        x: (root.show-weather ? 78 : 12) * root.u;
+        width: 54 * root.u;
+        height: parent.height;
+        spacing: 6 * root.u;
+        alignment: start;
+        PGlyph {
+            text: "\u{E7F6}";
+            font-size: 13.5 * root.u;
+            color: #FFFFFFD9;
+        }
+        PLabel {
+            text: root.buds-pct;
+            font-size: 12.5 * root.u;
+            font-weight: 600;
+        }
+    }
+}
+
 /// One pill at 1:1, with up to two slivers of what waits behind it.
 /// kind: 0 media, 1 timer, 2 stopwatch, 3 Buds, 4 match, 5 volume, 6 power, 7 microphone /
 /// camera, 8 another headset, 9 the idle clock and weather, 10 a Steam download, 11 an Epic game
@@ -111,7 +177,7 @@ export component Pill inherits Rectangle {
     property <float> k: Pills.k;
     property <length> u: 1px * k;
     property <length> pw: Pills.base-w(kind) * k;
-    property <length> ph: 32px * k;
+    property <length> ph: 44px * k;
     property <bool> s1: Store.pill-slivers && behind1 >= 0;
     property <bool> s2: Store.pill-slivers && behind2 >= 0;
     width: pw + (s2 ? 12 * u : s1 ? 6 * u : 0px);
@@ -122,7 +188,7 @@ export component Pill inherits Rectangle {
         y: 2 * root.u;
         width: root.pw;
         height: root.ph - 4 * root.u;
-        border-radius: self.height / 2;
+        border-radius: 8 * root.u;
         background: Pills.sliver-color(root.behind2);
     }
     if root.s1: Rectangle {
@@ -130,40 +196,37 @@ export component Pill inherits Rectangle {
         y: 1 * root.u;
         width: root.pw;
         height: root.ph - 2 * root.u;
-        border-radius: self.height / 2;
+        border-radius: 8 * root.u;
         background: Pills.sliver-color(root.behind1);
     }
     body := Rectangle {
         x: 0px;
         width: root.pw;
         height: root.ph;
-        border-radius: root.ph / 2;
-        property <color> base: rgba(18, 18, 18, Store.pill-opacity / 100);
+        border-radius: 8 * root.u;
+        border-width: 1px;
+        border-color: #FFFFFF17;
+        property <color> base: rgba(32, 32, 32, Store.pill-opacity / 100);
         property <color> acc: root.kind == 0 ? Pills.media-accent : Pills.tint(root.kind);
-        /// The pills with a circle on the left: timer, stopwatch, Buds and the system ones (not
-        /// the clock: a plain body or the sky's, no glow).
-        property <bool> dot: root.kind != 0 && root.kind != 4 && root.kind != 9;
-        background: root.kind == 0
-            ? @linear-gradient(180deg, Pills.scale(self.acc, 0.32).with-alpha(0.96) 0%, Pills.scale(self.acc, 0.13).with-alpha(0.98) 100%)
-            // A sunny sky (weather.rs palette).
-            : root.kind == 9 && root.weather ? @linear-gradient(180deg, #1B4A80F5 0%, #102C52FA 100%)
-            : self.base;
-        if body.dot: Rectangle {
-            border-radius: parent.border-radius;
-            background: @linear-gradient(90deg, body.acc.with-alpha(0.38) 0%, body.acc.with-alpha(0) 50%);
-        }
-        if root.kind == 4: Rectangle {
-            border-radius: parent.border-radius;
-            background: @linear-gradient(90deg, root.home-tint.with-alpha(0.38) 0%, root.home-tint.with-alpha(0) 50%, root.away-tint.with-alpha(0) 50%, root.away-tint.with-alpha(0.38) 100%);
+        property <bool> dot: root.kind != 0 && root.kind != 4 && root.kind != 9 && root.kind != 12 && root.kind != 13;
+        background: self.base;
+        // 3×16px system accent indicator on the left edge.
+        Rectangle {
+            x: 4 * root.u;
+            y: (parent.height - 16 * root.u) / 2;
+            width: 3 * root.u;
+            height: 16 * root.u;
+            border-radius: 1.5 * root.u;
+            background: Theme.acc;
         }
 
         // ------------------------------------------------ media
         if root.kind == 0: Art {
-            x: 4 * root.u;
-            y: 4 * root.u;
-            width: 24 * root.u;
-            height: 24 * root.u;
-            border-radius: 12 * root.u;
+            x: 12 * root.u;
+            y: (parent.height - 28 * root.u) / 2;
+            width: 28 * root.u;
+            height: 28 * root.u;
+            border-radius: 4 * root.u;
         }
         // The waveform: three bars from x 36, 2.5 wide, 2 apart, 3 to 14 tall (pill.rs WAVE_*).
         if root.kind == 0 && Store.media-waveform: Rectangle {
@@ -444,6 +507,32 @@ export component Pill inherits Rectangle {
             code: root.away-code;
             tint: root.away-tint;
             ink: root.away-ink;
+        }
+
+        // ------------------------------------------------ clipboard (12) & shelf (13)
+        if root.kind == 12 || root.kind == 13: Art {
+            x: 12 * root.u;
+            y: (parent.height - 22 * root.u) / 2;
+            width: 32 * root.u;
+            height: 22 * root.u;
+            border-radius: 4 * root.u;
+        }
+        if root.kind == 12 || root.kind == 13: HorizontalLayout {
+            x: 52 * root.u;
+            width: parent.width - 64 * root.u;
+            height: root.ph;
+            spacing: 6 * root.u;
+            alignment: start;
+            PLabel {
+                text: root.kind == 12 ? "Clipboard" : "Shelf";
+                font-size: 13 * root.u;
+                font-weight: 600;
+            }
+            PLabel {
+                text: root.kind == 12 ? "6 items" : "3 files";
+                font-size: 12.5 * root.u;
+                color: #FFFFFFB3;
+            }
         }
     }
 }

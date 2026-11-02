@@ -5,7 +5,7 @@ import { Theme, Tags } from "theme.slint";
 import { Store, Item, Team, UsageRow } from "store.slint";
 import { Ui } from "ui-state.slint";
 import { Icon, Toggle, MiniSlider, Seg, Keycap, Tag, IconButton, Select, Swatch, ISection, IRow, H4, LRow, Tile } from "kit.slint";
-import { Pill, Pills, Art } from "pills.slint";
+import { Pill, Pills, Art, CornerBar } from "pills.slint";
 
 /// Formats for slider values.
 global Fmt {
@@ -57,10 +57,10 @@ component Small inherits Rectangle {
 
 /// A row of tiles.
 component Tiles inherits HorizontalLayout {
-    /// A third of the row: every tile takes it, so rows of one, two or three line up.
-    out property <length> tw: (Ui.pane-width - 40px - 24px) / 3;
-    padding-left: 10px;
-    padding-right: 10px;
+    /// A third of the row: every tile takes it, so rows of one, two or three line up without horizontal overflow.
+    out property <length> tw: max(80px, (min(Ui.pane-width - 48px, 720px) - 24px) / 3);
+    padding-left: 0px;
+    padding-right: 0px;
     spacing: 12px;
     alignment: start;
 }
@@ -70,114 +70,210 @@ component Tail inherits Rectangle {
     height: 76px;
 }
 
-/// A pill in miniature for the size and button tiles: cover, two text lines, buttons.
+/// Windows 11 miniature pill for the size and button tiles: 8px radius, 3×12px left #60CDFF accent bar, rounded-square art, transport controls.
 component MiniPill inherits Rectangle {
-    in property <length> h: 28px;
-    in property <length> w: 132px;
-    in property <int> buttons: 1;
+    in property <length> h: 30px;
+    in property <length> w: 148px;
+    in property <int> buttons: 3;
     width: w;
     height: h;
-    border-radius: h / 2;
-    background: #1B1C20;
+    border-radius: 6px;
+    background: #202020;
     border-width: 1px;
-    border-color: #FFFFFF1A;
+    border-color: #FFFFFF17;
     clip: true;
+    // Left 3×12px system accent bar
     Rectangle {
-        width: parent.width * 0.55;
-        background: @linear-gradient(90deg, #3579FF4D 0%, #3579FF00 100%);
+        x: 4px;
+        y: (parent.height - 12px) / 2;
+        width: 2.5px;
+        height: 12px;
+        border-radius: 1.25px;
+        background: Theme.acc;
     }
     HorizontalLayout {
-        padding-left: root.h * 0.14;
-        padding-right: root.h * 0.34;
-        spacing: root.h * 0.24;
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 7px;
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: root.h * 0.68;
-                height: root.h * 0.68;
-                border-radius: self.width / 2;
-                background: @linear-gradient(135deg, #9DBDFF 0%, #3B5BDB 55%, #151A55 100%);
+                width: root.h * 0.62;
+                height: root.h * 0.62;
+                border-radius: 4px;
+                background: @linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+                border-width: 1px;
+                border-color: #60CDFF33;
+                Image {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width * 0.72;
+                    height: parent.height * 0.72;
+                    source: @image-url("syro-mark.png");
+                    image-fit: contain;
+                }
             }
         }
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            spacing: max(2px, root.h * 0.1);
+            spacing: 3px;
             HorizontalLayout {
-                height: max(3px, root.h * 0.13);
+                height: 3.5px;
                 alignment: start;
                 Rectangle {
-                    width: root.w * 0.3;
-                    border-radius: 2px;
-                    background: #FFFFFFD9;
+                    width: root.w * 0.34;
+                    border-radius: 1.5px;
+                    background: #FFFFFFEB;
                 }
             }
             HorizontalLayout {
-                height: max(2px, root.h * 0.1);
+                height: 2.5px;
                 alignment: start;
                 Rectangle {
-                    width: root.w * 0.18;
-                    border-radius: 2px;
-                    background: #FFFFFF59;
+                    width: root.w * 0.2;
+                    border-radius: 1.25px;
+                    background: #FFFFFF80;
                 }
+            }
+        }
+        if root.buttons > 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 1px;
+                height: root.h * 0.45;
+                background: #FFFFFF17;
             }
         }
         for b[i] in root.buttons: VerticalLayout {
             alignment: center;
             Rectangle {
-                width: root.buttons == 3 && i != 1 ? root.h * 0.2 : root.h * 0.3;
+                width: root.buttons == 3 && i == 1 ? root.h * 0.52 : root.h * 0.22;
                 height: self.width;
-                border-radius: self.width / 2;
-                background: root.buttons == 3 && i != 1 ? #FFFFFF8C : #FFFFFFE6;
+                border-radius: root.buttons == 3 && i == 1 ? 4px : self.width / 2;
+                background: root.buttons == 3 && i == 1 ? #FFFFFF14 : #FFFFFFBF;
             }
         }
     }
 }
 
-/// A card in miniature (cover, two text lines, three buttons).
+/// Windows 11 flyout card in miniature (#202020 surface, #191919 bottom tray, #60CDFF accent play button).
 component MiniCard inherits Rectangle {
     in property <float> k: 1;
-    width: 80px * k;
+    width: 96px * k;
     height: 92px * k;
-    border-radius: 14px * k;
-    background: #1B1C20;
+    border-radius: 8px * k;
+    background: #202020;
     border-width: 1px;
-    border-color: #FFFFFF1A;
+    border-color: #FFFFFF17;
+    clip: true;
     VerticalLayout {
-        padding: 6px * root.k;
-        spacing: 5px * root.k;
-        Rectangle {
+        spacing: 0px;
+        HorizontalLayout {
+            padding: 7px * root.k;
+            spacing: 7px * root.k;
             vertical-stretch: 1;
-            border-radius: 9px * root.k;
-            background: @linear-gradient(135deg, #9DBDFF 0%, #3B5BDB 55%, #151A55 100%);
-        }
-        HorizontalLayout {
-            height: 3px;
-            alignment: start;
             Rectangle {
-                width: 56px * root.k;
-                border-radius: 2px;
-                background: #FFFFFFD9;
+                width: 28px * root.k;
+                height: 28px * root.k;
+                border-radius: 5px * root.k;
+                background: @linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
+                border-width: 1px;
+                border-color: #60CDFF33;
+                Image {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width * 0.72;
+                    height: parent.height * 0.72;
+                    source: @image-url("syro-mark.png");
+                    image-fit: contain;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 4px * root.k;
+                Rectangle {
+                    width: 42px * root.k;
+                    height: 3.5px * root.k;
+                    border-radius: 1.5px;
+                    background: #FFFFFFEB;
+                }
+                Rectangle {
+                    width: 26px * root.k;
+                    height: 2.5px * root.k;
+                    border-radius: 1px;
+                    background: #FFFFFF80;
+                }
             }
         }
-        HorizontalLayout {
-            height: 2px;
-            alignment: start;
-            Rectangle {
-                width: 36px * root.k;
-                border-radius: 1px;
-                background: #FFFFFF59;
+        Rectangle {
+            height: 28px * root.k;
+            background: #191919;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px * root.k;
+                for d[i] in 3: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: i == 1 ? 14px * root.k : 6px * root.k;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: i == 1 ? Theme.acc : #FFFFFF99;
+                    }
+                }
             }
         }
-        HorizontalLayout {
-            height: 10px * root.k;
+    }
+}
+
+/// Live Windows 11 Taskbar & Swift Tab Mockup showing the corner Weather+Earbuds bar on the left and the active pill in front of it.
+export component Win11TaskbarMockup inherits Rectangle {
+    in property <int> front-kind: 0;
+    in property <bool> show-buds: true;
+    in property <bool> idle-only: false;
+    height: 82px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: #FFFFFF14;
+    background: @linear-gradient(180deg, #161B26 0%, #1C2230 58%, #181818 59%, #181818 100%);
+    clip: true;
+
+    // Top subtle desktop wallpaper caption
+    Text {
+        x: 14px;
+        y: 8px;
+        text: root.idle-only ? "Idle · When earbuds disconnected, temperature & location shown in corner" : "Windows 11 Taskbar Preview · Weather & Earbuds stay in corner, activity pill in front";
+        font-size: 11.5px;
+        color: #FFFFFF99;
+    }
+
+    // Bottom taskbar strip divider
+    Rectangle {
+        y: 30px;
+        height: 1px;
+        background: #FFFFFF14;
+    }
+
+    // Corner Weather & Earbuds bar + Front Pill row
+    HorizontalLayout {
+        x: 12px;
+        y: 33px;
+        height: 46px;
+        spacing: 6px;
+        alignment: start;
+        VerticalLayout {
             alignment: center;
-            spacing: 6px * root.k;
-            for d[i] in 3: Rectangle {
-                width: i == 1 ? 10px * root.k : 7px * root.k;
-                height: self.width;
-                border-radius: self.width / 2;
-                background: i == 1 ? #FFFFFFE6 : #FFFFFF59;
+            CornerBar {
+                show-weather: true;
+                show-buds: root.show-buds && !root.idle-only;
+                idle: root.idle-only;
+            }
+        }
+        if !root.idle-only: VerticalLayout {
+            alignment: center;
+            Pill {
+                kind: root.front-kind;
+                behind1: Store.pill-slivers ? 12 : -1;
             }
         }
     }
@@ -225,31 +321,13 @@ component MiniWindow inherits Rectangle {
 
 export component AppearanceBody inherits VerticalLayout {
     alignment: start;
-    H4 {
-        title: @tr("Pil");
-        count: @tr("önde ve arkada");
-    }
-    if Store.media-on: LRow {
-        title: @tr("Medya");
-        sub: @tr("önde");
-        selected: true;
-        Pill {
-            kind: 0;
-            behind1: Store.timer-on ? 1 : -1;
-            behind2: Store.buds-on ? 3 : -1;
-        }
-    }
-    if Store.buds-on: LRow {
-        title: "Wireless Buds";
-        sub: @tr("arkada");
-        Pill { kind: 3; }
-    }
+    spacing: 6px;
     H4 {
         title: @tr("Pil boyutu");
-        count: @tr("3 seçenek");
+        count: @tr("3 seçenek · eski Normal artık Büyük");
     }
     Tiles {
-        for o[i] in [{ t: @tr("Küçük"), s: "176 × 28", h: 22px, w: 104px }, { t: @tr("Normal"), s: "300 × 32", h: 28px, w: 132px }, { t: @tr("Büyük"), s: "338 × 36", h: 34px, w: 158px }]: Tile {
+        for o[i] in [{ t: @tr("Küçük"), s: "234 × 34 · %78", h: 24px, w: 116px }, { t: @tr("Normal"), s: "264 × 38 · %88", h: 28px, w: 136px }, { t: @tr("Büyük"), s: "300 × 44 · %100", h: 33px, w: 158px }]: Tile {
             width: parent.tw;
             title: o.t;
             sub: o.s;
@@ -293,43 +371,6 @@ export component AppearanceBody inherits VerticalLayout {
             MiniCard { k: 0.92; }
         }
     }
-    H4 {
-        title: @tr("Açılış");
-        count: @tr("2 seçenek");
-    }
-    Tiles {
-        Tile {
-            width: parent.tw;
-            title: @tr("Tıklayınca aç");
-            sub: @tr("Pile tıklayınca açılır");
-            selected: !Store.open-on-hover;
-            clicked => {
-                Store.open-on-hover = false;
-                Ui.changed();
-            }
-            MiniPill {
-                h: 28px;
-                w: 132px;
-                buttons: 1;
-            }
-        }
-        Tile {
-            width: parent.tw;
-            title: @tr("Üzerine gelince aç");
-            sub: @tr("İmleç pilin üstüne gelince açılır");
-            selected: Store.open-on-hover;
-            clicked => {
-                Store.open-on-hover = true;
-                Ui.changed();
-            }
-            MiniPill {
-                h: 28px;
-                w: 132px;
-                buttons: 1;
-            }
-        }
-    }
-    Tail { }
 }
 
 export component AppearanceInspector inherits VerticalLayout {
@@ -359,83 +400,18 @@ export component AppearanceInspector inherits VerticalLayout {
                 moved => { Ui.changed(); }
             }
         }
-        IRow {
-            label: @tr("Arkadakileri göster");
-            Toggle {
-                checked <=> Store.pill-slivers;
-                toggled => { Ui.changed(); }
-            }
-        }
     }
     ISection {
-        title: @tr("Renk");
+        title: @tr("Kart ve Hareket");
         IRow {
-            label: @tr("Duvar kâğıdından");
-            note: !Store.wallpaper-accent ? @tr("Kapalı") : Store.wallpaper-found ? @tr("Vurgu duvar kâğıdının renginde") : @tr("Duvar kâğıdı gri: seçtiğin renk");
-            Toggle {
-                checked <=> Store.wallpaper-accent;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Vurgu rengi");
-            note: Store.wallpaper-accent && Store.wallpaper-found ? @tr("Seçince duvar kâğıdı kapanır") : "";
-            Swatch {
-                hex <=> Store.accent;
-                value: Store.accent-color;
-                presets: [#5D57D2, #3579FF, #2FBF71, #FF8A3D, #F2557A, #14A3B8, #F4A301, #8E8E93];
-                preset-hex: ["#5D57D2", "#3579FF", "#2FBF71", "#FF8A3D", "#F2557A", "#14A3B8", "#F4A301", "#8E8E93"];
-                valid(t) => { return Store.hex-ok(t); }
-                // A colour picked by hand is the one wanted: the wallpaper's gives way.
-                picked => {
-                    Store.wallpaper-accent = false;
-                    Ui.changed();
-                }
-            }
-        }
-        IRow {
-            label: @tr("Kapak rengini kullan");
-            Toggle {
-                checked <=> Store.cover-color;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Kart");
-        IRow {
-            label: @tr("Bulanıklık");
+            label: @tr("Bulanıklık (Akrilik)");
             note: Store.blur-available ? "" : @tr("Windows 11 gerekir");
             Toggle {
                 checked <=> Store.card-blur;
+                enabled: Store.blur-available;
                 toggled => { Ui.changed(); }
             }
         }
-        IRow {
-            label: @tr("Koyuluk");
-            MiniSlider {
-                value <=> Store.darkness;
-                minimum: 10;
-                maximum: 60;
-                step: 5;
-                text: Fmt.pct(Store.darkness);
-                moved => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Doygunluk");
-            MiniSlider {
-                value <=> Store.saturation;
-                minimum: 100;
-                maximum: 250;
-                step: 10;
-                text: Fmt.pct(Store.saturation);
-                moved => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Hareket");
         IRow {
             label: @tr("Animasyon hızı");
             Select {
@@ -443,21 +419,6 @@ export component AppearanceInspector inherits VerticalLayout {
                 selected <=> Store.speed;
                 box-width: 110px;
                 picked => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Açılış");
-        IRow {
-            label: @tr("Açılma gecikmesi");
-            MiniSlider {
-                value <=> Store.open-delay;
-                minimum: 0;
-                maximum: 1500;
-                step: 100;
-                enabled: Store.open-on-hover;
-                text: round(Store.open-delay) + @tr(" ms");
-                moved => { Ui.changed(); }
             }
         }
     }
@@ -476,82 +437,13 @@ global Keys {
 
 export component GeneralBody inherits VerticalLayout {
     alignment: start;
-    H4 {
-        title: @tr("Bu pencere");
-        count: @tr("3 tema");
-    }
-    Tiles {
-        Tile {
-            width: parent.tw;
-            title: @tr("Sistem");
-            sub: @tr("Windows'a uyar");
-            selected: Store.theme == 0;
-            clicked => {
-                Store.theme = 0;
-                Ui.changed();
-            }
-            MiniWindow {
-                ground: #1F1F21;
-                side: #2A2A2A;
-                panel: #F2F2F3;
-                ink: #9C978F;
-            }
-        }
-        Tile {
-            width: parent.tw;
-            title: @tr("Koyu");
-            sub: @tr("her zaman koyu");
-            selected: Store.theme == 1;
-            clicked => {
-                Store.theme = 1;
-                Ui.changed();
-            }
-            MiniWindow {
-                ground: #141416;
-                side: #262626;
-                panel: #1E1E1E;
-                ink: #9C978F;
-            }
-        }
-        Tile {
-            width: parent.tw;
-            title: @tr("tema" => "Açık");
-            sub: @tr("her zaman açık");
-            selected: Store.theme == 2;
-            clicked => {
-                Store.theme = 2;
-                Ui.changed();
-            }
-            MiniWindow {
-                ground: #ECECEE;
-                side: #DADADC;
-                panel: #FFFFFF;
-                ink: #B5B0A8;
-            }
-        }
-    }
-    Tail { }
 }
 
 export component GeneralInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Dil");
-        first: true;
-        IRow {
-            label: @tr("Arayüzün dili");
-            note: @tr("Otomatik: Windows'unki");
-            Select {
-                // Each language in its own words.
-                options: [@tr("Otomatik"), "Türkçe", "English"];
-                selected <=> Store.language;
-                box-width: 110px;
-                picked(i) => { Store.language-picked(i); }
-            }
-        }
-    }
-    ISection {
         title: @tr("Başlangıç");
+        first: true;
         IRow {
             label: @tr("Windows ile başlat");
             Toggle {
@@ -604,6 +496,7 @@ export component GeneralInspector inherits VerticalLayout {
 
 export component MediaBody inherits VerticalLayout {
     alignment: start;
+    spacing: 6px;
     H4 {
         title: @tr("Uygulamalar");
         count: Store.apps.length + @tr(" uygulama · tıkla: göster / gizle");
@@ -652,78 +545,32 @@ export component MediaBody inherits VerticalLayout {
             }
         }
     }
-    H4 {
-        title: @tr("Medya pili");
-        count: @tr("şu anki ayarlarla");
-    }
-    LRow {
-        title: @tr("Örnek");
-        sub: Store.pill-artist ? @tr("sanatçıyla") : @tr("sanatçısız");
-        lead: 4;
-        Pill { kind: 0; }
-    }
-    Tail { }
 }
 
 export component MediaInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Etkinlik");
+        title: @tr("Pill");
         first: true;
         IRow {
-            label: @tr("Medya");
+            label: @tr("Always show");
+            note: @tr("Even when nothing is playing");
             Toggle {
-                checked <=> Store.media-on;
+                checked <=> Store.media-pinned;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Oynatıcı öndeyken gizle");
-            note: @tr("Oynatıcının penceresi önündeyken pil görünmez; küçülünce ya da arkada kalınca görünür");
-            Toggle {
-                checked <=> Store.media-hide-front;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Pil");
-        IRow {
-            label: @tr("Sanatçıyı göster");
-            Toggle {
-                checked <=> Store.pill-artist;
-                toggled => { Ui.changed(); }
-            }
-        }
-        // The pill's lines come with the card's: dimmed while those are off.
-        IRow {
-            opacity: Store.media-lyrics ? 1 : 0.4;
-            label: @tr("Şarkı sözü");
-            note: @tr("Adın yerine o anki satır");
-            Toggle {
-                checked <=> Store.pill-lyrics;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Ses dalgası");
-            note: @tr("Kapağın yanında, sesle oynar");
-            Toggle {
-                checked <=> Store.media-waveform;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Kayan başlık");
+            label: @tr("Marquee title");
             Select {
-                options: [@tr("Değişince"), @tr("Üstündeyken"), @tr("Kapalı")];
+                options: [@tr("On change"), @tr("On hover"), @tr("Off")];
                 selected <=> Store.marquee;
                 box-width: 124px;
                 picked => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Kayma hızı");
+            label: @tr("Scroll speed");
             MiniSlider {
                 value <=> Store.marquee-speed;
                 minimum: 15;
@@ -736,33 +583,26 @@ export component MediaInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Kart");
+        title: @tr("Card");
         IRow {
-            label: @tr("Dalgalı çubuk");
-            Toggle {
-                checked <=> Store.card-wave;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Şarkı sözleri");
-            note: @tr("Eşzamanlı, lrclib.net'ten");
-            Toggle {
-                checked <=> Store.media-lyrics;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Orta tıkla oynat");
+            label: @tr("Middle click to play");
             Toggle {
                 checked <=> Store.middle-click;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Duraklayınca kal");
+            label: @tr("Quick Spotify / YouTube button");
+            note: @tr("Switch between Spotify and YouTube; off shows original app");
+            Toggle {
+                checked <=> Store.media-spotify-button;
+                toggled => { Ui.changed(); }
+            }
+        }
+        IRow {
+            label: @tr("Keep paused for");
             Select {
-                options: [@tr("1 dk"), @tr("5 dk"), @tr("10 dk"), @tr("30 dk"), @tr("Hep")];
+                options: [@tr("1 min"), @tr("5 min"), @tr("10 min"), @tr("30 min"), @tr("Always")];
                 selected <=> Store.paused-keep;
                 box-width: 84px;
                 picked => { Ui.changed(); }
@@ -770,11 +610,11 @@ export component MediaInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Ses çıkışları");
+        title: @tr("Audio outputs");
         for d in Store.devices: IRow {
             label: d.name;
             if d.current: Tag {
-                text: @tr("Kullanılıyor");
+                text: @tr("In use");
                 tint: Tags.yellow;
                 small: true;
             }
@@ -949,110 +789,6 @@ export component TimerInspector inherits VerticalLayout {
 
 // ================================================================== 4 Galaxy Buds
 
-export component BudsBody inherits VerticalLayout {
-    alignment: start;
-    H4 {
-        title: @tr("Pilde");
-        count: @tr("şu anki ayarlarla");
-    }
-    LRow {
-        title: "Wireless Buds";
-        sub: Store.buds-on ? @tr("örnek") : @tr("kapalı");
-        selected: true;
-        lead: 1;
-        glyph: "\u{E7F6}";
-        Pill { kind: 3; }
-    }
-    H4 {
-        title: @tr("Bağlanınca öne gel");
-        count: @tr("4 seçenek");
-    }
-    Tiles {
-        for o[i] in [{ n: "—", s: @tr("öne gelmez") }, { n: "5", s: @tr("saniye önde") }, { n: "15", s: @tr("saniye önde") }, { n: "30", s: @tr("saniye önde") }]: Tile {
-            width: (Ui.pane-width - 40px - 36px) / 4;
-            title: i == 0 ? @tr("Hayır") : o.n + @tr(" sn");
-            sub: o.s;
-            selected: Store.buds-front == i;
-            picture-height: 110px;
-            clicked => {
-                Store.buds-front = i;
-                Ui.changed();
-            }
-            Text {
-                text: o.n;
-                font-size: 42px;
-                font-weight: 700;
-                color: Theme.text;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-    }
-    Tail { }
-}
-
-export component BudsInspector inherits VerticalLayout {
-    alignment: start;
-    ISection {
-        title: @tr("Etkinlik");
-        first: true;
-        IRow {
-            label: "Wireless Buds";
-            Toggle {
-                checked <=> Store.buds-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Kulaklık");
-            note: Store.buds-device == 0 ? @tr("Bağlanan ilk Buds") : @tr("Yalnız bu cihaz");
-            Select {
-                options: Store.buds-devices;
-                current-text: Store.buds-devices[Store.buds-device];
-                box-width: 140px;
-                picked(i) => { Store.buds-device-picked(i); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Pil uyarısı");
-        IRow {
-            label: @tr("Düşük pil");
-            note: @tr("Altında öne gelir");
-            MiniSlider {
-                value <=> Store.buds-low;
-                minimum: 5;
-                maximum: 50;
-                step: 5;
-                text: Fmt.pct(Store.buds-low);
-                moved => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Pilde");
-        IRow {
-            label: @tr("Kutu pilini göster");
-            note: @tr("Bir kulaklık kutudayken");
-            Toggle {
-                checked <=> Store.buds-case;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Müzik");
-        IRow {
-            label: @tr("Kulaktan çıkınca duraklat");
-            note: @tr("Geri takınca devam eder");
-            Toggle {
-                checked <=> Store.buds-ear-pause;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-}
-
 // ================================================================== 5 Canlı maç
 
 component TeamLead inherits Rectangle {
@@ -1206,10 +942,10 @@ export component MatchBody inherits VerticalLayout {
 export component MatchInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Etkinlik");
+        title: @tr("Activity");
         first: true;
         IRow {
-            label: @tr("Canlı maç");
+            label: @tr("Live match");
             Toggle {
                 checked <=> Store.match-on;
                 toggled => { Ui.changed(); }
@@ -1217,20 +953,20 @@ export component MatchInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Ne zaman");
+        title: @tr("When");
         IRow {
-            label: @tr("Maçtan önce");
+            label: @tr("Before match");
             MiniSlider {
                 value <=> Store.show-before;
                 minimum: 0;
                 maximum: 180;
                 step: 15;
-                text: Store.show-before == 0 ? @tr("Başlayınca") : Fmt.minutes(Store.show-before);
+                text: Store.show-before == 0 ? @tr("When started") : Fmt.minutes(Store.show-before);
                 moved => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Bitince kalsın");
+            label: @tr("Keep after");
             MiniSlider {
                 value <=> Store.keep-after;
                 minimum: 0;
@@ -1242,18 +978,18 @@ export component MatchInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Anlar");
+        title: @tr("Moments");
         IRow {
-            label: @tr("Rakip golünde de an");
-            note: @tr("Gol olunca pil kısa süre büyür");
+            label: @tr("Opponent goal moment");
+            note: @tr("Pill expands briefly when goal scored");
             Toggle {
                 checked <=> Store.opponent-moment;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Gol sesi");
-            note: @tr("Takımın gol atınca");
+            label: @tr("Goal sound");
+            note: @tr("When your team scores");
             HorizontalLayout {
                 spacing: 4px;
                 IconButton {
@@ -1274,17 +1010,17 @@ export component MatchInspector inherits VerticalLayout {
     }
 }
 
-// ================================================================== 6 Tam ekran
+// ================================================================== 6 Fullscreen
 
 export component FullscreenBody inherits VerticalLayout {
     alignment: start;
     H4 {
-        title: @tr("İstisnalar");
-        count: Store.exceptions.length + @tr(" uygulama · tam ekranda da görünür");
+        title: @tr("Exceptions");
+        count: Store.exceptions.length + @tr(" apps · visible in fullscreen");
     }
     if Store.exceptions.length == 0: LRow {
-        title: @tr("Henüz istisna yok");
-        sub: @tr("yukarıya bir uygulama adı yaz");
+        title: @tr("No exceptions yet");
+        sub: @tr("enter an application name above");
         lead: 1;
         glyph: "\u{E737}";
     }
@@ -1295,7 +1031,7 @@ export component FullscreenBody inherits VerticalLayout {
         lead: 1;
         glyph: "\u{E737}";
         Tag {
-            text: @tr("Görünür");
+            text: @tr("Visible");
             tint: Tags.green;
         }
         IconButton {
@@ -1304,8 +1040,8 @@ export component FullscreenBody inherits VerticalLayout {
         }
     }
     H4 {
-        title: @tr("Açık uygulamalar");
-        count: @tr("tıkla: istisna yap");
+        title: @tr("Running Applications");
+        count: @tr("click to add exception");
     }
     for a in Store.running-apps: LRow {
         title: a.id;
@@ -1315,7 +1051,7 @@ export component FullscreenBody inherits VerticalLayout {
         glyph: "\u{E737}";
         clicked => { Ui.error = Store.exception-added(a.id); }
         Small {
-            text: @tr("Ekle");
+            text: @tr("Add");
             glyph: "\u{E710}";
             clicked => { Ui.error = Store.exception-added(a.id); }
         }
@@ -1323,135 +1059,225 @@ export component FullscreenBody inherits VerticalLayout {
     Tail { }
 }
 
+/// "Hide in fullscreen" is the page header's switch (settings.slint).
 export component FullscreenInspector inherits VerticalLayout {
     alignment: start;
-    ISection {
-        title: @tr("Etkinlik");
-        first: true;
-        IRow {
-            label: @tr("Tam ekranda gizle");
-            note: @tr("Oyun, video ya da sunum açıkken");
-            Toggle {
-                checked <=> Store.fullscreen-hide;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
 }
 
 // ================================================================== 7 Hakkında
 
 export component AboutBody inherits VerticalLayout {
-    alignment: center;
-    horizontal-stretch: 1;
-    vertical-stretch: 1;
-    spacing: 16px;
-    Text {
-        text: "Made by";
-        font-size: 15px;
-        font-weight: 500;
-        color: Theme.text2;
-        horizontal-alignment: center;
-    }
-    HorizontalLayout {
-        alignment: center;
-        Image {
-            source: @image-url("xdnot-labs.png");
-            width: 320px;
-            height: 34px;
-            image-fit: contain;
+    alignment: start;
+    spacing: 10px;
+    padding-top: 10px;
+    padding-bottom: 0px;
+
+    // Hero App Card
+    Rectangle {
+        height: 84px;
+        border-radius: 10px;
+        background: Theme.card;
+        border-width: 1px;
+        border-color: Theme.card-edge;
+        HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            spacing: 16px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 8px;
+                    background: Theme.sel-row;
+                    border-width: 1px;
+                    border-color: Theme.acc.with-alpha(0.3);
+                    Image {
+                        source: @image-url("syro-mark.png");
+                        width: 28px;
+                        height: 28px;
+                        image-fit: contain;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                horizontal-stretch: 1;
+                Text {
+                    text: "Swift Tab";
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: Theme.strong;
+                }
+                Text {
+                    text: "Compact Windows 11 Taskbar Companion";
+                    font-size: 13px;
+                    color: Theme.text2;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Tag {
+                    text: "v1.0 Release";
+                    tint: Tags.green;
+                }
+            }
         }
+    }
+
+    H4 {
+        title: "Product Information";
+        count: "specifications & architecture";
+    }
+
+    LRow {
+        title: "Version & Platform";
+        sub: "v1.0 · Windows 11 x64 (x86_64-pc-windows-msvc)";
+        lead: 1;
+        glyph: "\u{E946}";
+    }
+
+    LRow {
+        title: "Graphics Engine";
+        sub: "Direct2D, DirectWrite & Windows.UI.Composition APIs";
+        lead: 1;
+        glyph: "\u{E790}";
+    }
+
+    LRow {
+        title: "Settings Interface";
+        sub: "Slint UI Framework with Segoe UI Variable typography";
+        lead: 1;
+        glyph: "\u{E713}";
+    }
+
+    H4 {
+        title: "Open Source & Credits";
+        count: "repository & acknowledgments";
+    }
+
+    LRow {
+        title: "GitHub Repository";
+        sub: "github.com/SeNsXD/Swift-Tab";
+        clickable: true;
+        lead: 1;
+        glyph: "\u{E8A7}";
+        clicked => { Store.action("repo"); }
+    }
+
+    LRow {
+        title: "App Concept & Inspiration";
+        sub: "Original app idea and companion concept credited to Now Bar";
+        lead: 1;
+        glyph: "\u{E790}";
+    }
+
+    LRow {
+        title: "Software License";
+        sub: "GNU General Public License v3.0";
+        lead: 1;
+        glyph: "\u{E8A5}";
     }
 }
 
 export component AboutInspector inherits VerticalLayout {
     alignment: start;
+    spacing: 8px;
+    padding-top: 4px;
+
+    ISection {
+        title: "Environment";
+        first: true;
+        IRow {
+            label: "Operating System";
+            Text {
+                text: "Windows 11";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+        IRow {
+            label: "Display Backing";
+            Text {
+                text: "Desktop Acrylic";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+        IRow {
+            label: "DPI Scaling";
+            Text {
+                text: "Per-Monitor v2";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    ISection {
+        title: "Integrations";
+        IRow {
+            label: "Media Session";
+            Text {
+                text: "Windows GSMTC";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+        IRow {
+            label: "Weather Source";
+            Text {
+                text: "Open-Meteo API";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+        IRow {
+            label: "Headphones";
+            Text {
+                text: "Windows Bluetooth";
+                font-size: 13px;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    Rectangle { height: 14px; }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+        Text {
+            text: "Crafted by";
+            font-size: 13px;
+            color: Theme.text3;
+            vertical-alignment: center;
+        }
+        Image {
+            source: @image-url("xdnot-labs.png");
+            width: 156px;
+            height: 26px;
+            image-fit: contain;
+        }
+    }
+
+    Tail { }
 }
 
 // ================================================================== 8 Sistem
 
+/// The Weather page's body is empty: its "Weather bar" switch is the first row of the
+/// inspector below, "Other headphones" is the Headphones page's first row, and "Microphone /
+/// Camera" moved to the System Events page.
 export component SystemBody inherits VerticalLayout {
     alignment: start;
-    H4 {
-        title: @tr("Pilde");
-        count: @tr("3 etkinlik · tıkla: aç / kapat");
-    }
-    LRow {
-        title: @tr("Mikrofon / kamera");
-        sub: Store.privacy-on ? @tr("kullanılırken") : @tr("kapalı");
-        clickable: true;
-        lead: 1;
-        glyph: "\u{E720}";
-        clicked => {
-            Store.privacy-on = !Store.privacy-on;
-            Ui.changed();
-        }
-        Pill {
-            kind: 7;
-            opacity: Store.privacy-on ? 1 : 0.4;
-        }
-    }
-    LRow {
-        title: @tr("Diğer kulaklıklar");
-        sub: Store.headsets-on ? @tr("Bluetooth, piliyle") : @tr("kapalı");
-        clickable: true;
-        lead: 1;
-        glyph: "\u{E7F6}";
-        clicked => {
-            Store.headsets-on = !Store.headsets-on;
-            Ui.changed();
-        }
-        Pill {
-            kind: 8;
-            opacity: Store.headsets-on ? 1 : 0.4;
-        }
-    }
-    LRow {
-        title: @tr("Hava çubuğu");
-        // The weather is a small bar beside the pill (and beside the earbuds' battery).
-        sub: Store.weather-bar && Store.place-name != "" ? @tr("pilin yanında") + " · " + Store.place-name : @tr("kapalı");
-        clickable: true;
-        lead: 1;
-        glyph: "\u{E121}";
-        clicked => {
-            Store.weather-bar = !Store.weather-bar;
-            Ui.changed();
-        }
-        Pill {
-            kind: 9;
-            weather: Store.place-name != "";
-            opacity: Store.weather-bar && Store.place-name != "" ? 1 : 0.4;
-        }
-    }
-    H4 {
-        title: @tr("Uygulama bildirimleri");
-        count: Store.api-on ? Store.api-apps.length + @tr(" uygulama · tıkla: izin ver / engelle") : @tr("kapalı");
-    }
-    if Store.api-apps.length == 0: LRow {
-        title: @tr("Henüz uygulama yok");
-        sub: Store.api-on ? @tr("bir uygulama sorunca burada görünür") : @tr("sağdan aç");
-        lead: 1;
-        glyph: "\u{EA8F}";
-    }
-    for app in Store.api-apps: LRow {
-        title: app.name;
-        sub: app.sub;
-        clickable: true;
-        lead: 3;
-        letter: app.letter;
-        badge: app.tint;
-        opacity: Store.api-on ? 1 : 0.4;
-        clicked => { Store.api-app-toggled(app.id, !app.shown); }
-        Tag {
-            text: app.shown ? @tr("İzinli") : @tr("Engelli");
-            tint: app.shown ? Tags.green : Tags.red;
-        }
-        IconButton {
-            glyph: "\u{E711}";
-            clicked => { Store.api-app-forget(app.id); }
-        }
-    }
-    Tail { }
 }
 
 /// The weather's city: a box that searches Open-Meteo on Enter, with up to five places under
@@ -1461,9 +1287,9 @@ component CityPicker inherits VerticalLayout {
     // Still editable with the clock and the stack both off, only dimmed.
     opacity: Store.idle-clock || Store.weather-in-stack ? 1 : 0.4;
     IRow {
-        label: @tr("Şehir");
-        note: root.picked ? "" : Store.city-search-state == 1 ? @tr("Aranıyor…") : Store.city-search-state == 3 ? @tr("Bağlantı kurulamadı")
-            : Store.city-search-state == 2 && Store.city-results.length == 0 ? @tr("Bulunamadı") : Store.city-search-state == 2 ? @tr("Birini seç") : @tr("Ad yaz, Enter");
+        label: @tr("City");
+        note: root.picked ? "" : Store.city-search-state == 1 ? @tr("Searching…") : Store.city-search-state == 3 ? @tr("Connection failed")
+            : Store.city-search-state == 2 && Store.city-results.length == 0 ? @tr("Not found") : Store.city-search-state == 2 ? @tr("Select one") : @tr("Type name, press Enter");
         if root.picked: HorizontalLayout {
             spacing: 2px;
             HorizontalLayout {
@@ -1518,7 +1344,7 @@ component CityPicker inherits VerticalLayout {
                 x: 27px;
                 width: parent.width - 37px;
                 height: parent.height;
-                text: @tr("İzmir, Berlin…");
+                text: @tr("New York, London…");
                 font-size: 13.5px;
                 color: Theme.text3;
                 vertical-alignment: center;
@@ -1597,179 +1423,29 @@ component CityPicker inherits VerticalLayout {
 export component SystemInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Mikrofon / kamera");
+        title: @tr("Weather and Location");
         first: true;
         IRow {
-            label: @tr("Kullanımı göster");
-            note: @tr("Bir uygulama kullanırken pilde");
-            Toggle {
-                checked <=> Store.privacy-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Diğer kulaklıklar");
-        IRow {
-            label: @tr("Kulaklıkları göster");
-            note: @tr("Galaxy Buds dışındakiler, piliyle");
-            Toggle {
-                checked <=> Store.headsets-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Ekran görüntüleri");
-        IRow {
-            label: @tr("Pilde göster");
-            note: @tr("ShareX ve Ekran Alıntısı Aracı");
-            Toggle {
-                checked <=> Store.capture-moment;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Rafa ekle");
-            note: @tr("Sonra sürükleyip atmak için");
-            Toggle {
-                checked <=> Store.capture-to-shelf;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Dosya kopyalama");
-        IRow {
-            label: @tr("İlerlemeyi göster");
-            note: @tr("Explorer'ın penceresi küçültülse de");
-            Toggle {
-                checked <=> Store.transfer-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Canlı etkinlikler");
-        IRow {
-            label: @tr("Canlı etkinlikler");
-            note: @tr("Betikler ve Claude Code pilde");
-            Toggle {
-                checked <=> Store.live-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Claude izinleri");
-            note: @tr("Kartta İzin ver / Reddet");
-            Toggle {
-                checked <=> Store.claude-ask;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Bekleme");
-            note: @tr("Sonra Claude sorar");
-            MiniSlider {
-                value <=> Store.claude-ask-wait;
-                minimum: 10;
-                maximum: 300;
-                step: 5;
-                text: Fmt.seconds(Store.claude-ask-wait);
-                moved => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Uygulama bildirimleri");
-        IRow {
-            label: @tr("Uygulama bildirimleri");
-            note: Store.api-address;
-            Toggle {
-                checked <=> Store.api-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-        Text {
-            text: @tr("Açıkken, izin verdiğin uygulamalar pilde bildirim gösterebilir. Hangi uygulamalara izin verdiğin ve gösterdikleri senin sorumluluğunda; Syro yalnızca gösterir.");
-            font-size: 13px;
-            color: Theme.text2;
-            wrap: word-wrap;
-        }
-        Rectangle { height: 8px; }
-    }
-    ISection {
-        title: "Now Brief";
-        IRow {
-            label: @tr("Sabah aç");
-            note: @tr("Günün ilk kilit açılışında");
-            Toggle {
-                checked <=> Store.brief-morning;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Adın");
-            note: @tr("Selamlamada");
-            // The city box's look, without its icon.
-            Rectangle {
-                width: 140px;
-                height: 30px;
-                border-radius: 8px;
-                background: Theme.field;
-                border-width: 1px;
-                border-color: name.has-focus ? Theme.acc : name-hover.has-hover ? Theme.text3 : Theme.field-edge;
-                name-hover := TouchArea {
-                    mouse-cursor: text;
-                    clicked => { name.focus(); }
-                }
-                if name.text == "": Text {
-                    x: 10px;
-                    width: parent.width - 20px;
-                    height: parent.height;
-                    text: Store.windows-name != "" ? Store.windows-name : @tr("Ad");
-                    font-size: 13.5px;
-                    color: Theme.text3;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-                name := TextInput {
-                    x: 10px;
-                    width: parent.width - 20px;
-                    height: parent.height;
-                    font-size: 13.5px;
-                    color: Theme.strong;
-                    vertical-alignment: center;
-                    single-line: true;
-                    text <=> Store.brief-name;
-                    edited => { Ui.changed(); }
-                }
-            }
-        }
-        IRow {
-            label: @tr("Sen yokken");
-            note: @tr("Kilidi açınca, kilitliyken olanlar");
-            Toggle {
-                checked <=> Store.away-summary;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
-    ISection {
-        title: @tr("Saat ve hava");
-        IRow {
-            label: @tr("Boşta göster");
-            note: @tr("Etkinlik yokken çubuk tek başına görünür");
+            label: @tr("Show when idle");
+            note: @tr("Weather and city show in corner when idle");
             Toggle {
                 checked <=> Store.idle-clock;
+                toggled => { Ui.changed(); }
+            }
+        }
+        IRow {
+            label: @tr("12-hour clock");
+            note: @tr("7:42 PM instead of 19:42");
+            Toggle {
+                checked <=> Store.clock-12h;
                 toggled => { Ui.changed(); }
             }
         }
         // These two act on a place's weather: dimmed until there is one.
         IRow {
             opacity: Store.place-name != "" ? 1 : 0.4;
-            label: @tr("Hava çubuğu");
-            note: @tr("Pilin ve kulaklık pilinin yanında, hep görünür");
+            label: @tr("Weather bar");
+            note: @tr("Always visible beside pill and earbuds");
             Toggle {
                 checked <=> Store.weather-bar;
                 toggled => { Ui.changed(); }
@@ -1777,16 +1453,16 @@ export component SystemInspector inherits VerticalLayout {
         }
         IRow {
             opacity: Store.place-name != "" ? 1 : 0.4;
-            label: @tr("Hava efektleri");
-            note: @tr("Kar, yağmur, güneş, yıldız");
+            label: @tr("Weather effects");
+            note: @tr("Snow, rain, sun, stars");
             Toggle {
                 checked <=> Store.weather-effects;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Konumumu kullan");
-            note: Store.city.name != "" ? @tr("Seçili şehir öncelikli") : Store.weather-locate ? Store.located : @tr("Kapalı");
+            label: @tr("Use my location");
+            note: Store.city.name != "" ? @tr("Selected city prioritized") : Store.weather-locate ? Store.located : @tr("Off");
             Toggle {
                 checked <=> Store.weather-locate;
                 toggled => { Ui.changed(); }
@@ -1794,16 +1470,16 @@ export component SystemInspector inherits VerticalLayout {
         }
         CityPicker { }
         IRow {
-            label: @tr("Yağmur uyarısı");
-            note: Store.place-name != "" ? @tr("Başlamadan önce bir an") : @tr("Bir şehir seç");
+            label: @tr("Rain alert");
+            note: Store.place-name != "" ? @tr("Brief moment before rain begins") : @tr("Select a city");
             Toggle {
                 checked <=> Store.rain-moment;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Hava uyarıları");
-            note: Store.place-name != "" ? @tr("Fırtına, rüzgâr, sıcak, don, hava kalitesi") : @tr("Bir şehir seç");
+            label: @tr("Weather alerts");
+            note: Store.place-name != "" ? @tr("Storm, wind, heat, freeze, air quality") : @tr("Select a city");
             Toggle {
                 checked <=> Store.weather-alerts;
                 toggled => { Ui.changed(); }
@@ -1812,85 +1488,66 @@ export component SystemInspector inherits VerticalLayout {
     }
 }
 
-// ================================================================== 9 Oyunlar
-
-export component GamesBody inherits VerticalLayout {
+/// The System Events page: what Swift Tab shows in the pill when something happens.
+export component EventsInspector inherits VerticalLayout {
     alignment: start;
-    H4 {
-        title: @tr("Pilde");
-        count: @tr("2 an · tıkla: aç / kapat");
-    }
-    LRow {
-        title: @tr("İndirmeler");
-        sub: Store.games-downloads ? @tr("ilerleme, hız") : @tr("kapalı");
-        clickable: true;
-        lead: 1;
-        glyph: "\u{E896}";
-        clicked => {
-            Store.games-downloads = !Store.games-downloads;
-            Ui.changed();
+    ISection {
+        title: @tr("Screenshots");
+        first: true;
+        IRow {
+            label: @tr("Show screenshot in pill");
+            note: @tr("ShareX & Snipping Tool");
+            Toggle {
+                checked <=> Store.capture-moment;
+                toggled => { Ui.changed(); }
+            }
         }
-        Pill {
-            kind: 10;
-            opacity: Store.games-downloads ? 1 : 0.4;
-        }
-    }
-    LRow {
-        title: @tr("Oyun süresi");
-        sub: Store.games-playtime ? @tr("oynarken ve sonra") : @tr("kapalı");
-        clickable: true;
-        lead: 1;
-        glyph: "\u{E823}";
-        clicked => {
-            Store.games-playtime = !Store.games-playtime;
-            Ui.changed();
-        }
-        Pill {
-            kind: 11;
-            opacity: Store.games-playtime ? 1 : 0.4;
+        IRow {
+            label: @tr("Add screenshot to shelf");
+            note: @tr("Ready to drag and drop later");
+            Toggle {
+                checked <=> Store.capture-to-shelf;
+                toggled => { Ui.changed(); }
+            }
         }
     }
-    H4 {
-        title: @tr("Kütüphaneler");
-        count: @tr("bu bilgisayarda");
-    }
-    LRow {
-        title: "Steam";
-        sub: !Store.games-steam ? @tr("kapalı") : Store.steam-library != "" ? Store.steam-library : @tr("bulunamadı");
-        clickable: true;
-        lead: 3;
-        letter: "S";
-        badge: #1B2838;
-        badge-text: #66C0F4;
-        clicked => {
-            Store.games-steam = !Store.games-steam;
-            Ui.changed();
+    ISection {
+        title: @tr("Files");
+        IRow {
+            label: @tr("File copy progress");
+            note: @tr("Show in pill even when Explorer is minimized");
+            Toggle {
+                checked <=> Store.transfer-on;
+                toggled => { Ui.changed(); }
+            }
+        }
+        IRow {
+            label: @tr("Download progress");
+            note: @tr("Show active downloads in pill and click to open");
+            Toggle {
+                checked <=> Store.downloads-on;
+                toggled => { Ui.changed(); }
+            }
         }
     }
-    LRow {
-        title: "Epic Games";
-        sub: !Store.games-epic ? @tr("kapalı") : Store.epic-library != "" ? Store.epic-library : @tr("bulunamadı");
-        clickable: true;
-        lead: 3;
-        letter: "E";
-        badge: #2A2A2A;
-        badge-text: white;
-        clicked => {
-            Store.games-epic = !Store.games-epic;
-            Ui.changed();
-        }
-    }
-    Tail { }
 }
 
+// ================================================================== 9 Oyunlar
+
+/// Download progress is the page header's switch (settings.slint); the body is empty.
+export component GamesBody inherits VerticalLayout {
+    alignment: start;
+}
+
+/// The Games page: the stores Swift Tab reads on this PC, and what the pill shows of a game.
 export component GamesInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Mağazalar");
+        title: @tr("Stores");
         first: true;
         IRow {
             label: "Steam";
-            note: @tr("Kayıt defteri ve kütüphane dosyaları");
+            note: !Store.games-steam ? @tr("off") : Store.steam-library != "" ? Store.steam-library : @tr("not found");
             Toggle {
                 checked <=> Store.games-steam;
                 toggled => { Ui.changed(); }
@@ -1898,7 +1555,7 @@ export component GamesInspector inherits VerticalLayout {
         }
         IRow {
             label: "Epic Games";
-            note: @tr("Yeni Epic launcher'ın klasörü");
+            note: !Store.games-epic ? @tr("off") : Store.epic-library != "" ? Store.epic-library : @tr("not found");
             Toggle {
                 checked <=> Store.games-epic;
                 toggled => { Ui.changed(); }
@@ -1906,48 +1563,29 @@ export component GamesInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Pilde");
+        title: @tr("In the pill");
         IRow {
-            label: @tr("İndirmeler");
-            note: @tr("İlerleme, hız ve duraklatma");
-            Toggle {
-                checked <=> Store.games-downloads;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Oyun süresi");
-            note: @tr("Tam ekran değilken pilde");
+            label: @tr("Playtime");
+            note: @tr("During and after gameplay");
             Toggle {
                 checked <=> Store.games-playtime;
                 toggled => { Ui.changed(); }
             }
         }
     }
-    ISection {
-        title: @tr("Tam ekran");
-        IRow {
-            label: @tr("Oyun içi ada");
-            note: @tr("Acil anlar üstte, tıklamayı geçirir");
-            Toggle {
-                checked <=> Store.island-on;
-                toggled => { Ui.changed(); }
-            }
-        }
-    }
 }
 
-// ================================================================== 10 Dijital Denge
+// ================================================================== 10 Digital Wellbeing
 
 export component WellbeingBody inherits VerticalLayout {
     alignment: start;
     H4 {
-        title: @tr("Bugün");
+        title: @tr("Today");
         count: Store.usage-total;
     }
     if Store.usage-apps.length == 0: LRow {
-        title: @tr("Henüz ekran süresi yok");
-        sub: Store.wellbeing-on ? @tr("uygulamalar öndeyken sayılır") : @tr("kapalı");
+        title: @tr("No screen time recorded yet");
+        sub: Store.wellbeing-on ? @tr("tracked while apps are in foreground") : @tr("off");
         lead: 1;
         glyph: "\u{E95E}";
     }
@@ -1978,7 +1616,6 @@ export component WellbeingBody inherits VerticalLayout {
                         horizontal-stretch: 0;
                     }
                 }
-                // Its share of the longest app's time, in Dijital Denge's green.
                 Rectangle {
                     height: 3px;
                     border-radius: 1.5px;
@@ -1994,7 +1631,7 @@ export component WellbeingBody inherits VerticalLayout {
             VerticalLayout {
                 alignment: center;
                 Select {
-                    options: [@tr("Sınır yok"), @tr("30 dk"), @tr("1 sa"), @tr("2 sa"), @tr("3 sa"), @tr("4 sa")];
+                    options: [@tr("No limit"), @tr("30 min"), @tr("1 hr"), @tr("2 hrs"), @tr("3 hrs"), @tr("4 hrs")];
                     selected: a.limit;
                     box-width: 112px;
                     picked(i) => { Store.limit-set(a.exe, i); }
@@ -2008,11 +1645,11 @@ export component WellbeingBody inherits VerticalLayout {
 export component WellbeingInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Dijital Denge");
+        title: @tr("Digital Wellbeing");
         first: true;
         IRow {
-            label: @tr("Ekran süresini say");
-            note: @tr("Bu bilgisayarda kalır, bir hafta");
+            label: @tr("Track screen time");
+            note: @tr("Stored locally on this PC, 7 days");
             Toggle {
                 checked <=> Store.wellbeing-on;
                 toggled => { Ui.changed(); }
@@ -2020,8 +1657,8 @@ export component WellbeingInspector inherits VerticalLayout {
         }
         IRow {
             opacity: Store.wellbeing-on ? 1 : 0.4;
-            label: @tr("Now Brief'te göster");
-            note: @tr("Dünün ya da bugünün toplamı");
+            label: @tr("Show in Now Brief");
+            note: @tr("Yesterday or today total");
             Toggle {
                 checked <=> Store.wellbeing-in-brief;
                 toggled => { Ui.changed(); }
@@ -2029,11 +1666,11 @@ export component WellbeingInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Sınırlar");
+        title: @tr("Limits");
         IRow {
             opacity: Store.wellbeing-on ? 1 : 0.4;
-            label: @tr("Sınır uyarıları");
-            note: @tr("Sınırı geçince pilde bir an");
+            label: @tr("Limit alerts");
+            note: @tr("Moment in pill when limit exceeded");
             Toggle {
                 checked <=> Store.wellbeing-limit-moments;
                 toggled => { Ui.changed(); }
@@ -2041,10 +1678,10 @@ export component WellbeingInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Müzik");
+        title: @tr("Music");
         IRow {
-            label: @tr("Haftanın müziği");
-            note: @tr("Çalanlar bu bilgisayarda sayılır");
+            label: @tr("Music of the week");
+            note: @tr("Tracks played counted locally");
             Toggle {
                 checked <=> Store.music-week;
                 toggled => { Ui.changed(); }
@@ -2053,117 +1690,29 @@ export component WellbeingInspector inherits VerticalLayout {
     }
 }
 
-// ================================================================== 11 Pano
+// ================================================================== 11 Clipboard
 
+/// The on/off switch is the page header's; the types are in the inspector's "What to keep".
 export component ClipboardBody inherits VerticalLayout {
     alignment: start;
-    H4 {
-        title: @tr("Pano geçmişi");
-        count: Store.clipboard-stash ? @tr("açık · tıkla: kapat") : @tr("kapalı · tıkla: aç");
-    }
-    LRow {
-        title: @tr("Pano geçmişi");
-        sub: Store.clipboard-stash ? @tr("kopyaladıkların burada") : @tr("kapalı");
-        clickable: true;
-        selected: Store.clipboard-stash;
-        lead: 1;
-        glyph: "\u{E77F}";
-        clicked => {
-            Store.clipboard-stash = !Store.clipboard-stash;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.clipboard-stash ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.clipboard-stash ? Tags.green : Tags.red;
-        }
-    }
-    H4 {
-        title: @tr("Neleri tutar");
-        count: @tr("tıkla: aç / kapat");
-    }
-    LRow {
-        title: @tr("Metin");
-        sub: @tr("düz yazı");
-        clickable: true;
-        selected: Store.clipboard-text;
-        lead: 1;
-        glyph: "\u{E8C8}";
-        clicked => {
-            Store.clipboard-text = !Store.clipboard-text;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.clipboard-text ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.clipboard-text ? Tags.green : Tags.red;
-        }
-    }
-    LRow {
-        title: @tr("Bağlantılar");
-        sub: @tr("web adresleri");
-        clickable: true;
-        selected: Store.clipboard-links;
-        lead: 1;
-        glyph: "\u{E71B}";
-        clicked => {
-            Store.clipboard-links = !Store.clipboard-links;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.clipboard-links ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.clipboard-links ? Tags.green : Tags.red;
-        }
-    }
-    LRow {
-        title: @tr("Görseller");
-        sub: @tr("ekran görüntüleri ve kopyalanan resimler");
-        clickable: true;
-        selected: Store.clipboard-images;
-        lead: 1;
-        glyph: "\u{E8B9}";
-        clicked => {
-            Store.clipboard-images = !Store.clipboard-images;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.clipboard-images ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.clipboard-images ? Tags.green : Tags.red;
-        }
-    }
-    LRow {
-        title: @tr("Biçimlendirme");
-        sub: @tr("kalın, bağlantı gibi metin biçimi");
-        clickable: true;
-        selected: Store.clipboard-rich;
-        lead: 1;
-        glyph: "\u{E8D2}";
-        clicked => {
-            Store.clipboard-rich = !Store.clipboard-rich;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.clipboard-rich ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.clipboard-rich ? Tags.green : Tags.red;
-        }
-    }
-    Tail { }
 }
 
 export component ClipboardInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Pano");
+        title: @tr("Behavior");
         first: true;
         IRow {
-            label: @tr("Pano geçmişi");
-            note: @tr("Kopyaladığın son 20 şeyi tutar; kapatınca kaydetmeyi bırakır");
+            label: @tr("Always show");
+            note: @tr("Even when nothing is copied");
             Toggle {
-                checked <=> Store.clipboard-stash;
+                checked <=> Store.clipboard-pinned;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Kopyalayınca pilde göster");
-            note: @tr("Kopyaladığında pil kısa süre öne çıkar");
+            label: @tr("Show in pill on copy");
+            note: @tr("Pill pops up briefly when you copy");
             Toggle {
                 checked <=> Store.clipboard-popup;
                 toggled => { Ui.changed(); }
@@ -2171,34 +1720,34 @@ export component ClipboardInspector inherits VerticalLayout {
         }
     }
     ISection {
-        title: @tr("Neleri tutsun");
+        title: @tr("What to keep");
         IRow {
-            label: @tr("Metin");
-            note: @tr("Kopyaladığın yazılar");
+            label: @tr("Text");
+            note: @tr("Copied text clips");
             Toggle {
                 checked <=> Store.clipboard-text;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Bağlantılar");
-            note: @tr("Web adresleri");
+            label: @tr("Links");
+            note: @tr("Web links and addresses");
             Toggle {
                 checked <=> Store.clipboard-links;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Görseller");
-            note: @tr("Resimler ve ekran görüntüleri");
+            label: @tr("Images");
+            note: @tr("Pictures and screenshots");
             Toggle {
                 checked <=> Store.clipboard-images;
                 toggled => { Ui.changed(); }
             }
         }
         IRow {
-            label: @tr("Biçimlendirme");
-            note: @tr("Kapalıyken yalnızca yazı kalır");
+            label: @tr("Rich Formatting");
+            note: @tr("Only plain text retained when off");
             Toggle {
                 checked <=> Store.clipboard-rich;
                 toggled => { Ui.changed(); }
@@ -2207,63 +1756,44 @@ export component ClipboardInspector inherits VerticalLayout {
     }
 }
 
-// ================================================================== 12 Raf
+// ================================================================== 12 Shelf
 
 export component ShelfBody inherits VerticalLayout {
     alignment: start;
+    spacing: 6px;
     H4 {
-        title: @tr("Raf");
-        count: Store.shelf-pinned ? @tr("sabit · tıkla: çöz") : @tr("sabit değil · tıkla: sabitle");
+        title: @tr("How to Use");
+        count: @tr("3 tips");
     }
     LRow {
-        title: @tr("Rafı sabitle");
-        sub: Store.shelf-pinned ? @tr("boşken bile açılır") : @tr("dosya varken görünür");
-        clickable: true;
-        selected: Store.shelf-pinned;
-        lead: 1;
-        glyph: "\u{E718}";
-        clicked => {
-            Store.shelf-pinned = !Store.shelf-pinned;
-            Ui.changed();
-        }
-        Tag {
-            text: Store.shelf-pinned ? @tr("Açık") : @tr("Kapalı");
-            tint: Store.shelf-pinned ? Tags.green : Tags.red;
-        }
-    }
-    H4 {
-        title: @tr("Nasıl kullanılır");
-        count: @tr("3 ipucu");
-    }
-    LRow {
-        title: @tr("Dosya bırak");
-        sub: @tr("pile sürükle: rafta durur");
+        title: @tr("Drop files");
+        sub: @tr("drag to pill: stored on shelf");
         lead: 1;
         glyph: "\u{E896}";
     }
     LRow {
-        title: @tr("Kaydırarak aç");
-        sub: @tr("fare tekerleğiyle pilden pile geç");
+        title: @tr("Scroll to open");
+        sub: @tr("scroll wheel switches between pill cards");
         lead: 1;
         glyph: "\u{E72A}";
     }
     LRow {
-        title: @tr("Dışarı sürükle");
-        sub: @tr("dosyayı raftan alıp bırak");
+        title: @tr("Drag out");
+        sub: @tr("pick files from shelf and drop anywhere");
         lead: 1;
         glyph: "\u{E8A7}";
     }
-    Tail { }
 }
 
+/// "Enable Shelf" is the page header's switch (settings.slint).
 export component ShelfInspector inherits VerticalLayout {
     alignment: start;
     ISection {
-        title: @tr("Raf");
+        title: @tr("Pill");
         first: true;
         IRow {
-            label: @tr("Rafı sabitle");
-            note: @tr("Raf boşken bile kaydırınca açılır");
+            label: @tr("Always show");
+            note: @tr("Even when the shelf is empty");
             Toggle {
                 checked <=> Store.shelf-pinned;
                 toggled => { Ui.changed(); }

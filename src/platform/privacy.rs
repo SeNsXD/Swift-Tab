@@ -1,15 +1,23 @@
-﻿//! Which apps are using the microphone or the camera now. Windows records each use under
+//! Which apps are using the microphone or the camera now. Windows records each use under
 //! CapabilityAccessManager\ConsentStore: an app is using a device while its LastUsedTimeStart
 //! is set and its LastUsedTimeStop is 0. A thread waits on that key (no polling) and posts
 //! the new list whenever it changes.
 
 use std::sync::{Arc, Mutex};
 
-use windows::core::{w, PCWSTR};
+use windows::core::{w, Interface, PCWSTR};
 use windows::Win32::Foundation::ERROR_SUCCESS;
+use windows::Win32::Media::Audio::{
+    eCapture, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator,
+    MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::System::Registry::{
     RegCloseKey, RegEnumKeyExW, RegGetValueW, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ,
     REG_NOTIFY_CHANGE_LAST_SET, REG_NOTIFY_CHANGE_NAME, RRF_RT_REG_QWORD,
+};
+use windows::Win32::System::Threading::{
+    CreateEventW, OpenProcess, QueryFullProcessImageNameW, WaitForSingleObject, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
 use crate::activities::media::app_name;
@@ -37,10 +45,10 @@ pub type PrivacyMailbox = Arc<Mutex<Vec<InUse>>>;
 /// Starts the thread that watches the consent store; the first list arrives at once.
 pub fn watch(mailbox: PrivacyMailbox) {
     std::thread::spawn(move || unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let mut key = HKEY::default();
-        if RegOpenKeyExW(HKEY_CURRENT_USER, STORE, None, KEY_NOTIFY | KEY_READ, &mut key) != ERROR_SUCCESS {
-            return;
-        }
+        let has_key = RegOpenKeyExW(HKEY_CURRENT_USER, STORE, None, KEY_NOTIFY | KEY_READ, &mut key) == ERROR_SUCCESS;
+        let event = CreateEventW(None, false, false, None).ok();
         let mut last = None;
         loop {
             let now = in_use();
@@ -51,13 +59,76 @@ pub fn watch(mailbox: PrivacyMailbox) {
                 post_privacy();
                 last = Some(now);
             }
-            // Blocks until something under the store changes.
-            if RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_LAST_SET | REG_NOTIFY_CHANGE_NAME, None, false) != ERROR_SUCCESS {
-                break;
+            if has_key {
+                if let Some(h) = event {
+                    let _ = RegNotifyChangeKeyValue(key, true, REG_NOTIFY_CHANGE_LAST_SET | REG_NOTIFY_CHANGE_NAME, Some(h), true);
+                    let _ = WaitForSingleObject(h, 500);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(500));
             }
         }
-        let _ = RegCloseKey(key);
     });
+}
+
+fn app_name_from_pid(pid: u32) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let res = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, windows::core::PWSTR(buf.as_mut_ptr()), &mut len);
+        let _ = CloseHandle(h);
+        if res.is_ok() {
+            let full_path = String::from_utf16_lossy(&buf[..len as usize]);
+            let name = crate::activities::media::app_name(&full_path);
+            let mut chars = name.chars();
+            Some(chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or(name))
+        } else {
+            None
+        }
+    }
+}
+
+/// Active apps capturing audio through WASAPI in real time.
+fn active_mic_apps() -> Vec<String> {
+    let mut apps = Vec::new();
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(enumerator): windows::core::Result<IMMDeviceEnumerator> = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return apps;
+        };
+        let Ok(endpoints) = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else {
+            return apps;
+        };
+        let count = endpoints.GetCount().unwrap_or(0);
+        for i in 0..count {
+            let Ok(device) = endpoints.Item(i) else { continue };
+            let Ok(manager): windows::core::Result<IAudioSessionManager2> = device.Activate(CLSCTX_ALL, None) else { continue };
+            let Ok(session_enum) = manager.GetSessionEnumerator() else { continue };
+            let session_count = session_enum.GetCount().unwrap_or(0);
+            for s in 0..session_count {
+                let Ok(session) = session_enum.GetSession(s) else { continue };
+                let Ok(control): windows::core::Result<IAudioSessionControl2> = session.cast() else { continue };
+                let Ok(state) = control.GetState() else { continue };
+                if state == AudioSessionStateActive {
+                    let pid = control.GetProcessId().unwrap_or(0);
+                    if pid != 0 {
+                        if let Some(name) = app_name_from_pid(pid) {
+                            if !name.is_empty() && !name.eq_ignore_ascii_case("svchost") && !name.eq_ignore_ascii_case("swifttab") {
+                                if !apps.contains(&name) {
+                                    apps.push(name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    apps
 }
 
 /// The apps using the microphone or the camera now, by name.
@@ -72,6 +143,11 @@ pub fn in_use() -> Vec<InUse> {
                     found.push((consent_app_name(&name), device));
                 }
             }
+        }
+    }
+    for mic_app in active_mic_apps() {
+        if !found.iter().any(|(app, dev)| app.eq_ignore_ascii_case(&mic_app) && *dev == Device::Mic) {
+            found.push((mic_app, Device::Mic));
         }
     }
     merge(&found)
@@ -113,10 +189,10 @@ fn boot_filetime() -> u64 {
     now.saturating_sub(unsafe { windows::Win32::System::SystemInformation::GetTickCount64() } * 10_000)
 }
 
-/// An entry is in use while it has started and not stopped. A start from before Windows started
+/// An entry is in use while it has started and not stopped (or its start is newer than stop). A start from before Windows started
 /// is a use that never recorded its end (the app crashed or was updated): not in use.
 pub fn consent_in_use(start: u64, stop: u64, boot: u64) -> bool {
-    start != 0 && stop == 0 && start >= boot
+    start != 0 && (stop == 0 || start > stop) && start >= boot
 }
 
 /// The app's name from its consent key: an exe path with '#' for '\' ("C:#…#brave.exe"), or a
@@ -152,6 +228,7 @@ mod tests {
     fn consent_entry_in_use() {
         let boot = 134_188_000_000_000_000;
         assert!(consent_in_use(134_188_500_000_000_000, 0, boot));
+        assert!(consent_in_use(134_188_500_040_000_000, 134_188_500_000_000_000, boot), "restarted later");
         assert!(!consent_in_use(134_188_500_000_000_000, 134_188_500_040_000_000, boot), "stopped");
         assert!(!consent_in_use(0, 0, boot), "never used");
         // An app's microphone, started months before and never stopped.
@@ -170,5 +247,11 @@ mod tests {
         assert_eq!(consent_app_name("C:#Program Files (x86)#Steam#steam.exe"), "Steam");
         assert_eq!(consent_app_name("5319275A.WhatsAppDesktop_cv1g1gvanyjgm"), "WhatsApp");
         assert_eq!(consent_app_name("Microsoft.WindowsCamera_8wekyb3d8bbwe"), "WindowsCamera");
+    }
+
+    #[test]
+    fn in_use_query_works() {
+        let rows = in_use();
+        println!("Currently in use: {rows:?}");
     }
 }

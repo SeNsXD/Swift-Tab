@@ -72,6 +72,11 @@ fn key(p: &Path) -> String {
     p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
 }
 
+fn pinned_shelf_path() -> PathBuf {
+    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    base.join("SwiftTab").join("pinned_shelf.json")
+}
+
 impl Shelf {
     /// Adds the paths not already on the shelf; returns how many were added.
     pub fn add(&mut self, paths: &[PathBuf], is_dir: impl Fn(&Path) -> bool) -> usize {
@@ -99,12 +104,20 @@ impl Shelf {
         if i < self.items.len() {
             let gone = self.items.remove(i);
             self.selected.retain(|p| key(p) != key(&gone.path));
+            self.save_pinned();
         }
     }
 
     pub fn clear(&mut self) {
         self.items.clear();
         self.selected.clear();
+        self.save_pinned();
+    }
+
+    pub fn clear_unpinned(&mut self) {
+        let selected = &self.selected;
+        self.items.retain(|i| selected.iter().any(|p| key(p) == key(&i.path)));
+        self.save_pinned();
     }
 
     /// A click on tile `i`: selected, or let go.
@@ -116,6 +129,7 @@ impl Shelf {
         } else {
             self.selected.push(item.path.clone());
         }
+        self.save_pinned();
     }
 
     /// Only `paths` selected (those on the shelf): what a tool just made.
@@ -130,6 +144,41 @@ impl Shelf {
 
     pub fn has_selection(&self) -> bool {
         !self.selected.is_empty()
+    }
+
+    pub fn selected_paths(&self) -> &[PathBuf] {
+        &self.selected
+    }
+
+    pub fn set_selected_paths(&mut self, paths: Vec<PathBuf>) {
+        self.selected = paths;
+    }
+
+    pub fn save_pinned(&self) {
+        let path = pinned_shelf_path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&self.selected) {
+            let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+            if std::fs::write(&tmp, json.as_bytes()).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
+    }
+
+    pub fn load_pinned(&mut self, is_dir: impl Fn(&Path) -> bool) {
+        let path = pinned_shelf_path();
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let text = text.trim_start_matches('\u{feff}');
+        let Ok(paths) = serde_json::from_str::<Vec<PathBuf>>(text) else { return };
+        let existing: Vec<PathBuf> = paths.into_iter().filter(|p| p.exists()).collect();
+        if !existing.is_empty() {
+            for p in existing.iter().rev() {
+                self.add(std::slice::from_ref(p), &is_dir);
+            }
+            self.selected = existing;
+        }
     }
 
     /// What the footer acts on: the selected items, or all of them with none selected; newest first.
@@ -151,7 +200,11 @@ impl Shelf {
         let before = self.items.len();
         self.items.retain(|i| exists(&i.path));
         let items = &self.items;
+        let sel_before = self.selected.len();
         self.selected.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
+        if self.selected.len() != sel_before {
+            self.save_pinned();
+        }
         self.items.len() != before
     }
 }
@@ -204,20 +257,20 @@ pub fn ops(targets: &[&ShelfItem], has_selection: bool) -> Vec<ShelfOp> {
     out
 }
 
-/// Grid rows on the card: four tiles a row, one to three rows.
+/// Grid rows on the card: three square tiles a row, one to three rows.
 pub fn rows(n: usize) -> usize {
-    n.div_ceil(4).clamp(1, 3)
+    n.div_ceil(3).clamp(1, 3)
 }
 
-/// The card's height: the header, 75 DIP tiles 10 DIP apart, then the footer's chips (12 DIP
-/// above, 28 tall, 16 below).
+/// The card's height: the header (48 DIP), 98 DIP square tiles 8 DIP apart, then the footer band (44 DIP).
 pub fn card_height_dip(n: usize) -> f32 {
-    44.0 + 85.0 * rows(n) as f32 + FOOTER_GAP_DIP + FOOTER_CHIP_DIP + 16.0
+    48.0 + 106.0 * rows(n) as f32 + 8.0 + FOOTER_BAND_DIP
 }
 
-/// The footer's gap under the last tile and its chips' height.
-pub const FOOTER_GAP_DIP: f32 = 12.0;
+/// The footer's gap under the last tile, its chips' height, and the footer band's total height.
+pub const FOOTER_GAP_DIP: f32 = 8.0;
 pub const FOOTER_CHIP_DIP: f32 = 28.0;
+pub const FOOTER_BAND_DIP: f32 = 44.0;
 
 #[cfg(test)]
 mod tests {
@@ -286,6 +339,24 @@ mod tests {
     }
 
     #[test]
+    fn clear_unpinned_preserves_pinned_items() {
+        let mut s = Shelf::default();
+        s.add(&files(&[r"C:\pinned.txt", r"C:\recent.txt"]), no_dirs);
+        let idx = s.items().iter().position(|i| i.name == "pinned.txt").unwrap();
+        s.toggle(idx);
+        assert!(s.is_selected(idx));
+
+        s.clear_unpinned();
+        assert_eq!(s.items().len(), 1);
+        assert_eq!(s.items()[0].name, "pinned.txt");
+        assert!(s.is_selected(0));
+
+        s.clear_unpinned();
+        assert_eq!(s.items().len(), 1);
+        assert_eq!(s.items()[0].name, "pinned.txt");
+    }
+
+    #[test]
     fn names_for_roots_and_long_names() {
         let long = "a".repeat(200) + ".txt";
         let mut s = Shelf::default();
@@ -308,11 +379,10 @@ mod tests {
 
     #[test]
     fn rows_and_height() {
-        assert_eq!([rows(1), rows(4), rows(5), rows(12)], [1, 1, 2, 3]);
-        // The tiles, then the footer's chips (12 + 28 + 16).
-        assert_eq!(card_height_dip(1), 185.0);
-        assert_eq!(card_height_dip(5), 270.0);
-        assert_eq!(card_height_dip(12), 355.0);
+        assert_eq!([rows(1), rows(3), rows(4), rows(9)], [1, 1, 2, 3]);
+        assert_eq!(card_height_dip(1), 206.0);
+        assert_eq!(card_height_dip(4), 312.0);
+        assert_eq!(card_height_dip(9), 418.0);
     }
 
     #[test]

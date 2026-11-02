@@ -1,4 +1,4 @@
-// Now Bar Ayarları, laid out like Raycast's Theme Studio (design: .taste-skill/v9): an inset
+// Swift Tab settings in the XDNOT Labs look. Layout from Raycast's Theme Studio (design: .taste-skill/v9): an inset
 // list panel on the left, a preview panel in the middle (search bar, the page's lists and
 // tiles, the action bar), an inspector on the right. Every value lives in `Store`; the Rust
 // side fills it from settings.json and saves it on `changed()`.
@@ -11,22 +11,334 @@ import "fonts/Inter-Bold.ttf";
 import { Theme, Tags } from "theme.slint";
 import { Store, Hit } from "store.slint";
 import { Ui } from "ui-state.slint";
-import { Icon, Toggle, Keycap, IconButton, H4, LRow, SideItem } from "kit.slint";
+import { Icon, Toggle, Keycap, Tag, IconButton, H4, LRow, SideItem } from "kit.slint";
 import {
     AppearanceBody, AppearanceInspector, GeneralBody, GeneralInspector, MediaBody, MediaInspector, TimerBody, TimerInspector,
-    BudsBody, BudsInspector, MatchBody, MatchInspector, FullscreenBody, FullscreenInspector, AboutBody, AboutInspector,
-    SystemBody, SystemInspector, GamesBody, GamesInspector, WellbeingBody, WellbeingInspector, ClipboardBody, ClipboardInspector, ShelfBody, ShelfInspector
+    MatchBody, MatchInspector, FullscreenBody, FullscreenInspector, AboutBody, AboutInspector,
+    SystemBody, SystemInspector, EventsInspector, GamesBody, GamesInspector, WellbeingBody, WellbeingInspector, ClipboardBody, ClipboardInspector, ShelfBody, ShelfInspector,
+    Win11TaskbarMockup
 } from "pages.slint";
 
-/// The Now Bar mark: a pill with the accent dot.
+/// A Home card: what it is, its state on the right, the value and a line under it.
+component HomeCard inherits Rectangle {
+    in property <string> label;
+    in property <string> tag;
+    in property <color> tag-color: Theme.acc;
+    in property <string> value;
+    in property <string> sub;
+    horizontal-stretch: 1;
+    min-height: 86px;
+    border-radius: 8px;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: Theme.field-edge;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 6px;
+        HorizontalLayout {
+            Text {
+                text: root.label;
+                font-size: 12px;
+                color: Theme.text2;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: root.tag;
+                font-size: 12px;
+                font-weight: 600;
+                color: root.tag-color;
+                horizontal-alignment: right;
+            }
+        }
+        Text {
+            text: root.value;
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.strong;
+            overflow: elide;
+        }
+        Text {
+            text: root.sub;
+            font-size: 11.5px;
+            color: Theme.text3;
+            wrap: word-wrap;
+        }
+    }
+}
+
+/// The Swift Tab ribbon mark.
 component Mark inherits Rectangle {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     Image {
         source: @image-url("syro-mark.png");
-        width: 22px;
-        height: 22px;
+        width: 28px;
+        height: 28px;
         image-fit: contain;
+    }
+}
+
+/// The XDNOT Labs pixel tiles of the logo and banner: cyan along the left edge, pink and violet
+/// along the right edge, faint enough to stay behind the content.
+component PixelField inherits Rectangle {
+    for t in [
+        { c: 0, r: 0, a: 0.37, col: #34BFEF },
+        { c: 0, r: 4, a: 0.35, col: #3AB7EF },
+        { c: 0, r: 6, a: 0.28, col: #3AB7EF },
+        { c: 0, r: 7, a: 0.28, col: #1B8BA0 },
+        { c: 0, r: 8, a: 0.35, col: #2B9CC4 },
+        { c: 0, r: 9, a: 0.39, col: #34BFEF },
+        { c: 0, r: 10, a: 0.33, col: #2B9CC4 },
+        { c: 0, r: 12, a: 0.32, col: #1B8BA0 },
+        { c: 0, r: 14, a: 0.34, col: #2B9CC4 },
+        { c: 0, r: 15, a: 0.36, col: #2B9CC4 },
+        { c: 0, r: 16, a: 0.39, col: #3AB7EF },
+        { c: 0, r: 18, a: 0.4, col: #1B8BA0 },
+        { c: 0, r: 19, a: 0.34, col: #3AB7EF },
+        { c: 0, r: 20, a: 0.36, col: #28557B },
+        { c: 0, r: 23, a: 0.39, col: #34BFEF },
+        { c: 0, r: 24, a: 0.34, col: #28557B },
+        { c: 0, r: 25, a: 0.37, col: #3AB7EF },
+        { c: 0, r: 28, a: 0.35, col: #3AB7EF },
+        { c: 0, r: 30, a: 0.29, col: #1B8BA0 },
+        { c: 0, r: 31, a: 0.29, col: #28557B },
+        { c: 0, r: 32, a: 0.3, col: #28557B },
+        { c: 0, r: 33, a: 0.34, col: #3AB7EF },
+        { c: 0, r: 35, a: 0.36, col: #3AB7EF },
+        { c: 0, r: 36, a: 0.36, col: #34BFEF },
+        { c: 0, r: 37, a: 0.29, col: #28557B },
+        { c: 0, r: 40, a: 0.32, col: #34BFEF },
+        { c: 0, r: 41, a: 0.33, col: #1B8BA0 },
+        { c: 0, r: 43, a: 0.3, col: #3AB7EF },
+        { c: 0, r: 44, a: 0.29, col: #1B8BA0 },
+        { c: 0, r: 45, a: 0.29, col: #34BFEF },
+        { c: 0, r: 46, a: 0.33, col: #28557B },
+        { c: 0, r: 47, a: 0.28, col: #34BFEF },
+        { c: 0, r: 48, a: 0.31, col: #2B9CC4 },
+        { c: 1, r: 2, a: 0.29, col: #28557B },
+        { c: 1, r: 4, a: 0.23, col: #28557B },
+        { c: 1, r: 6, a: 0.32, col: #28557B },
+        { c: 1, r: 7, a: 0.32, col: #28557B },
+        { c: 1, r: 9, a: 0.33, col: #3AB7EF },
+        { c: 1, r: 11, a: 0.24, col: #1B8BA0 },
+        { c: 1, r: 12, a: 0.24, col: #2B9CC4 },
+        { c: 1, r: 14, a: 0.27, col: #3AB7EF },
+        { c: 1, r: 16, a: 0.27, col: #3AB7EF },
+        { c: 1, r: 17, a: 0.33, col: #3AB7EF },
+        { c: 1, r: 18, a: 0.28, col: #3AB7EF },
+        { c: 1, r: 19, a: 0.3, col: #2B9CC4 },
+        { c: 1, r: 20, a: 0.25, col: #2B9CC4 },
+        { c: 1, r: 21, a: 0.3, col: #2B9CC4 },
+        { c: 1, r: 23, a: 0.31, col: #34BFEF },
+        { c: 1, r: 24, a: 0.25, col: #1B8BA0 },
+        { c: 1, r: 25, a: 0.23, col: #34BFEF },
+        { c: 1, r: 26, a: 0.28, col: #28557B },
+        { c: 1, r: 28, a: 0.34, col: #34BFEF },
+        { c: 1, r: 31, a: 0.25, col: #2B9CC4 },
+        { c: 1, r: 32, a: 0.29, col: #28557B },
+        { c: 1, r: 34, a: 0.32, col: #34BFEF },
+        { c: 1, r: 35, a: 0.27, col: #34BFEF },
+        { c: 1, r: 36, a: 0.31, col: #3AB7EF },
+        { c: 1, r: 37, a: 0.27, col: #2B9CC4 },
+        { c: 1, r: 40, a: 0.28, col: #1B8BA0 },
+        { c: 1, r: 41, a: 0.25, col: #34BFEF },
+        { c: 1, r: 44, a: 0.24, col: #28557B },
+        { c: 1, r: 45, a: 0.34, col: #28557B },
+        { c: 1, r: 46, a: 0.33, col: #1B8BA0 },
+        { c: 1, r: 47, a: 0.3, col: #28557B },
+        { c: 1, r: 48, a: 0.27, col: #1B8BA0 },
+        { c: 1, r: 49, a: 0.34, col: #3AB7EF },
+        { c: 2, r: 3, a: 0.21, col: #3AB7EF },
+        { c: 2, r: 6, a: 0.26, col: #34BFEF },
+        { c: 2, r: 8, a: 0.29, col: #2B9CC4 },
+        { c: 2, r: 16, a: 0.28, col: #34BFEF },
+        { c: 2, r: 18, a: 0.2, col: #3AB7EF },
+        { c: 2, r: 19, a: 0.29, col: #1B8BA0 },
+        { c: 2, r: 23, a: 0.2, col: #2B9CC4 },
+        { c: 2, r: 27, a: 0.17, col: #2B9CC4 },
+        { c: 2, r: 29, a: 0.28, col: #3AB7EF },
+        { c: 2, r: 35, a: 0.25, col: #1B8BA0 },
+        { c: 2, r: 38, a: 0.17, col: #1B8BA0 },
+        { c: 2, r: 39, a: 0.24, col: #28557B },
+        { c: 2, r: 42, a: 0.23, col: #3AB7EF },
+        { c: 2, r: 49, a: 0.21, col: #28557B },
+        { c: 3, r: 0, a: 0.12, col: #34BFEF },
+        { c: 3, r: 1, a: 0.2, col: #28557B },
+        { c: 3, r: 7, a: 0.22, col: #34BFEF },
+        { c: 3, r: 8, a: 0.2, col: #2B9CC4 },
+        { c: 3, r: 17, a: 0.23, col: #28557B },
+        { c: 3, r: 20, a: 0.16, col: #28557B },
+        { c: 3, r: 43, a: 0.22, col: #28557B },
+        { c: 3, r: 48, a: 0.18, col: #1B8BA0 },
+        { c: 4, r: 4, a: 0.14, col: #3AB7EF },
+        { c: 4, r: 9, a: 0.14, col: #28557B },
+        { c: 4, r: 14, a: 0.1, col: #3AB7EF },
+        { c: 4, r: 18, a: 0.13, col: #28557B },
+        { c: 4, r: 25, a: 0.12, col: #34BFEF },
+        { c: 4, r: 37, a: 0.17, col: #34BFEF },
+        { c: 4, r: 41, a: 0.1, col: #34BFEF },
+        { c: 4, r: 44, a: 0.11, col: #28557B },
+        { c: 4, r: 47, a: 0.12, col: #3AB7EF },
+        { c: 5, r: 0, a: 0.1, col: #2B9CC4 },
+        { c: 5, r: 31, a: 0.1, col: #2B9CC4 },
+        { c: 5, r: 35, a: 0.1, col: #2B9CC4 }
+    ]: Rectangle {
+        x: 6px + t.c * 20px;
+        y: 8px + t.r * 20px;
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        background: t.col.with-alpha(t.a);
+    }
+    for t in [
+        { c: 0, r: 0, a: 0.29, col: #8B64F1 },
+        { c: 0, r: 3, a: 0.28, col: #DC6CC4 },
+        { c: 0, r: 5, a: 0.32, col: #A75186 },
+        { c: 0, r: 7, a: 0.3, col: #8B64F1 },
+        { c: 0, r: 9, a: 0.33, col: #DC6CC4 },
+        { c: 0, r: 10, a: 0.34, col: #A78BFA },
+        { c: 0, r: 12, a: 0.38, col: #A78BFA },
+        { c: 0, r: 13, a: 0.37, col: #934873 },
+        { c: 0, r: 14, a: 0.3, col: #DC6CC4 },
+        { c: 0, r: 15, a: 0.37, col: #A75186 },
+        { c: 0, r: 18, a: 0.34, col: #DC6CC4 },
+        { c: 0, r: 20, a: 0.3, col: #8B64F1 },
+        { c: 0, r: 22, a: 0.33, col: #A75186 },
+        { c: 0, r: 25, a: 0.39, col: #DC6CC4 },
+        { c: 0, r: 26, a: 0.29, col: #DC6CC4 },
+        { c: 0, r: 30, a: 0.3, col: #A75186 },
+        { c: 0, r: 31, a: 0.35, col: #934873 },
+        { c: 0, r: 34, a: 0.35, col: #A75186 },
+        { c: 0, r: 36, a: 0.38, col: #8B64F1 },
+        { c: 0, r: 38, a: 0.3, col: #8B64F1 },
+        { c: 0, r: 39, a: 0.39, col: #A75186 },
+        { c: 0, r: 40, a: 0.3, col: #A78BFA },
+        { c: 0, r: 42, a: 0.3, col: #934873 },
+        { c: 0, r: 43, a: 0.4, col: #A78BFA },
+        { c: 0, r: 44, a: 0.38, col: #DC6CC4 },
+        { c: 0, r: 47, a: 0.32, col: #DC6CC4 },
+        { c: 0, r: 48, a: 0.31, col: #934873 },
+        { c: 1, r: 4, a: 0.34, col: #A78BFA },
+        { c: 1, r: 9, a: 0.24, col: #8B64F1 },
+        { c: 1, r: 10, a: 0.3, col: #DC6CC4 },
+        { c: 1, r: 13, a: 0.34, col: #8B64F1 },
+        { c: 1, r: 20, a: 0.33, col: #8B64F1 },
+        { c: 1, r: 24, a: 0.34, col: #8B64F1 },
+        { c: 1, r: 29, a: 0.32, col: #934873 },
+        { c: 1, r: 30, a: 0.31, col: #A78BFA },
+        { c: 1, r: 31, a: 0.31, col: #934873 },
+        { c: 1, r: 32, a: 0.29, col: #A78BFA },
+        { c: 1, r: 34, a: 0.29, col: #A78BFA },
+        { c: 1, r: 37, a: 0.33, col: #8B64F1 },
+        { c: 1, r: 38, a: 0.24, col: #A78BFA },
+        { c: 1, r: 40, a: 0.31, col: #934873 },
+        { c: 1, r: 41, a: 0.34, col: #A75186 },
+        { c: 1, r: 43, a: 0.26, col: #934873 },
+        { c: 1, r: 47, a: 0.3, col: #A75186 },
+        { c: 2, r: 4, a: 0.25, col: #DC6CC4 },
+        { c: 2, r: 6, a: 0.25, col: #A78BFA },
+        { c: 2, r: 8, a: 0.21, col: #DC6CC4 },
+        { c: 2, r: 15, a: 0.27, col: #A78BFA },
+        { c: 2, r: 21, a: 0.17, col: #DC6CC4 },
+        { c: 2, r: 22, a: 0.23, col: #8B64F1 },
+        { c: 2, r: 25, a: 0.28, col: #8B64F1 },
+        { c: 2, r: 27, a: 0.23, col: #A78BFA },
+        { c: 2, r: 28, a: 0.25, col: #8B64F1 },
+        { c: 2, r: 30, a: 0.29, col: #8B64F1 },
+        { c: 2, r: 31, a: 0.2, col: #A78BFA },
+        { c: 2, r: 33, a: 0.18, col: #A78BFA },
+        { c: 2, r: 34, a: 0.18, col: #8B64F1 },
+        { c: 2, r: 36, a: 0.2, col: #8B64F1 },
+        { c: 2, r: 37, a: 0.18, col: #934873 },
+        { c: 2, r: 41, a: 0.21, col: #A75186 },
+        { c: 2, r: 43, a: 0.21, col: #DC6CC4 },
+        { c: 2, r: 44, a: 0.25, col: #8B64F1 },
+        { c: 2, r: 45, a: 0.26, col: #934873 },
+        { c: 3, r: 8, a: 0.15, col: #A78BFA },
+        { c: 3, r: 9, a: 0.21, col: #A75186 },
+        { c: 3, r: 11, a: 0.15, col: #A75186 },
+        { c: 3, r: 13, a: 0.21, col: #8B64F1 },
+        { c: 3, r: 22, a: 0.19, col: #8B64F1 },
+        { c: 3, r: 33, a: 0.22, col: #934873 },
+        { c: 3, r: 35, a: 0.23, col: #8B64F1 },
+        { c: 3, r: 38, a: 0.23, col: #A78BFA },
+        { c: 3, r: 40, a: 0.14, col: #8B64F1 },
+        { c: 3, r: 49, a: 0.17, col: #A75186 },
+        { c: 4, r: 12, a: 0.1, col: #DC6CC4 },
+        { c: 4, r: 39, a: 0.15, col: #DC6CC4 },
+        { c: 4, r: 44, a: 0.11, col: #934873 },
+        { c: 5, r: 9, a: 0.1, col: #A75186 },
+        { c: 5, r: 12, a: 0.1, col: #934873 },
+        { c: 5, r: 22, a: 0.1, col: #A75186 }
+    ]: Rectangle {
+        x: root.width - 20px - t.c * 20px;
+        y: 8px + t.r * 20px;
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        background: t.col.with-alpha(t.a);
+    }
+}
+
+/// The one switch of a page, at its top: what the page is, and whether it is on. The rest of
+/// the page dims and stops answering while it is off (the page wraps it in a `Rectangle`).
+component PageHero inherits Rectangle {
+    in property <string> title;
+    in property <string> sub;
+    in property <string> glyph;
+    in-out property <bool> checked;
+    callback toggled(bool);
+    height: 68px;
+    border-radius: 14px;
+    background: Theme.card;
+    border-width: 1px;
+    border-color: root.checked ? Theme.acc.with-alpha(0.4) : Theme.card-edge;
+    animate border-color { duration: 150ms; }
+    HorizontalLayout {
+        padding: 14px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 11px;
+                background: Theme.sel-row;
+                Icon {
+                    width: parent.width;
+                    height: parent.height;
+                    glyph: root.glyph;
+                    size: 18px;
+                    color: Theme.acc;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                font-size: 15px;
+                font-weight: 600;
+                color: Theme.strong;
+                overflow: elide;
+            }
+            Text {
+                text: root.sub;
+                font-size: 12px;
+                color: Theme.text3;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                checked <=> root.checked;
+                toggled(v) => { root.toggled(v); }
+            }
+        }
     }
 }
 
@@ -52,16 +364,6 @@ component SideLabel inherits HorizontalLayout {
     }
 }
 
-/// A capsule at the bottom of the preview panel.
-component Capsule inherits Rectangle {
-    in property <color> fill: Theme.act;
-    height: 36px;
-    border-radius: 18px;
-    border-width: 1px;
-    border-color: Theme.pv-edge;
-    background: fill;
-}
-
 /// One entry of the actions menu.
 component ActionItem inherits Rectangle {
     in property <string> text;
@@ -69,7 +371,7 @@ component ActionItem inherits Rectangle {
     in property <bool> danger;
     callback clicked;
     height: 34px;
-    border-radius: 8px;
+    border-radius: 4px;
     background: t.has-hover ? Theme.sel-row : transparent;
     HorizontalLayout {
         padding-left: 10px;
@@ -95,48 +397,235 @@ component ActionItem inherits Rectangle {
     }
 }
 
-/// An empty part of the chrome: pressing it moves the window (Windows does the dragging, so
-/// snapping works); a second press soon after maximises or restores.
-component DragArea inherits TouchArea {
-    pointer-event(e) => {
-        if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
-            Ui.drag-window();
+/// One link row inside the Help & Support card.
+component HelpLinkRow inherits Rectangle {
+    in property <image> icon-source;
+    in property <string> name;
+    in property <string> detail;
+    in property <string> url;
+
+    height: 28px;
+    border-radius: 6px;
+    background: touch.has-hover ? Theme.hov : transparent;
+    animate background { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+        cross-axis-alignment: center;
+
+        Image {
+            source: root.icon-source;
+            width: 15px;
+            height: 15px;
+            image-fit: contain;
+        }
+
+        Text {
+            text: root.name;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: Theme.strong;
+            vertical-alignment: center;
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        Text {
+            text: root.detail;
+            font-size: 10px;
+            color: Theme.text3;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "\u{E8A7}";
+            font-family: Theme.icons;
+            font-size: 10px;
+            color: touch.has-hover ? Theme.strong : Theme.text3;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Store.action(root.url);
         }
     }
 }
 
-/// A caption button at the top right: minimise, maximise/restore, close (red under the mouse).
+/// Help and Support card for community and support links in the sidebar below System Events.
+component HelpSupportCard inherits Rectangle {
+    border-radius: 8px;
+    background: Theme.field;
+    border-width: 1px;
+    border-color: Theme.field-edge;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            padding-left: 2px;
+            cross-axis-alignment: center;
+            Text {
+                text: "Help and Support";
+                font-size: 12.5px;
+                font-weight: 600;
+                color: Theme.strong;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 3px;
+
+            HelpLinkRow {
+                icon-source: @image-url("icon-github.svg");
+                name: "GitHub";
+                detail: "SeNsXD";
+                url: "https://github.com/SeNsXD";
+            }
+            HelpLinkRow {
+                icon-source: @image-url("icon-discord.svg");
+                name: "Discord";
+                detail: "Community";
+                url: "https://discord.gg/X9b6TSYdVk";
+            }
+            HelpLinkRow {
+                icon-source: @image-url("icon-x.svg");
+                name: "X";
+                detail: "@rixh4bh";
+                url: "https://x.com/rixh4bh";
+            }
+            HelpLinkRow {
+                icon-source: @image-url("icon-youtube.svg");
+                name: "YouTube";
+                detail: "@xdNOTLabs";
+                url: "https://www.youtube.com/@xdNOTLabs";
+            }
+        }
+    }
+}
+
+/// An empty part of the chrome: dragging it moves the window (Windows does the dragging, so
+/// snapping works); a double click maximises or restores. A plain click does nothing: starting
+/// the system's drag on the press left the window without the button-up, and the clicks after it
+/// went nowhere.
+component DragArea inherits TouchArea {
+    property <bool> started;
+    pointer-event(e) => {
+        if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+            self.started = false;
+        }
+    }
+    moved => {
+        if self.pressed && !self.started {
+            self.started = true;
+            Ui.drag-window();
+        }
+    }
+    double-clicked => { Ui.toggle-maximize(); }
+}
+
+/// A caption button at the top right: kind 0 = minimise, 1 = maximise/restore, 2 = close (red under the mouse).
 component CaptionButton inherits Rectangle {
-    in property <string> glyph;
-    in property <bool> close;
+    in property <int> kind: 0;
+    in property <bool> maximized: false;
+    in property <bool> close: false;
     callback clicked;
     width: 40px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: 6px;
     background: t.pressed ? (close ? #C42B1CCC : Theme.sel) : t.has-hover ? (close ? #C42B1C : Theme.hov) : transparent;
     animate background { duration: 83ms; }
-    Icon {
-        glyph: root.glyph;
-        size: 10px;
-        color: t.has-hover && root.close ? #FFFFFF : Theme.strong;
+    property <color> ink: t.has-hover && root.close ? #FFFFFF : Theme.strong;
+
+    // 0: Minimize line
+    if root.kind == 0: Rectangle {
+        x: (parent.width - 10px) / 2;
+        y: (parent.height - 1.2px) / 2;
+        width: 10px;
+        height: 1.2px;
+        background: root.ink;
     }
+
+    // 1: Maximize single square (when not maximized)
+    if root.kind == 1 && !root.maximized: Rectangle {
+        x: (parent.width - 10px) / 2;
+        y: (parent.height - 10px) / 2;
+        width: 10px;
+        height: 10px;
+        border-radius: 1.5px;
+        border-width: 1.2px;
+        border-color: root.ink;
+        background: transparent;
+    }
+
+    // 1: Restore double-square (when maximized)
+    if root.kind == 1 && root.maximized: Rectangle {
+        x: (parent.width - 10px) / 2;
+        y: (parent.height - 10px) / 2;
+        width: 10px;
+        height: 10px;
+        // Back window square (top-right)
+        Rectangle {
+            x: 2px;
+            y: 0px;
+            width: 8px;
+            height: 8px;
+            border-radius: 1.2px;
+            border-width: 1.2px;
+            border-color: root.ink;
+            background: transparent;
+        }
+        // Front window square (bottom-left)
+        Rectangle {
+            x: 0px;
+            y: 2px;
+            width: 8px;
+            height: 8px;
+            border-radius: 1.2px;
+            border-width: 1.2px;
+            border-color: root.ink;
+            background: t.pressed ? (root.close ? #C42B1CCC : Theme.sel) : t.has-hover ? (root.close ? #C42B1C : Theme.hov) : Theme.ground;
+        }
+    }
+
+    // 2: Close X crisp vector path
+    if root.kind == 2: Path {
+        x: (parent.width - 10px) / 2;
+        y: (parent.height - 10px) / 2;
+        width: 10px;
+        height: 10px;
+         viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        stroke: root.ink;
+        stroke-width: 1.3px;
+        commands: "M 1 1 L 9 9 M 9 1 L 1 9";
+    }
+
     t := TouchArea {
+        mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
 }
 
 /// Invisible handles along the edges and corners: pressing one sizes the window from it.
 component ResizeEdges inherits Rectangle {
-    property <length> e: 5px;
-    property <length> c: 12px;
+    property <length> e: 4px;
+    property <length> c: 10px;
     for h in [
-        { code: 12, x: c, y: 0px, w: root.width - 2 * c, ht: e, cursor: MouseCursor.ns-resize },
+        { code: 12, x: c, y: 0px, w: max(0px, root.width - c - 144px), ht: e, cursor: MouseCursor.ns-resize },
         { code: 15, x: c, y: root.height - e, w: root.width - 2 * c, ht: e, cursor: MouseCursor.ns-resize },
         { code: 10, x: 0px, y: c, w: e, ht: root.height - 2 * c, cursor: MouseCursor.ew-resize },
-        { code: 11, x: root.width - e, y: c, w: e, ht: root.height - 2 * c, cursor: MouseCursor.ew-resize },
+        { code: 11, x: root.width - e, y: 54px, w: e, ht: max(0px, root.height - 54px - c), cursor: MouseCursor.ew-resize },
         { code: 13, x: 0px, y: 0px, w: c, ht: c, cursor: MouseCursor.nwse-resize },
         { code: 17, x: root.width - c, y: root.height - c, w: c, ht: c, cursor: MouseCursor.nwse-resize },
-        { code: 14, x: root.width - c, y: 0px, w: c, ht: c, cursor: MouseCursor.nesw-resize },
         { code: 16, x: 0px, y: root.height - c, w: c, ht: c, cursor: MouseCursor.nesw-resize },
     ]: TouchArea {
         x: h.x;
@@ -153,16 +642,16 @@ component ResizeEdges inherits Rectangle {
 }
 
 export component SettingsWindow inherits Window {
-    title: @tr("Syro Ayarları");
+    title: "Swift Tab Settings";
     // Its own title bar: the caption buttons sit in the inspector's header (Raycast's layout).
     no-frame: !Ui.framed;
-    // The tray's white pill (assets/make_icon.py).
-    icon: @image-url("../assets/nowbar-256.png");
+    // The no-background Swift Tab ribbon logo.
+    icon: @image-url("syro-mark.png");
     preferred-width: 1240px;
     preferred-height: 760px;
     min-width: 1040px;
     min-height: 640px;
-    default-font-family: "Inter";
+    default-font-family: Theme.text-face;
     default-font-size: 14px;
     background: Theme.ground;
     changed width => { Ui.sized(); }
@@ -172,11 +661,10 @@ export component SettingsWindow inherits Window {
     property <bool> settings-search: Store.page != 5 && Store.page != 6;
     property <bool> searching: settings-search && Ui.query != "";
     property <[Hit]> hits: searching ? Store.search(Ui.query) : [];
-    property <string> primary: searching ? (hits.length > 0 ? @tr("Aç") : "")
-        : Store.page == 5 && Ui.query != "" && Store.team-results.length > 0 && !Store.team-results[0].followed ? @tr("Takip et")
-        : Store.page == 6 && Ui.query != "" ? @tr("Ekle") : "";
-    property <string> placeholder: Store.page == 5 ? @tr("Takım ara…") : Store.page == 6 ? @tr("Uygulama ekle, ör. vlc.exe") : @tr("Ayar ara…");
-    property <string> status: Ui.error != "" ? Ui.error : Ui.saved-serial > 0 ? @tr("Kaydedildi") : @tr("Değişiklikler anında uygulanır");
+    property <string> primary: searching ? (hits.length > 0 ? "Open" : "")
+        : Store.page == 5 && Ui.query != "" && Store.team-results.length > 0 && !Store.team-results[0].followed ? "Follow"
+        : Store.page == 6 && Ui.query != "" ? "Add" : "";
+    property <string> placeholder: Store.page == 5 ? "Search team…" : Store.page == 6 ? "Add application, e.g. vlc.exe" : "Search settings…";
     property <int> focus-serial: Ui.focus-serial;
     changed focus-serial => { search.focus(); }
 
@@ -241,44 +729,54 @@ export component SettingsWindow inherits Window {
         }
 
         HorizontalLayout {
-            // ------------------------------------------------ the list panel
+            // ------------------------------------------------ 1. Fluent Navigation Rail (260px)
             Rectangle {
-                width: 276px;
-                DragArea { }
+                width: 260px;
+                background: Theme.side-bot;
+
+                // 1px right border divider
                 Rectangle {
-                    x: 10px;
-                    y: 10px;
-                    width: parent.width - 10px;
-                    height: parent.height - 20px;
-                    border-radius: 16px;
-                    border-width: 1px;
-                    border-color: Theme.side-edge;
-                    background: @linear-gradient(180deg, Theme.side-top 0%, Theme.side-bot.mix(Theme.side-top, 0.5) 30%, Theme.side-bot 100%);
-                    VerticalLayout {
-                        padding: 10px;
-                        spacing: 2px;
+                    x: parent.width - 1px;
+                    width: 1px;
+                    background: Theme.pv-edge;
+                }
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 14px;
+                    padding-bottom: 14px;
+                    spacing: 6px;
+
+                    // Brand Card
+                    Rectangle {
+                        height: 52px;
+                        border-radius: 8px;
+                        background: Theme.field;
+                        border-width: 1px;
+                        border-color: Theme.field-edge;
                         HorizontalLayout {
-                            height: 40px;
-                            padding-left: 8px;
-                            padding-right: 6px;
+                            padding-left: 10px;
+                            padding-right: 10px;
                             spacing: 10px;
                             VerticalLayout {
                                 alignment: center;
                                 Mark { }
                             }
-                            Text {
-                                text: "Syro";
-                                font-size: 14.5px;
-                                font-weight: 600;
-                                color: Theme.strong;
-                                vertical-alignment: center;
+                            VerticalLayout {
+                                alignment: center;
                                 horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: Store.enabled ? @tr("Açık") : @tr("Kapalı");
-                                font-size: 13px;
-                                color: Theme.text2;
-                                vertical-alignment: center;
+                                spacing: 1px;
+                                Text {
+                                    text: "Swift Tab";
+                                    font-size: 14.5px;
+                                    font-weight: 600;
+                                    color: Theme.strong;
+                                }
+                                Text {
+                                    text: "v1.0";
+                                    font-size: 11px;
+                                    color: Theme.text3;
+                                }
                             }
                             VerticalLayout {
                                 alignment: center;
@@ -288,471 +786,772 @@ export component SettingsWindow inherits Window {
                                 }
                             }
                         }
-                        Rectangle { height: 6px; }
-                        SideLabel {
-                            title: @tr("Ayarlar");
-                            count: "2";
-                        }
-                        SideItem {
-                            title: @tr("Görünüm");
-                            glyph: "\u{E790}";
-                            light: true;
-                            current: Store.page == 0;
-                            clicked => { root.go(0); }
-                        }
-                        SideItem {
-                            title: @tr("Genel");
-                            glyph: "\u{E713}";
-                            light: true;
-                            current: Store.page == 1;
-                            clicked => { root.go(1); }
-                        }
-                        SideLabel {
-                            title: @tr("Etkinlikler");
-                            count: "7";
-                        }
-                        SideItem {
-                            title: @tr("Medya");
-                            glyph: "\u{E8D6}";
-                            current: Store.page == 2;
-                            live: Store.media-live;
-                            off: !Store.media-on;
-                            clicked => { root.go(2); }
-                        }
-                        SideItem {
-                            title: "Wireless Buds";
-                            glyph: "\u{E7F6}";
-                            current: Store.page == 4;
-                            off: !Store.buds-on;
-                            clicked => { root.go(4); }
-                        }
-                        SideItem {
-                            title: @tr("Sistem");
-                            glyph: "\u{E770}";
-                            current: Store.page == 8;
-                            off: !Store.privacy-on && !Store.headsets-on;
-                            clicked => { root.go(8); }
-                        }
-                        SideItem {
-                            title: @tr("Tam ekran");
-                            glyph: "\u{E740}";
-                            current: Store.page == 6;
-                            off: !Store.fullscreen-hide;
-                            clicked => { root.go(6); }
-                        }
-                        SideItem {
-                            title: @tr("Oyunlar");
-                            glyph: "\u{E7FC}";
-                            current: Store.page == 9;
-                            off: !Store.games-steam && !Store.games-epic && !Store.island-on;
-                            clicked => { root.go(9); }
-                        }
-                        SideItem {
-                            title: @tr("Pano");
-                            glyph: "\u{E77F}";
-                            current: Store.page == 11;
-                            off: !Store.clipboard-stash;
-                            clicked => { root.go(11); }
-                        }
-                        SideItem {
-                            title: @tr("Raf");
-                            glyph: "\u{E8F1}";
-                            current: Store.page == 12;
-                            off: !Store.shelf-pinned;
-                            clicked => { root.go(12); }
-                        }
-                        Rectangle { vertical-stretch: 1; }
-                        SideItem {
-                            title: @tr("Hakkında");
-                            glyph: "\u{E946}";
-                            light: true;
-                            current: Store.page == 7;
-                            clicked => { root.go(7); }
+                    }
+
+                    Rectangle { height: 6px; }
+
+                    // The tabs scroll when the window is too short for all of them (the window can be as
+                    // small as 640 px, or smaller on a scaled screen): the brand card above and
+                    // "About" below stay in place.
+                    Flickable {
+                        vertical-stretch: 1;
+                        content-width: self.width;
+                        VerticalLayout {
+                            spacing: 6px;
+                            alignment: start;
+                            SideLabel {
+                                title: "GENERAL";
+                                count: "4";
+                            }
+                            SideItem {
+                                title: "Home";
+                                glyph: "\u{E80F}";
+                                current: Store.page == 13;
+                                clicked => { root.go(13); }
+                            }
+                            SideItem {
+                                title: "Appearance";
+                                glyph: "\u{E790}";
+                                current: Store.page == 0;
+                                clicked => { root.go(0); }
+                            }
+                            SideItem {
+                                title: "Behavior";
+                                glyph: "\u{E713}";
+                                current: Store.page == 1;
+                                clicked => { root.go(1); }
+                            }
+                            SideItem {
+                                title: "Full Screen";
+                                glyph: "\u{E740}";
+                                current: Store.page == 6;
+                                off: !Store.fullscreen-hide;
+                                clicked => { root.go(6); }
+                            }
+
+                            Rectangle { height: 4px; }
+                            SideLabel {
+                                title: "ACTIVITIES";
+                                count: "7";
+                            }
+                            SideItem {
+                                title: "Media";
+                                glyph: "\u{E8D6}";
+                                current: Store.page == 2;
+                                live: Store.media-live;
+                                off: !Store.media-on;
+                                clicked => { root.go(2); }
+                            }
+                            SideItem {
+                                title: "Weather";
+                                glyph: "\u{E753}";
+                                current: Store.page == 8;
+                                off: !Store.weather-bar && !Store.idle-clock;
+                                clicked => { root.go(8); }
+                            }
+                            SideItem {
+                                title: "Headphones";
+                                glyph: "\u{E7F6}";
+                                current: Store.page == 4;
+                                off: !Store.headsets-on;
+                                clicked => { root.go(4); }
+                            }
+                            SideItem {
+                                title: "Clipboard";
+                                glyph: "\u{E77F}";
+                                current: Store.page == 11;
+                                off: !Store.clipboard-stash;
+                                clicked => { root.go(11); }
+                            }
+                            SideItem {
+                                title: "Shelf";
+                                glyph: "\u{E8F1}";
+                                current: Store.page == 12;
+                                off: !Store.shelf-on;
+                                clicked => { root.go(12); }
+                            }
+                            SideItem {
+                                title: "Games";
+                                glyph: "\u{E7FC}";
+                                current: Store.page == 9;
+                                off: !Store.games-downloads && !Store.games-playtime;
+                                clicked => { root.go(9); }
+                            }
+                            SideItem {
+                                title: "System Events";
+                                glyph: "\u{E7ED}";
+                                current: Store.page == 14;
+                                off: !Store.capture-moment && !Store.capture-to-shelf && !Store.transfer-on;
+                                clicked => { root.go(14); }
+                            }
+
+                            Rectangle { height: 6px; }
+
+                            HelpSupportCard { }
                         }
                     }
+
+                    SideLabel {
+                        title: "INFO";
+                        count: "1";
+                    }
+                    SideItem {
+                        title: "About Swift Tab";
+                        glyph: "\u{E946}";
+                        current: Store.page == 7;
+                        clicked => { root.go(7); }
+                    }
+
                 }
             }
 
-            // ------------------------------------------------ the preview panel
+            // ------------------------------------------------ 2. Main Content Canvas (Unified, No Inspector)
             Rectangle {
                 horizontal-stretch: 1;
-                // The margins around the preview panel move the window.
-                DragArea { }
-                panel := Rectangle {
-                    x: 28px;
-                    y: 34px;
-                    width: parent.width - 56px;
-                    height: parent.height - 64px;
-                    border-radius: 28px;
-                    border-width: 1px;
-                    border-color: Theme.pv-edge;
-                    background: @linear-gradient(200deg, Theme.pv-dark 0%, Theme.pv-mid 50%, Theme.pv-lit 100%);
-                    VerticalLayout {
-                        // The search bar.
+                background: Theme.ground;
+                clip: true;
+                PixelField {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                VerticalLayout {
+                    // Top Fluent Title / Header Bar
+                    Rectangle {
+                        height: 54px;
+                        DragArea { }
+                        // 1px bottom border divider
                         Rectangle {
-                            height: 62px;
+                            y: parent.height - 1px;
+                            height: 1px;
+                            background: Theme.pv-edge;
+                        }
+                        HorizontalLayout {
+                            padding-left: 24px;
+                            padding-right: 12px;
+                            spacing: 16px;
+                            cross-axis-alignment: center;
+
+                            // Title & Breadcrumb
                             HorizontalLayout {
-                                padding-left: 20px;
-                                padding-right: 18px;
-                                spacing: 14px;
-                                Rectangle {
-                                    width: 22px;
+                                horizontal-stretch: 1;
+                                spacing: 8px;
+                                cross-axis-alignment: center;
+                                Text {
+                                    text: Store.page == 13 ? "Home"
+                                        : Store.page == 0 ? "Appearance"
+                                        : Store.page == 1 ? "Behavior"
+                                        : Store.page == 2 ? "Media"
+                                        : Store.page == 4 ? "Headphones"
+                                        : Store.page == 6 ? "Full Screen"
+                                        : Store.page == 7 ? "About"
+                                        : Store.page == 8 ? "Weather"
+                                        : Store.page == 14 ? "System Events"
+                                        : Store.page == 9 ? "Games"
+                                        : Store.page == 11 ? "Clipboard"
+                                        : Store.page == 12 ? "Shelf"
+                                        : "Swift Tab Control Center";
+                                    font-size: 16px;
+                                    font-weight: 600;
+                                    color: Theme.strong;
+                                    vertical-alignment: center;
+                                }
+                                // Only a problem shows here (a bad exception name, a failed save).
+                                if Ui.error != "": Text {
+                                    text: Ui.error;
+                                    font-size: 12px;
+                                    color: Theme.danger;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Inline Fluent Search
+                            Rectangle {
+                                width: 220px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: Theme.field;
+                                border-width: 1px;
+                                border-color: search.has-focus ? Theme.acc : Theme.field-edge;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 8px;
+                                    spacing: 8px;
                                     Icon {
-                                        glyph: "\u{E76B}";
+                                        glyph: "\u{E721}";
                                         size: 12px;
                                         color: Theme.text2;
                                     }
-                                    TouchArea {
-                                        mouse-cursor: pointer;
-                                        clicked => { root.clear(); }
-                                    }
-                                }
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    Text {
-                                        x: 0px;
-                                        width: parent.width;
-                                        height: parent.height;
-                                        visible: search.text == "";
-                                        text: root.placeholder;
-                                        font-size: 18px;
-                                        color: Theme.placeholder;
-                                        vertical-alignment: center;
-                                    }
-                                    search := TextInput {
-                                        x: 0px;
-                                        width: parent.width;
-                                        height: parent.height;
-                                        font-size: 18px;
-                                        color: Theme.text;
-                                        selection-background-color: Theme.acc.with-alpha(0.35);
-                                        vertical-alignment: center;
-                                        single-line: true;
-                                        edited => {
-                                            Ui.query = self.text;
-                                            Ui.error = "";
-                                            if Store.page == 5 {
-                                                Store.team-search(self.text);
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            x: 0px;
+                                            width: parent.width;
+                                            height: parent.height;
+                                            visible: search.text == "";
+                                            text: root.placeholder;
+                                            font-size: 12.5px;
+                                            color: Theme.placeholder;
+                                            vertical-alignment: center;
+                                        }
+                                        search := TextInput {
+                                            x: 0px;
+                                            width: parent.width;
+                                            height: parent.height;
+                                            font-size: 12.5px;
+                                            color: Theme.text;
+                                            vertical-alignment: center;
+                                            single-line: true;
+                                            edited => {
+                                                Ui.query = self.text;
+                                                Ui.error = "";
                                             }
+                                            accepted => { root.submit(); }
                                         }
-                                        accepted => { root.submit(); }
-                                    }
-                                }
-                                HorizontalLayout {
-                                    spacing: 4px;
-                                    alignment: end;
-                                    VerticalLayout {
-                                        alignment: center;
-                                        Keycap { key: "Ctrl"; }
-                                    }
-                                    VerticalLayout {
-                                        alignment: center;
-                                        Keycap { key: "F"; }
                                     }
                                 }
                             }
-                            Rectangle {
-                                y: parent.height - 1px;
-                                height: 1px;
-                                background: Theme.pv-rule;
-                            }
-                        }
-                        // The page's lists and tiles.
-                        Flickable {
-                            vertical-stretch: 1;
-                            init => { Ui.pane-width = self.width; }
-                            changed width => { Ui.pane-width = self.width; }
-                            VerticalLayout {
-                                padding-left: 10px;
-                                padding-right: 10px;
-                                padding-top: 6px;
-                                alignment: start;
-                                if root.searching: VerticalLayout {
-                                    H4 {
-                                        title: @tr("Sonuçlar");
-                                        count: root.hits.length + @tr(" ayar");
-                                    }
-                                    if root.hits.length == 0: LRow {
-                                        title: @tr("Bulunamadı");
-                                        sub: @tr("başka bir kelime dene");
-                                        lead: 1;
-                                        glyph: "\u{E721}";
-                                    }
-                                    for h[i] in root.hits: LRow {
-                                        title: h.title;
-                                        sub: h.path;
-                                        selected: i == 0;
-                                        clickable: true;
-                                        lead: 1;
-                                        glyph: "\u{E721}";
-                                        clicked => { root.go(h.page); }
-                                        if i == 0: Keycap { key: "↵"; }
-                                    }
-                                }
-                                if !root.searching && Store.page == 0: AppearanceBody { }
-                                if !root.searching && Store.page == 1: GeneralBody { }
-                                if !root.searching && Store.page == 2: MediaBody { }
-                                if !root.searching && Store.page == 3: TimerBody { }
-                                if !root.searching && Store.page == 4: BudsBody { }
-                                if Store.page == 5: MatchBody { }
-                                if Store.page == 6: FullscreenBody { }
-                                if !root.searching && Store.page == 7: AboutBody { }
-                                if !root.searching && Store.page == 8: SystemBody { }
-                                if !root.searching && Store.page == 9: GamesBody { }
-                                if !root.searching && Store.page == 10: WellbeingBody { }
-                                if !root.searching && Store.page == 11: ClipboardBody { }
-                                if !root.searching && Store.page == 12: ShelfBody { }
-                            }
-                        }
-                    }
-                    // The list fades under the action bar.
-                    Rectangle {
-                        x: 1px;
-                        y: parent.height - 93px;
-                        width: parent.width - 2px;
-                        height: 92px;
-                        border-bottom-left-radius: 27px;
-                        border-bottom-right-radius: 27px;
-                        background: @linear-gradient(180deg, Theme.pv-lit.with-alpha(0) 0%, Theme.pv-lit.mix(Theme.pv-mid, 0.6) 62%);
-                    }
-                    // The action bar: what happened on the left, what Enter and Ctrl K do on the right.
-                    Capsule {
-                        x: 12px;
-                        y: parent.height - 48px;
-                        width: chip.preferred-width;
-                        fill: Theme.chip;
-                        chip := HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 16px;
-                            spacing: 10px;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 16px;
-                                    height: 16px;
-                                    border-radius: 8px;
-                                    background: @conic-gradient(#FFD968 0deg, #F4A301 60deg, #FF6B6B 120deg, #A78BFA 180deg, #5DB3FF 240deg, #59D499 300deg, #FFD968 360deg);
-                                }
-                            }
-                            Text {
-                                text: root.status;
-                                font-size: 14px;
-                                font-weight: 500;
-                                color: Ui.error != "" ? Theme.danger : Theme.text;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                    Capsule {
-                        x: parent.width - self.width - 12px;
-                        y: parent.height - 48px;
-                        width: act.preferred-width;
-                        act := HorizontalLayout {
-                            padding-left: 18px;
-                            padding-right: 8px;
-                            spacing: 10px;
-                            if root.primary != "": Text {
-                                text: root.primary;
-                                font-size: 14px;
-                                font-weight: 500;
-                                color: Theme.text;
-                                vertical-alignment: center;
-                            }
-                            if root.primary != "": VerticalLayout {
-                                alignment: center;
-                                Keycap { key: "↵"; }
-                            }
-                            if root.primary != "": Rectangle {
-                                width: 1px;
-                                Rectangle {
-                                    y: (parent.height - 14px) / 2;
-                                    height: 14px;
-                                    background: Theme.text3;
-                                }
-                            }
-                            Text {
-                                text: @tr("Eylemler");
-                                font-size: 14px;
-                                font-weight: 500;
-                                color: Theme.text2;
-                                vertical-alignment: center;
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                Keycap { key: "Ctrl"; }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                Keycap { key: "K"; }
-                            }
-                        }
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                if root.primary != "" && self.mouse-x < parent.width / 2 {
-                                    root.submit();
-                                } else {
-                                    actions.show();
-                                }
-                            }
-                        }
-                        actions := PopupWindow {
-                            x: parent.width - 260px;
-                            y: -178px;
-                            width: 260px;
-                            close-policy: close-on-click-outside;
-                            Rectangle {
-                                border-radius: 12px;
-                                background: Theme.pop;
-                                border-width: 1px;
-                                border-color: Theme.pop-edge;
-                                drop-shadow-blur: 24px;
-                                drop-shadow-offset-y: 10px;
-                                drop-shadow-color: Theme.pop-shadow;
-                                VerticalLayout {
-                                    padding: 6px;
-                                    ActionItem {
-                                        text: @tr("Ayar dosyasını aç");
-                                        glyph: "\u{E8A5}";
-                                        clicked => { Store.action("file"); actions.close(); }
-                                    }
-                                    ActionItem {
-                                        text: @tr("Günlüğü aç");
-                                        glyph: "\u{E9F9}";
-                                        clicked => { Store.action("log"); actions.close(); }
-                                    }
-                                    ActionItem {
-                                        text: @tr("Son silineni geri al");
-                                        glyph: "\u{E7A7}";
-                                        clicked => { Store.undo-remove(); actions.close(); }
-                                    }
-                                    ActionItem {
-                                        text: @tr("Varsayılanlara dön…");
-                                        glyph: "\u{E72C}";
-                                        danger: true;
-                                        clicked => { Ui.dialog = true; actions.close(); }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
 
-            // ------------------------------------------------ the inspector
-            Rectangle {
-                width: 316px;
-                background: Theme.insp;
-                Rectangle {
-                    x: 0px;
-                    width: 1px;
-                    background: Theme.insp-edge;
-                }
-                DragArea {
-                    height: 58px;
-                    y: 0px;
-                }
-                VerticalLayout {
-                    HorizontalLayout {
-                        height: 58px;
-                        padding-left: 20px;
-                        padding-right: 6px;
-                        spacing: 4px;
-                        cross-axis-alignment: center;
-                        // The page's name and the undo / file pill right after it take what the caption buttons
-                        // leave: a long name elides, a short one leaves the room after the pill. The caption
-                        // buttons keep the same place on every page. 88 px are left for the name, the longest
-                        // (Galaxy Buds) is 86.
-                        HorizontalLayout {
-                            horizontal-stretch: 1;
-                            alignment: start;
-                            spacing: 8px;
-                            cross-axis-alignment: center;
-                            Text {
-                                text: Store.page == 0 ? @tr("Görünüm") : Store.page == 1 ? @tr("Genel") : Store.page == 2 ? @tr("Medya") : Store.page == 3 ? @tr("Zamanlayıcı")
-                                    : Store.page == 4 ? "Wireless Buds" : Store.page == 5 ? @tr("Canlı maç") : Store.page == 6 ? @tr("Tam ekran") : Store.page == 7 ? @tr("Hakkında") : Store.page == 9 ? @tr("Oyunlar") : Store.page == 10 ? @tr("Dijital Denge") : Store.page == 11 ? @tr("Pano") : Store.page == 12 ? @tr("Raf") : @tr("Sistem");
-                                font-size: 14.5px;
-                                font-weight: 600;
-                                color: Theme.strong;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                // Shrinks first when the name doesn't fit (the pill can't).
-                                horizontal-stretch: 1;
-                            }
-                            // Its buttons 3 px inside all round.
-                            Rectangle {
-                                height: 36px;
-                                width: 66px;
-                                border-radius: 18px;
-                                border-width: 1px;
-                                border-color: Theme.pv-edge;
-                                HorizontalLayout {
-                                    padding-left: 3px;
-                                    padding-right: 3px;
-                                    alignment: center;
-                                    VerticalLayout {
-                                        alignment: center;
-                                        IconButton {
-                                            glyph: "\u{E7A7}";
-                                            clicked => { Store.undo-remove(); }
-                                        }
-                                    }
-                                    VerticalLayout {
-                                        alignment: center;
-                                        IconButton {
-                                            glyph: "\u{E8A5}";
-                                            clicked => { Store.action("file"); }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            horizontal-stretch: 0;
+                            // Window Caption Buttons
                             HorizontalLayout {
-                                spacing: 2px;
+                                spacing: 4px;
                                 CaptionButton {
-                                    glyph: "\u{E921}";
+                                    kind: 0;
                                     clicked => { Ui.minimize-window(); }
                                 }
                                 CaptionButton {
-                                    glyph: Ui.maximized ? "\u{E923}" : "\u{E922}";
+                                    kind: 1;
+                                    maximized: Ui.maximized;
                                     clicked => { Ui.toggle-maximize(); }
                                 }
                                 CaptionButton {
-                                    glyph: "\u{E8BB}";
+                                    kind: 2;
                                     close: true;
                                     clicked => { Ui.close-window(); }
                                 }
                             }
                         }
                     }
+
+                    // Unified Page Content (Flickable)
                     Flickable {
                         vertical-stretch: 1;
+                        content-width: self.width;
+                        init => { Ui.pane-width = self.width; }
+                        changed width => { Ui.pane-width = self.width; }
                         VerticalLayout {
+                            // A readable column (720px at most), centred in wide windows.
+                            padding-left: max(24px, (Ui.pane-width - 720px) / 2);
+                            padding-right: max(24px, (Ui.pane-width - 720px) / 2);
+                            padding-top: 18px;
+                            padding-bottom: 32px;
+                            spacing: 16px;
                             alignment: start;
-                            if Store.page == 0: AppearanceInspector { }
-                            if Store.page == 1: GeneralInspector { }
-                            if Store.page == 2: MediaInspector { }
-                            if Store.page == 3: TimerInspector { }
-                            if Store.page == 4: BudsInspector { }
-                            if Store.page == 5: MatchInspector { }
-                            if Store.page == 6: FullscreenInspector { }
-                            if Store.page == 7: AboutInspector { }
-                            if Store.page == 8: SystemInspector { }
-                            if Store.page == 9: GamesInspector { }
-                            if Store.page == 10: WellbeingInspector { }
-                            if Store.page == 11: ClipboardInspector { }
-                            if Store.page == 12: ShelfInspector { }
+
+                            // 1. Search Results
+                            if root.searching: VerticalLayout {
+                                spacing: 8px;
+                                H4 {
+                                    title: "Search Results";
+                                    count: root.hits.length + " settings";
+                                }
+                                if root.hits.length == 0: LRow {
+                                    title: "No results found";
+                                    sub: "Try searching with different keywords";
+                                    lead: 1;
+                                    glyph: "\u{E721}";
+                                }
+                                for h[i] in root.hits: LRow {
+                                    title: h.title;
+                                    sub: h.path;
+                                    selected: i == 0;
+                                    clickable: true;
+                                    lead: 1;
+                                    glyph: "\u{E721}";
+                                    clicked => { root.go(h.page); }
+                                    if i == 0: Keycap { key: "↵"; }
+                                }
+                            }
+
+                            // 2. Home: how Syro is doing, live
+                            if !root.searching && Store.page == 13: VerticalLayout {
+                                spacing: 12px;
+                                Rectangle {
+                                    border-radius: 8px;
+                                    background: Theme.field;
+                                    border-width: 1px;
+                                    border-color: Theme.field-edge;
+                                    HorizontalLayout {
+                                        padding: 14px;
+                                        spacing: 14px;
+                                        Rectangle {
+                                            width: 40px;
+                                            height: 40px;
+                                            border-radius: 6px;
+                                            background: Theme.sel-row;
+                                            HorizontalLayout {
+                                                alignment: center;
+                                                VerticalLayout {
+                                                    alignment: center;
+                                                    Image {
+                                                        source: @image-url("syro-mark.png");
+                                                        width: 24px;
+                                                        height: 24px;
+                                                        image-fit: contain;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            spacing: 3px;
+                                            Text {
+                                                text: Store.enabled ? "Swift Tab is active and running" : "Swift Tab is turned off";
+                                                font-size: 15px;
+                                                font-weight: 600;
+                                                color: Theme.strong;
+                                            }
+                                            Text {
+                                                text: Store.card-blur ? "Docked to the Windows 11 taskbar · Acrylic backdrop active" : "Docked to the Windows 11 taskbar";
+                                                font-size: 12px;
+                                                color: Theme.text2;
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    border-radius: 8px;
+                                    background: Theme.field;
+                                    border-width: 1px;
+                                    border-color: Theme.field-edge;
+                                    VerticalLayout {
+                                        padding: 14px;
+                                        spacing: 12px;
+                                        Text {
+                                            text: "Activity Modules";
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            color: Theme.strong;
+                                        }
+                                        // 1. Media
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Media";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Show currently playing track in the pill and media card";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.media-on;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            height: 1px;
+                                            background: Theme.pv-edge;
+                                        }
+                                        // 2. Earbuds
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Earbuds";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Show connected Bluetooth earbuds and headphone battery in the corner";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked: Store.buds-on || Store.headsets-on;
+                                                    toggled => {
+                                                        Store.buds-on = self.checked;
+                                                        Store.headsets-on = self.checked;
+                                                        Ui.changed();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            height: 1px;
+                                            background: Theme.pv-edge;
+                                        }
+                                        // 3. Weather
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Weather";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Show live temperature and sky conditions in the corner bar";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.weather-bar;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            height: 1px;
+                                            background: Theme.pv-edge;
+                                        }
+                                        // 4. Clipboard
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Clipboard";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Keep copied text, links, and images in the clipboard stash";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.clipboard-stash;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            height: 1px;
+                                            background: Theme.pv-edge;
+                                        }
+                                        // 5. Shelf
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Shelf";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Drop files onto the pill to hold and drag them out anywhere";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.shelf-on;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    border-radius: 8px;
+                                    background: Theme.field;
+                                    border-width: 1px;
+                                    border-color: Theme.field-edge;
+                                    VerticalLayout {
+                                        padding: 14px;
+                                        spacing: 12px;
+                                        Text {
+                                            text: "Idle Pill Animation";
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            color: Theme.strong;
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Glass Cleaner Guy";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Show animated cleaner with water spray behind the empty pill";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.cleaner-anim;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    border-radius: 8px;
+                                    background: Theme.field;
+                                    border-width: 1px;
+                                    border-color: Theme.field-edge;
+                                    VerticalLayout {
+                                        padding: 14px;
+                                        spacing: 12px;
+                                        Text {
+                                            text: "Media Quick Launcher";
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            color: Theme.strong;
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            VerticalLayout {
+                                                horizontal-stretch: 1;
+                                                alignment: center;
+                                                spacing: 2px;
+                                                Text {
+                                                    text: "Quick Spotify / YouTube button";
+                                                    font-size: 13px;
+                                                    color: Theme.text;
+                                                }
+                                                Text {
+                                                    text: "Quick launcher in media card (switches to Spotify or YouTube; off shows original app)";
+                                                    font-size: 11.5px;
+                                                    color: Theme.text3;
+                                                }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Toggle {
+                                                    checked <=> Store.media-spotify-button;
+                                                    toggled => { Ui.changed(); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. Other Pages (Appearance, Behavior, Media, System, Headphones, Clipboard, Shelf, Fullscreen, About)
+                            if !root.searching && Store.page == 0: VerticalLayout {
+                                spacing: 14px;
+                                AppearanceBody { }
+                                AppearanceInspector { }
+                            }
+                            if !root.searching && Store.page == 1: VerticalLayout {
+                                spacing: 14px;
+                                GeneralInspector { }
+                            }
+                            if !root.searching && Store.page == 2: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Media";
+                                    sub: "Show the playing track in the pill and the card";
+                                    glyph: "\u{E8D6}";
+                                    checked <=> Store.media-on;
+                                    toggled => { Ui.changed(); }
+                                }
+                                Rectangle {
+                                    opacity: Store.media-on ? 1 : 0.38;
+                                    VerticalLayout {
+                                        spacing: 14px;
+                                        MediaBody { }
+                                        MediaInspector { }
+                                    }
+                                    if !Store.media-on: TouchArea { }
+                                }
+                            }
+                            if !root.searching && Store.page == 3: VerticalLayout {
+                                spacing: 14px;
+                                TimerBody { }
+                                TimerInspector { }
+                            }
+                            if !root.searching && Store.page == 4: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Headphones";
+                                    sub: "Show connected earbuds and their battery in the corner";
+                                    glyph: "\u{E7F6}";
+                                    checked <=> Store.headsets-on;
+                                    toggled => { Ui.changed(); }
+                                }
+                            }
+                            if !root.searching && Store.page == 5: VerticalLayout {
+                                spacing: 14px;
+                                MatchBody { }
+                                MatchInspector { }
+                            }
+                            if !root.searching && Store.page == 6: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Hide in full screen";
+                                    sub: "While games, videos or presentations are in full screen";
+                                    glyph: "\u{E740}";
+                                    checked <=> Store.fullscreen-hide;
+                                    toggled => { Ui.changed(); }
+                                }
+                                Rectangle {
+                                    opacity: Store.fullscreen-hide ? 1 : 0.38;
+                                    VerticalLayout {
+                                        spacing: 14px;
+                                        FullscreenBody { }
+                                    }
+                                    if !Store.fullscreen-hide: TouchArea { }
+                                }
+                            }
+                            if !root.searching && Store.page == 7: VerticalLayout {
+                                spacing: 14px;
+                                AboutBody { }
+                                AboutInspector { }
+                            }
+                            if !root.searching && Store.page == 8: VerticalLayout {
+                                spacing: 14px;
+                                SystemInspector { }
+                            }
+                            if !root.searching && Store.page == 9: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Game downloads";
+                                    sub: "Show the progress and speed of Steam and Epic Games downloads in the pill";
+                                    glyph: "\u{E896}";
+                                    checked <=> Store.games-downloads;
+                                    toggled => { Ui.changed(); }
+                                }
+                                GamesInspector { }
+                            }
+                            if !root.searching && Store.page == 10: VerticalLayout {
+                                spacing: 14px;
+                                WellbeingBody { }
+                                WellbeingInspector { }
+                            }
+                            if !root.searching && Store.page == 11: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Clipboard history";
+                                    sub: "Keeps the last 20 copied items. Nothing is kept while it is off";
+                                    glyph: "\u{E77F}";
+                                    checked <=> Store.clipboard-stash;
+                                    toggled => { Ui.changed(); }
+                                }
+                                Rectangle {
+                                    opacity: Store.clipboard-stash ? 1 : 0.38;
+                                    VerticalLayout {
+                                        spacing: 14px;
+                                        ClipboardInspector { }
+                                    }
+                                    if !Store.clipboard-stash: TouchArea { }
+                                }
+                            }
+                            if !root.searching && Store.page == 12: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Shelf";
+                                    sub: "Drop files on the pill to hold them, then drag them out anywhere";
+                                    glyph: "\u{E8F1}";
+                                    checked <=> Store.shelf-on;
+                                    toggled => { Ui.changed(); }
+                                }
+                                Rectangle {
+                                    opacity: Store.shelf-on ? 1 : 0.38;
+                                    VerticalLayout {
+                                        spacing: 14px;
+                                        ShelfInspector { }
+                                        ShelfBody { }
+                                    }
+                                    if !Store.shelf-on: TouchArea { }
+                                }
+                            }
+                            if !root.searching && Store.page == 14: VerticalLayout {
+                                spacing: 14px;
+                                EventsInspector { }
+                            }
                         }
+                    }
+                }
+            }
+        }
+
+        // Actions popup window
+        actions := PopupWindow {
+            x: 20px;
+            y: root.height - 200px;
+            width: 240px;
+            close-policy: close-on-click-outside;
+            Rectangle {
+                border-radius: 10px;
+                background: Theme.pop;
+                border-width: 1px;
+                border-color: Theme.pop-edge;
+                drop-shadow-blur: 24px;
+                drop-shadow-offset-y: 8px;
+                drop-shadow-color: Theme.pop-shadow;
+                VerticalLayout {
+                    padding: 6px;
+                    ActionItem {
+                        text: "Open settings file";
+                        glyph: "\u{E8A5}";
+                        clicked => { Store.action("file"); actions.close(); }
+                    }
+                    ActionItem {
+                        text: "Open log";
+                        glyph: "\u{E9F9}";
+                        clicked => { Store.action("log"); actions.close(); }
+                    }
+                    ActionItem {
+                        text: "Undo last removed";
+                        glyph: "\u{E7A7}";
+                        clicked => { Store.undo-remove(); actions.close(); }
+                    }
+                    ActionItem {
+                        text: "Reset to defaults…";
+                        glyph: "\u{E72C}";
+                        danger: true;
+                        clicked => { Ui.dialog = true; actions.close(); }
                     }
                 }
             }
         }
     }
 
-    // ------------------------------------------------ "Varsayılanlara dön" asks first
+    // ------------------------------------------------ Reset to defaults confirmation
     if Ui.dialog: Rectangle {
         background: Theme.scrim;
         TouchArea {
@@ -773,13 +1572,13 @@ export component SettingsWindow inherits Window {
                 padding: 22px;
                 spacing: 10px;
                 Text {
-                    text: @tr("Varsayılanlara dönülsün mü?");
+                    text: "Reset to defaults?";
                     font-size: 17px;
                     font-weight: 600;
                     color: Theme.strong;
                 }
                 Text {
-                    text: @tr("Bütün ayarlar ilk hallerine döner; takip ettiğin takımlar, gizlediğin uygulamalar ve istisnalar da silinir.");
+                    text: "All settings will be restored to their original defaults. Followed teams, hidden apps, and exceptions will also be removed.";
                     font-size: 13.5px;
                     color: Theme.text2;
                     wrap: word-wrap;
@@ -794,7 +1593,7 @@ export component SettingsWindow inherits Window {
                         border-radius: 10px;
                         background: Theme.seg-on;
                         Text {
-                            text: @tr("Vazgeç");
+                            text: "Cancel";
                             font-size: 14px;
                             font-weight: 500;
                             color: Theme.text;
@@ -810,7 +1609,7 @@ export component SettingsWindow inherits Window {
                         border-radius: 10px;
                         background: Tags.red.with-alpha(0.22);
                         Text {
-                            text: @tr("Sıfırla");
+                            text: "Reset";
                             font-size: 14px;
                             font-weight: 600;
                             color: Theme.danger;

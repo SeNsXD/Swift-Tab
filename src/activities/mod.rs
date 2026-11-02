@@ -1,4 +1,4 @@
-//! What is live right now, and which activity is at the front of the Now Bar stack.
+//! What is live right now, and which activity is at the front of the Swift Tab stack.
 
 pub mod api;
 pub mod api_desk;
@@ -32,6 +32,8 @@ pub mod shelf_worker;
 pub mod timer;
 pub mod transfer;
 pub mod transfer_worker;
+pub mod download;
+pub mod download_worker;
 pub mod weather;
 pub mod weather_alert;
 pub mod weather_worker;
@@ -72,7 +74,7 @@ pub enum ActivityKind {
     WeatherAlert,
     /// A screenshot was just taken: for a moment.
     Capture,
-    /// Sent by another program (`nowbar.exe push`, Claude Code's hooks): the key of its id.
+    /// Sent by another program (`swifttab.exe push`, Claude Code's hooks): the key of its id.
     Live(u32),
     /// A Steam or Epic game downloading or running, or its moment ("Güncellendi", how long it
     /// was played): its key.
@@ -83,6 +85,8 @@ pub enum ActivityKind {
     Away,
     /// Explorer copying, moving or deleting (its dialog, minimised or not), and its end for a moment.
     Transfer,
+    /// System download in progress or its completion for a moment.
+    Download,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,26 +117,24 @@ pub struct Presence {
 }
 
 /// The settings window's page for an activity (a right-click on its pill opens it):
-/// 2 Medya, 3 Zamanlayıcı, 4 Galaxy Buds, 5 Canlı maç, 8 Sistem, 9 Oyunlar, 10 Dijital Denge, 11 Pano, 12 Raf.
+/// 2 Medya, 3 Zamanlayıcı, 4 Headphones (Galaxy Buds and other earbuds), 5 Canlı maç, 8 Weather, 9 Oyunlar,
+/// 10 Dijital Denge, 11 Pano, 12 Raf, 14 System Events (screenshots, file copies, microphone and camera).
 pub fn settings_page_for(kind: ActivityKind) -> u8 {
     match kind {
         ActivityKind::Media(_) => 2,
         ActivityKind::Timer | ActivityKind::Stopwatch => 3,
-        ActivityKind::Buds => 4,
+        ActivityKind::Buds | ActivityKind::Headset(_) => 4,
+        ActivityKind::Capture | ActivityKind::Transfer | ActivityKind::Privacy | ActivityKind::Download => 14,
         ActivityKind::Match(_) => 5,
         ActivityKind::Clipboard => 11,
         ActivityKind::Shelf => 12,
         ActivityKind::Volume
         | ActivityKind::Power
-        | ActivityKind::Privacy
-        | ActivityKind::Headset(_)
         | ActivityKind::Clock
         | ActivityKind::Weather
         | ActivityKind::Rain
         | ActivityKind::WeatherAlert
-        | ActivityKind::Capture
         | ActivityKind::Away
-        | ActivityKind::Transfer
         | ActivityKind::Live(_) => 8,
         ActivityKind::Game(_) => 9,
         ActivityKind::Usage => 10,
@@ -204,13 +206,13 @@ fn rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> 
         (ActivityKind::Media(_), PresenceState::Playing) => Some(4),
         (ActivityKind::Buds, PresenceState::Connected { battery_low }) if battery_low || age < buds_front => Some(5),
         (ActivityKind::Match(_), _) => Some(6),
-        (ActivityKind::Privacy, _) => Some(7),
+        (ActivityKind::Privacy, _) => Some(1),
         (ActivityKind::Headset(_), PresenceState::Connected { battery_low }) if battery_low || age < buds_front => Some(5),
         (ActivityKind::Headset(_), _) => Some(9),
-        // Only present while it has items, so never `None`.
-        (ActivityKind::Shelf, _) => Some(8),
+        // Only present while it has items or always show is on.
+        (ActivityKind::Shelf, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" { 7 } else { 8 }),
         (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
-        (ActivityKind::Clipboard, _) => Some(7),
+        (ActivityKind::Clipboard, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" || crate::settings::current().preferred_idle_activity == "media" { 8 } else { 7 }),
         (ActivityKind::Clock, _) => Some(10),
         // Always on with a city: the last thing behind everything else.
         (ActivityKind::Weather, _) => Some(10),
@@ -225,6 +227,7 @@ fn rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> 
         (ActivityKind::Live(_), PresenceState::Done) if age < live::LIVE_DONE_MS => Some(1),
         (ActivityKind::Live(_), PresenceState::Done) => None,
         (ActivityKind::Live(_), _) => Some(6),
+        (ActivityKind::Media(u32::MAX), _) => Some(if crate::settings::current().preferred_idle_activity == "media" { 7 } else { 8 }),
         (ActivityKind::Media(_), _) if age <= keep_ms => Some(8),
         (ActivityKind::Media(_), _) => None,
         (ActivityKind::Buds, _) => Some(9),
@@ -240,13 +243,72 @@ fn rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> 
         (ActivityKind::Transfer, PresenceState::Moment) => None,
         // Something the user started and waits for: ahead of the music.
         (ActivityKind::Transfer, _) => Some(3),
+        (ActivityKind::Download, PresenceState::Moment) if age < download::DOWNLOAD_DONE_MS => Some(1),
+        (ActivityKind::Download, PresenceState::Moment) => None,
+        (ActivityKind::Download, _) => Some(3),
     }
 }
 
-/// What waits in the stack without anything going on: the shelf, the clipboard history and a
-/// settled headset. They do not stop the idle weather from leading.
+/// Canonical ranking for cyclic wheel navigation across active presences.
+/// Stable and independent of `preferred_idle_activity`, guaranteeing a smooth,
+/// deterministic cycle across all persistent activities: Media -> Clipboard -> Shelf.
+fn canonical_rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> {
+    let age = now_ms.saturating_sub(p.changed_ms);
+    match (p.kind, p.state) {
+        (ActivityKind::Timer, PresenceState::Done) => Some(0),
+        (ActivityKind::Volume, _) if age < VOLUME_MOMENT_MS => Some(1),
+        (ActivityKind::Volume, _) => None,
+        (ActivityKind::Power, _) if age < power::POWER_MOMENT_MS => Some(1),
+        (ActivityKind::Power, _) => None,
+        (ActivityKind::Match(_), PresenceState::MatchMoment) => Some(1),
+        (ActivityKind::Buds, PresenceState::Moment) if age < BUDS_MODE_MOMENT_MS => Some(1),
+        (ActivityKind::Timer | ActivityKind::Stopwatch, _) => Some(2),
+        (ActivityKind::Match(_), PresenceState::MatchLive) => Some(3),
+        (ActivityKind::Media(id), PresenceState::Playing) if id != u32::MAX => Some(4),
+        (ActivityKind::Buds, PresenceState::Connected { battery_low }) if battery_low || age < buds_front => Some(5),
+        (ActivityKind::Match(_), _) => Some(6),
+        (ActivityKind::Privacy, _) => Some(1),
+        (ActivityKind::Headset(_), PresenceState::Connected { battery_low }) if battery_low || age < buds_front => Some(5),
+        (ActivityKind::Media(u32::MAX), _) => Some(7),
+        (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
+        (ActivityKind::Clipboard, _) => Some(8),
+        (ActivityKind::Shelf, _) => Some(9),
+        (ActivityKind::Media(id), _) if id != u32::MAX && age <= keep_ms => Some(10),
+        (ActivityKind::Media(_), _) => None,
+        (ActivityKind::Buds, _) => Some(11),
+        (ActivityKind::Game(_), PresenceState::Moment) if age < GAME_MOMENT_MS => Some(1),
+        (ActivityKind::Game(_), PresenceState::Moment) => None,
+        (ActivityKind::Game(_), _) => Some(6),
+        (ActivityKind::Usage, _) if age < USAGE_MOMENT_MS => Some(1),
+        (ActivityKind::Usage, _) => None,
+        (ActivityKind::Away, _) if age < away::AWAY_MOMENT_MS => Some(1),
+        (ActivityKind::Away, _) => None,
+        (ActivityKind::Transfer, PresenceState::Moment) if age < transfer::TRANSFER_DONE_MS => Some(1),
+        (ActivityKind::Transfer, PresenceState::Moment) => None,
+        (ActivityKind::Transfer, _) => Some(3),
+        (ActivityKind::Download, PresenceState::Moment) if age < download::DOWNLOAD_DONE_MS => Some(1),
+        (ActivityKind::Download, PresenceState::Moment) => None,
+        (ActivityKind::Download, _) => Some(3),
+        (ActivityKind::Live(_), PresenceState::Waiting) if age < live::LIVE_WAIT_URGENT_MS => Some(1),
+        (ActivityKind::Live(_), PresenceState::Waiting) => Some(3),
+        (ActivityKind::Live(_), PresenceState::Done) if age < live::LIVE_DONE_MS => Some(1),
+        (ActivityKind::Live(_), PresenceState::Done) => None,
+        (ActivityKind::Live(_), _) => Some(6),
+        (ActivityKind::Headset(_), _) => Some(11),
+        (ActivityKind::Clock, _) => Some(12),
+        (ActivityKind::Weather, _) => Some(12),
+        (ActivityKind::Rain, _) if age < RAIN_MOMENT_MS => Some(1),
+        (ActivityKind::Rain, _) => None,
+        (ActivityKind::WeatherAlert, _) if age < ALERT_MOMENT_MS => Some(1),
+        (ActivityKind::WeatherAlert, _) => None,
+        (ActivityKind::Capture, _) if age < capture::CAPTURE_MOMENT_MS => Some(1),
+        (ActivityKind::Capture, _) => None,
+    }
+}
+
+/// What waits in the stack without anything going on: a settled headset.
 fn is_passive(kind: ActivityKind, rank: u8) -> bool {
-    matches!(kind, ActivityKind::Shelf | ActivityKind::Clipboard | ActivityKind::Headset(_)) && rank >= 7
+    matches!(kind, ActivityKind::Headset(_)) && rank >= 7
 }
 
 /// A moment leading the stack now, or a timer done: what goes ahead of the user's pick.
@@ -280,8 +342,10 @@ pub fn stack_order(p: &[Presence], now_ms: u64, user_front: Option<(ActivityKind
     let mut order: Vec<ActivityKind> = ranked.into_iter().map(|(_, _, k)| k).collect();
     let mut picked_by_user = false;
     if let Some((kind, picked_ms)) = user_front {
-        let superseded = p.iter().any(|x| x.changed_ms > picked_ms);
-        if let (false, Some(i)) = (superseded, order.iter().position(|k| *k == kind)) {
+        let is_passive_or_idle = |k: &ActivityKind| matches!(k, ActivityKind::Media(u32::MAX) | ActivityKind::Shelf | ActivityKind::Clipboard | ActivityKind::Weather | ActivityKind::Clock);
+        let superseded = p.iter().any(|x| !is_passive_or_idle(&x.kind) && x.changed_ms > picked_ms);
+        let match_kind = |k: &ActivityKind| *k == kind || (matches!((k, kind), (ActivityKind::Media(_), ActivityKind::Media(_))) && order.iter().all(|o| !matches!(o, ActivityKind::Media(id) if *id != u32::MAX)));
+        if let (false, Some(i)) = (superseded, order.iter().position(match_kind)) {
             let picked = order.remove(i);
             order.insert(0, picked);
             picked_by_user = true;
@@ -305,6 +369,15 @@ pub fn stack_order(p: &[Presence], now_ms: u64, user_front: Option<(ActivityKind
     order
 }
 
+/// Canonical cyclic order for wheel navigation across all active presences.
+pub fn stack_canonical_order(p: &[Presence], now_ms: u64) -> Vec<ActivityKind> {
+    let (keep, buds_front) = (media_paused_keep_ms(), buds_front_ms());
+    let mut ranked: Vec<(u8, Reverse<u64>, ActivityKind)> =
+        p.iter().filter_map(|x| canonical_rank(x, now_ms, keep, buds_front).map(|r| (r, Reverse(x.changed_ms), x.kind))).collect();
+    ranked.sort_by_key(|(r, changed, _)| (*r, *changed));
+    ranked.into_iter().map(|(_, _, k)| k).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,16 +389,12 @@ mod tests {
     }
 
     #[test]
-    fn idle_weather_leads_the_shelf_and_the_clipboard() {
+    fn shelf_and_clipboard_stay_active_in_stack() {
         let quiet = [p(Shelf, Running, 50), p(Clipboard, Running, 60), p(Weather, Running, 0)];
-        assert_eq!(stack_order(&quiet, 100_000, None).first(), Some(&Weather), "nothing going on: the weather");
         let picked = Some((Shelf, 2_000));
         assert_eq!(stack_order(&quiet, 100_000, picked).first(), Some(&Shelf), "the user's pick stays in front");
         let busy = [p(Media(1), Playing, 100), p(Shelf, Running, 50), p(Weather, Running, 0)];
         assert_eq!(stack_order(&busy, 1_000, None).first(), Some(&Media(1)), "music keeps the front");
-        let mut idle = vec![p(Shelf, Running, 50), p(Clipboard, Running, 60)];
-        add_idle(&mut idle, 100_000, true, false);
-        assert!(idle.iter().any(|x| x.kind == Clock), "a shelf and a clipboard are not 'something on'");
     }
 
     #[test]
@@ -364,7 +433,7 @@ mod tests {
         let after = stack_order(&live, 1_000 + CAPTURE_MOMENT_MS + 1, picked);
         assert!(!after.contains(&Capture), "gone after {CAPTURE_MOMENT_MS} ms: {after:?}");
         assert!(!has_card(Capture));
-        assert_eq!(settings_page_for(Capture), 8);
+        assert_eq!(settings_page_for(Capture), 14);
     }
 
     #[test]
@@ -432,7 +501,7 @@ mod tests {
         assert_eq!(stack_order(&done, 3_000, picked).first(), Some(&Transfer), "ahead of the pick while it lasts");
         assert!(!stack_order(&done, 1_000 + TRANSFER_DONE_MS + 1, picked).contains(&Transfer));
         assert!(!has_card(Transfer), "its pill brings Explorer's dialog up");
-        assert_eq!(settings_page_for(Transfer), 8);
+        assert_eq!(settings_page_for(Transfer), 14);
     }
 
     #[test]
@@ -458,11 +527,11 @@ mod tests {
     }
 
     #[test]
-    fn privacy_sits_behind_upcoming_matches_and_ahead_of_paused_media() {
-        // The Buds connected long ago (no longer in front); the media paused a second ago.
+    fn privacy_leads_as_priority_indicator() {
+        // Privacy indicator ranks at the front (priority 1) ahead of upcoming matches, media, and buds.
         let live = [p(Media(1), Paused, 99_000), p(Privacy, Running, 99_500), p(Match(3), MatchUpcoming, 0), p(Buds, Connected { battery_low: false }, 0)];
-        assert_eq!(stack_order(&live, 100_000, None), vec![Match(3), Privacy, Media(1), Buds]);
-        assert_eq!(settings_page_for(Privacy), 8);
+        assert_eq!(stack_order(&live, 100_000, None), vec![Privacy, Match(3), Media(1), Buds]);
+        assert_eq!(settings_page_for(Privacy), 14);
     }
 
     #[test]
@@ -473,12 +542,12 @@ mod tests {
         assert_eq!(stack_order(&idle, 100_000, None), vec![Media(1), Headset(7)], "behind paused media once settled");
         let low = [p(Match(3), MatchUpcoming, 0), p(Headset(7), Connected { battery_low: true }, 0)];
         assert_eq!(stack_order(&low, 100_000, None), vec![Headset(7), Match(3)], "ahead of an upcoming match while low");
-        assert_eq!(settings_page_for(Headset(7)), 8);
+        assert_eq!(settings_page_for(Headset(7)), 4);
     }
 
     #[test]
     fn system_activities_have_no_card() {
-        for kind in [Media(1), Match(2), Timer, Stopwatch, Buds] {
+        for kind in [Media(1), Match(2), Timer, Stopwatch, Buds, Download] {
             assert!(has_card(kind), "{kind:?}");
         }
         for kind in [Volume, Power, Privacy, Headset(3)] {

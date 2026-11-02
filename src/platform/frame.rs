@@ -2,37 +2,222 @@
 //! draws its own title bar: the settings window's and the setup's.
 
 use std::cell::Cell;
+use std::ffi::c_void;
+use std::path::PathBuf;
+use std::sync::Once;
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::core::{w, GUID, HRESULT, HSTRING, PCWSTR};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, PROPERTYKEY, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     DWMWINDOWATTRIBUTE,
 };
+use windows::Win32::System::Registry::{RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DefWindowProcW, GetClassNameW, IsZoomed, SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, CBT_CREATEWNDW,
-    HCBT_CREATEWND, HHOOK, NCCALCSIZE_PARAMS, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    HCBT_CREATEWND, HHOOK, NCCALCSIZE_PARAMS, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
     SWP_NOZORDER, WH_CBT, WM_NCCALCSIZE, WS_CHILD,
 };
+
+const NOBG_ICO: &[u8] = include_bytes!("../../assets/nowbar-nobg.ico");
+const APP_USER_MODEL_ID: &str = "SwiftTab.Desktop.v2";
+
+const IID_PROPERTY_STORE: GUID = GUID::from_u128(0x886d8eeb_8cf2_4446_8d02_cdba1dbdcf99);
+const FMTID_APP_USER_MODEL: GUID = GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3);
+const PKEY_RELAUNCH_COMMAND: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 2 };
+const PKEY_RELAUNCH_ICON: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 3 };
+const PKEY_RELAUNCH_DISPLAY_NAME: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 4 };
+const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 5 };
+const PKEY_ITEM_NAME_DISPLAY: PROPERTYKEY =
+    PROPERTYKEY { fmtid: GUID::from_u128(0xb725f130_47ef_101a_a5f1_02608c9eebac), pid: 10 };
+const PKEY_TITLE: PROPERTYKEY =
+    PROPERTYKEY { fmtid: GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9), pid: 2 };
+
+#[repr(C)]
+struct RawPropVariant {
+    vt: u16,
+    r1: u16,
+    r2: u16,
+    r3: u16,
+    pwsz_val: *const u16,
+    pad: usize,
+}
+
+#[repr(C)]
+struct PropertyStoreVtbl {
+    query_interface: usize,
+    add_ref: usize,
+    release: unsafe extern "system" fn(*mut PropertyStoreObj) -> u32,
+    get_count: usize,
+    get_at: usize,
+    get_value: usize,
+    set_value: unsafe extern "system" fn(*mut PropertyStoreObj, *const PROPERTYKEY, *const RawPropVariant) -> HRESULT,
+    commit: unsafe extern "system" fn(*mut PropertyStoreObj) -> HRESULT,
+}
+
+#[repr(C)]
+struct PropertyStoreObj {
+    vtbl: *const PropertyStoreVtbl,
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn SHGetPropertyStoreForWindow(hwnd: HWND, riid: *const GUID, ppv: *mut *mut c_void) -> HRESULT;
+    fn SetCurrentProcessExplicitAppUserModelID(app_id: PCWSTR) -> HRESULT;
+    fn SHChangeNotify(w_event_id: i32, u_flags: u32, dw_item1: *const c_void, dw_item2: *const c_void);
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn SetClassLongPtrW(hwnd: HWND, n_index: i32, dw_new_long: isize) -> usize;
+}
+
+const GCLP_HICON: i32 = -14;
+const GCLP_HICONSM: i32 = -34;
+const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
+const SHCNF_IDLIST: u32 = 0x0000;
+
+fn cached_nobg_ico_path() -> Option<PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join("SwiftTab");
+    let _ = std::fs::create_dir_all(&dir);
+    let ico = dir.join("swift-tab-icon-v2.ico");
+    let needs_write = std::fs::metadata(&ico).map_or(true, |m| m.len() != NOBG_ICO.len() as u64);
+    if needs_write {
+        let _ = std::fs::write(&ico, NOBG_ICO);
+    }
+    ico.exists().then_some(ico)
+}
+
+fn set_mui_cache_string(value_name: &str, text: &str) {
+    let key = w!("Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache");
+    let name = HSTRING::from(value_name);
+    let data: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let _ = RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            key,
+            &name,
+            REG_SZ.0,
+            Some(data.as_ptr() as *const _),
+            (data.len() * 2) as u32,
+        );
+    }
+}
+
+/// Registers the process AppUserModelID, writes the clean Swift Tab taskbar icon file,
+/// updates Windows Explorer's MuiCache so `swifttab-settings.exe` / `swifttab.exe` show as
+/// "Swift Tab" instead of the raw `.exe` filename, and notifies the Shell.
+pub fn register_app_identity() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        unsafe {
+            let aumid = HSTRING::from(APP_USER_MODEL_ID);
+            let _ = SetCurrentProcessExplicitAppUserModelID(PCWSTR(aumid.as_ptr()));
+        }
+        let _ = cached_nobg_ico_path();
+        if let Ok(exe) = std::env::current_exe() {
+            let mut paths = vec![exe.clone()];
+            if let Some(parent) = exe.parent() {
+                paths.push(parent.join("swifttab.exe"));
+                paths.push(parent.join("swifttab-settings.exe"));
+                paths.push(parent.join("swifttab-setup.exe"));
+            }
+            for p in paths {
+                let s = p.display().to_string();
+                set_mui_cache_string(&format!("{s}.FriendlyAppName"), "Swift Tab");
+                set_mui_cache_string(&format!("{s}.ApplicationCompany"), "Swift Tab");
+            }
+        }
+        unsafe {
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+        }
+    });
+}
+
+unsafe fn set_prop_str(store: *mut PropertyStoreObj, key: &PROPERTYKEY, value: &str) {
+    let wide: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+    let pv = RawPropVariant {
+        vt: 31, // VT_LPWSTR
+        r1: 0,
+        r2: 0,
+        r3: 0,
+        pwsz_val: wide.as_ptr(),
+        pad: 0,
+    };
+    let _ = unsafe { ((*(*store).vtbl).set_value)(store, key, &pv) };
+}
+
+fn apply_window_icon_and_identity(hwnd: HWND) {
+    register_app_identity();
+    unsafe {
+        let mut store: *mut c_void = std::ptr::null_mut();
+        if SHGetPropertyStoreForWindow(hwnd, &IID_PROPERTY_STORE, &mut store).is_ok() && !store.is_null() {
+            let store = store as *mut PropertyStoreObj;
+            set_prop_str(store, &PKEY_APP_USER_MODEL_ID, APP_USER_MODEL_ID);
+            set_prop_str(store, &PKEY_RELAUNCH_DISPLAY_NAME, "Swift Tab");
+            set_prop_str(store, &PKEY_ITEM_NAME_DISPLAY, "Swift Tab");
+            set_prop_str(store, &PKEY_TITLE, "Swift Tab");
+            if let Ok(exe) = std::env::current_exe() {
+                set_prop_str(store, &PKEY_RELAUNCH_COMMAND, &format!("\"{}\"", exe.display()));
+                let icon_res = cached_nobg_ico_path()
+                    .map(|p| format!("{},0", p.display()))
+                    .unwrap_or_else(|| format!("{},-2", exe.display()));
+                set_prop_str(store, &PKEY_RELAUNCH_ICON, &icon_res);
+            }
+            let _ = ((*(*store).vtbl).commit)(store);
+            let _ = ((*(*store).vtbl).release)(store);
+        }
+
+        // Set taskbar/window and class icon to Resource ID 2 (the no-background Swift Tab ribbon logo).
+        if let Ok(hinst) = windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetSystemMetrics, LoadImageW, SendMessageW, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_DEFAULTCOLOR, LR_SHARED, SM_CXICON, SM_CXSMICON, WM_SETICON,
+            };
+            let sm = GetSystemMetrics(SM_CXSMICON).max(16);
+            let lg = GetSystemMetrics(SM_CXICON).max(32);
+            if let Ok(h_sm) = LoadImageW(Some(hinst.into()), windows::core::PCWSTR(2 as _), IMAGE_ICON, sm, sm, LR_DEFAULTCOLOR | LR_SHARED) {
+                if !h_sm.is_invalid() {
+                    let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(h_sm.0 as isize)));
+                    let _ = SetClassLongPtrW(hwnd, GCLP_HICONSM, h_sm.0 as isize);
+                }
+            }
+            if let Ok(h_lg) = LoadImageW(Some(hinst.into()), windows::core::PCWSTR(2 as _), IMAGE_ICON, lg, lg, LR_DEFAULTCOLOR | LR_SHARED) {
+                if !h_lg.is_invalid() {
+                    let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(h_lg.0 as isize)));
+                    let _ = SetClassLongPtrW(hwnd, GCLP_HICON, h_lg.0 as isize);
+                }
+            }
+        }
+    }
+}
 
 /// Takes over a window made without the hook (it existed already): its title bar goes now.
 pub fn adopt(hwnd: HWND) {
     unsafe {
         let _ = SetWindowSubclass(hwnd, Some(frame_proc), 1, 0);
-        let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     }
+    apply_window_icon_and_identity(hwnd);
 }
 
 pub fn style_frame(hwnd: HWND, dark: bool) {
-    // COLORREF is 0x00BBGGRR: Theme.ground and Theme.text.
-    let (bg, text): (u32, u32) = if dark { (0x0018_1616, 0x00E3_EEF6) } else { (0x00EF_EDED, 0x0013_181C) };
+    // COLORREF is 0x00BBGGRR: Windows 11 Fluent Mica base (#202020 dark, #F3F3F3 light) and primary text.
+    let (bg, text): (u32, u32) = if dark { (0x0020_2020, 0x00FF_FFFF) } else { (0x00F3_F3F3, 0x001A_1A1A) };
     let on: i32 = dark as i32;
-    // 19 before Windows 10 20H1. The colours and corners are Windows 11's: they fail on 10.
+    // DWMWA_SYSTEMBACKDROP_TYPE (38): DWMSBT_MAINWINDOW (2 = Mica) when transparency is active, else DWMSBT_NONE (1).
+    let mica: i32 = if crate::platform::os::solid_fallback() { 1 } else { 2 };
+    // 19 before Windows 10 20H1. The colours, corners and Mica backdrop are Windows 11's: they fail on 10.
     let dark_mode = DWMWINDOWATTRIBUTE(crate::platform::os::build().map_or(20, crate::platform::os::dark_mode_attribute) as i32);
+    let system_backdrop = DWMWINDOWATTRIBUTE(38);
     unsafe {
         let _ = DwmSetWindowAttribute(hwnd, dark_mode, &on as *const i32 as _, 4);
+        let _ = DwmSetWindowAttribute(hwnd, system_backdrop, &mica as *const i32 as _, 4);
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &bg as *const u32 as _, 4);
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &bg as *const u32 as _, 4);
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &text as *const u32 as _, 4);
@@ -57,6 +242,10 @@ unsafe extern "system" fn frame_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARA
             unsafe { (*rect).top += GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) };
         }
         return result;
+    }
+    // Prevent background erasing to completely eliminate window redraw flicker
+    if msg == windows::Win32::UI::WindowsAndMessaging::WM_ERASEBKGND {
+        return LRESULT(1);
     }
     unsafe { DefSubclassProc(hwnd, msg, wp, lp) }
 }
@@ -83,13 +272,16 @@ unsafe extern "system" fn on_create(code: i32, wp: WPARAM, lp: LPARAM) -> LRESUL
         let mut class = [0u16; 32];
         let len = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
         // winit's window class (its event target and glutin's dummy window have their own).
-        if style & WS_CHILD.0 == 0 && class[..len].iter().copied().eq("Window Class".encode_utf16()) {
-            let (hook, dark) = CREATE_HOOK.with(|h| h.replace((HHOOK::default(), false)));
-            unsafe {
-                let _ = SetWindowSubclass(hwnd, Some(frame_proc), 1, 0);
-                let _ = UnhookWindowsHookEx(hook);
+        if style & WS_CHILD.0 == 0 {
+            let class_str = String::from_utf16_lossy(&class[..len]);
+            if class_str == "Window Class" || class_str.contains("Window") || class_str.contains("winit") {
+                let (hook, dark) = CREATE_HOOK.with(|h| h.replace((HHOOK::default(), false)));
+                unsafe {
+                    let _ = SetWindowSubclass(hwnd, Some(frame_proc), 1, 0);
+                    let _ = UnhookWindowsHookEx(hook);
+                }
+                style_frame(hwnd, dark);
             }
-            style_frame(hwnd, dark);
         }
     }
     unsafe { CallNextHookEx(None, code, wp, lp) }

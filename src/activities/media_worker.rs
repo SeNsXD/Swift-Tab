@@ -1,4 +1,4 @@
-﻿//! The GSMTC side of media: a worker thread subscribes to the session manager and every session,
+//! The GSMTC side of media: a worker thread subscribes to the session manager and every session,
 //! debounces their bursts of events, and posts a snapshot of every live session to the UI.
 //! All blocking WinRT calls happen here, never on the UI thread (it shares Explorer's input queue).
 
@@ -134,6 +134,7 @@ fn run(events: Sender<Msg>, rx: std::sync::mpsc::Receiver<Msg>, post: impl Fn(Ve
                     if let Err(e) = command(&t.session, c) {
                         log(&format!("media command {c:?}: {e:?}"));
                     }
+                    debounce.poke(now_ms());
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -273,7 +274,12 @@ fn session_snapshot(key: &str, t: &Tracked, arts: &mut HashMap<String, Art>) -> 
         repeat: controls.IsRepeatEnabled().unwrap_or(false),
     };
     let shuffle = info.IsShuffleActive().and_then(|r| r.Value()).ok();
-    let repeat = info.AutoRepeatMode().and_then(|r| r.Value()).ok().map(|m| m != MediaPlaybackAutoRepeatMode::None);
+    let repeat = info.AutoRepeatMode().and_then(|r| r.Value()).ok().and_then(|m| match m {
+        MediaPlaybackAutoRepeatMode::None => None,
+        MediaPlaybackAutoRepeatMode::List => Some(false),
+        MediaPlaybackAutoRepeatMode::Track => Some(true),
+        _ => None,
+    });
     let rate = info.PlaybackRate().and_then(|r| r.Value()).ok();
     let timeline = session.GetTimelineProperties().ok().and_then(|tl| {
         Some(Timeline {

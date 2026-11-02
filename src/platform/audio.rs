@@ -1,4 +1,4 @@
-﻿//! Audio outputs: the default one (its name for the media card's chip), the list for our own
+//! Audio outputs: the default one (its name for the media card's chip), the list for our own
 //! output picker, switching Windows' default output, and the output volume.
 
 use std::sync::Mutex;
@@ -12,7 +12,12 @@ use windows::Win32::Media::Audio::Endpoints::{
 use windows::Win32::Media::Audio::{
     eConsole, eMultimedia, eRender, AUDIO_VOLUME_NOTIFICATION_DATA, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient,
     IMMNotificationClient_Impl, MMDeviceEnumerator, PKEY_AudioEndpoint_FormFactor, DEVICE_STATE, DEVICE_STATE_ACTIVE,
+    IAudioSessionControl2, IAudioSessionManager2, ISimpleAudioVolume,
 };
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
+};
+use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Com::StructuredStorage::{PropVariantToStringAlloc, PropVariantToUInt32};
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -248,6 +253,117 @@ pub fn default_output_level() -> Option<(f32, bool)> {
         let v = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok()?;
         Some((v.GetMasterVolumeLevelScalar().ok()?, v.GetMute().ok()?.as_bool()))
     }
+}
+
+/// Helper to extract executable path from process ID.
+fn process_exe_path(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut size = buf.len() as u32;
+        let success = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_FORMAT(0),
+            PWSTR(buf.as_mut_ptr()),
+            &mut size,
+        );
+        let _ = CloseHandle(handle);
+        if success.is_ok() && size > 0 {
+            Some(String::from_utf16_lossy(&buf[..size as usize]))
+        } else {
+            None
+        }
+    }
+}
+
+/// Runs a closure on every matching ISimpleAudioVolume session for the given app.
+fn for_each_matching_session<F>(app_id: &str, app_name: &str, mut f: F)
+where
+    F: FnMut(&ISimpleAudioVolume),
+{
+    use windows::core::Interface;
+    let Ok(en) = enumerator() else { return };
+    unsafe {
+        let Ok(device) = en.GetDefaultAudioEndpoint(eRender, eMultimedia) else { return };
+        let Ok(mgr) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { return };
+        let Ok(session_enum) = mgr.GetSessionEnumerator() else { return };
+        let Ok(count) = session_enum.GetCount() else { return };
+
+        let app_id_clean = app_id.trim().to_lowercase();
+        let app_name_clean = app_name.trim().to_lowercase();
+
+        for i in 0..count {
+            let Ok(control) = session_enum.GetSession(i) else { continue };
+            let Ok(control2) = control.cast::<IAudioSessionControl2>() else { continue };
+            if control2.IsSystemSoundsSession() == windows::Win32::Foundation::S_OK {
+                continue;
+            }
+            let Ok(pid) = control2.GetProcessId() else { continue };
+            if pid == 0 {
+                continue;
+            }
+            let Some(exe_path) = process_exe_path(pid) else { continue };
+            let file_name = exe_path.rsplit(['\\', '/']).next().unwrap_or(&exe_path).to_lowercase();
+            let stem = file_name.strip_suffix(".exe").unwrap_or(&file_name);
+
+            let matched = (!app_id_clean.is_empty() && (
+                app_id_clean == file_name
+                    || app_id_clean == stem
+                    || app_id_clean.contains(&file_name)
+                    || app_id_clean.contains(stem)
+                    || file_name.contains(&app_id_clean)
+                    || stem.contains(&app_id_clean)
+            )) || (!app_name_clean.is_empty() && (
+                stem.contains(&app_name_clean)
+                    || app_name_clean.contains(stem)
+            ));
+
+            if matched {
+                if let Ok(vol) = control.cast::<ISimpleAudioVolume>() {
+                    f(&vol);
+                }
+            }
+        }
+    }
+}
+
+/// Master volume level (0..1) and whether it is muted for a specific application.
+pub fn app_volume(app_id: &str, app_name: &str) -> Option<(f32, bool)> {
+    let mut result = None;
+    for_each_matching_session(app_id, app_name, |vol| {
+        if result.is_none() {
+            unsafe {
+                if let (Ok(level), Ok(muted)) = (vol.GetMasterVolume(), vol.GetMute()) {
+                    result = Some((level, muted.as_bool()));
+                }
+            }
+        }
+    });
+    result
+}
+
+/// Sets the master volume (0..1) for a specific application.
+pub fn set_app_volume(app_id: &str, app_name: &str, level: f32) -> Result<()> {
+    let clamped = level.clamp(0.0, 1.0);
+    for_each_matching_session(app_id, app_name, |vol| {
+        unsafe {
+            let _ = vol.SetMasterVolume(clamped, std::ptr::null());
+        }
+    });
+    Ok(())
+}
+
+/// Sets the mute state for a specific application.
+pub fn set_app_mute(app_id: &str, app_name: &str, mute: bool) -> Result<()> {
+    for_each_matching_session(app_id, app_name, |vol| {
+        unsafe {
+            let _ = vol.SetMute(mute, std::ptr::null());
+        }
+    });
+    Ok(())
 }
 
 /// The default output's peak meter: how loud what is playing is right now (0..1).

@@ -1,4 +1,4 @@
-﻿pub mod api_server;
+pub mod api_server;
 pub mod ask;
 pub mod audio;
 pub mod autostart;
@@ -13,6 +13,7 @@ pub mod http;
 pub mod ipc;
 pub mod updater;
 pub mod log;
+pub mod media_launch;
 pub mod os;
 pub mod power;
 pub mod privacy;

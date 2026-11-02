@@ -1,19 +1,18 @@
-//! The stage's pills: drawn once at the window's scale by the Now Bar's painter, handed to Slint.
+//! The stage's pills: drawn once at the window's scale by the Swift Tab's painter, handed to Slint.
 
 use slint::{Color, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, VecModel};
 
-use nowbar::i18n::{n_, tr};
 use nowbar::render::showcase::{frame, pills, Frame};
 
 use crate::SetupWindow;
 
 /// What each of `showcase::pills` is, in its order: a name and a line under it.
 const CAPTIONS: [(&str, &str); 5] = [
-    (n_("Müzik"), n_("Çalan şarkı, kontroller ve şarkı sözleri")),
-    ("Claude Code", n_("Ne yaptığı, görev listesi ve izin istekleri")),
-    (n_("Canlı maç"), n_("Skor, dakika ve goller anında")),
-    ("Galaxy Buds", n_("Kulaklıkların ve kutunun pili")),
-    (n_("Raf"), n_("Dosyaları bırak, sonra istediğin yere sürükle")),
+    ("Music", "Control ur media and volume"),
+    ("Weather", "Temperature and sky conditions"),
+    ("Wireless Buds", "Your earbuds battery"),
+    ("Clipboard", "Recent clips and history"),
+    ("Shelf", "Drop files, then drag them wherever you like"),
 ];
 
 /// The widest pill the stage's strip takes (DIP); wider ones are drawn smaller, as a miniature.
@@ -36,8 +35,8 @@ pub fn fill(ui: &SetupWindow, scale: f32) {
     ui.set_pill_accents(list(frames.iter().map(accent).collect()));
     // The stage's light: the pill's own colour.
     ui.set_pill_glows(list(frames.iter().map(|f| Color::from_rgb_u8(f.glow.0, f.glow.1, f.glow.2)).collect()));
-    ui.set_pill_names(list(CAPTIONS.iter().take(frames.len()).map(|(n, _)| tr(n).into()).collect()));
-    ui.set_pill_lines(list(CAPTIONS.iter().take(frames.len()).map(|(_, l)| tr(l).into()).collect()));
+    ui.set_pill_names(list(CAPTIONS.iter().take(frames.len()).map(|(n, _)| (*n).into()).collect()));
+    ui.set_pill_lines(list(CAPTIONS.iter().take(frames.len()).map(|(_, l)| (*l).into()).collect()));
     ui.set_pills(list(frames.iter().map(image).collect()));
 }
 

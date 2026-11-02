@@ -1,4 +1,4 @@
-﻿//! Now Bar's own timer and stopwatch. Pure: every call takes `now` (GetTickCount64 ms),
+//! Swift Tab's own timer and stopwatch. Pure: every call takes `now` (GetTickCount64 ms),
 //! which keeps counting through sleep, so a timer that ends while the laptop sleeps is Done on wake.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,8 +208,8 @@ mod tests {
         assert_eq!(s.lap(12_400), 12_400);
         assert_eq!(s.lap(20_000), 7_600);
         assert_eq!(s.laps(), &[12_400, 7_600]);
-        assert_eq!(format_stopwatch(12_449), "00:12,4");
-        assert_eq!(format_stopwatch(3_612_400), "1:00:12,4");
+        assert_eq!(format_stopwatch(12_449), "00:12.4");
+        assert_eq!(format_stopwatch(3_612_400), "1:00:12.4");
     }
 
     #[test]
@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn labels() {
-        assert_eq!(format_duration_label(600_000), "10 dk");
-        assert_eq!(format_duration_label(5_400_000), "1 sa 30 dk");
-        assert_eq!(format_duration_label(45_000), "45 sn");
+        assert_eq!(format_duration_label(600_000), "10 min");
+        assert_eq!(format_duration_label(5_400_000), "1 h 30 min");
+        assert_eq!(format_duration_label(45_000), "45 s");
     }
 }
