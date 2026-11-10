@@ -6,8 +6,8 @@ use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::Once;
 
-use windows::core::{w, GUID, HRESULT, HSTRING, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, PROPERTYKEY, RECT, WPARAM};
+use windows::core::{w, HSTRING, PCWSTR};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     DWMWINDOWATTRIBUTE,
@@ -23,50 +23,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const NOBG_ICO: &[u8] = include_bytes!("../../assets/nowbar-nobg.ico");
-const APP_USER_MODEL_ID: &str = "SwiftTab.Desktop.v2";
-
-const IID_PROPERTY_STORE: GUID = GUID::from_u128(0x886d8eeb_8cf2_4446_8d02_cdba1dbdcf99);
-const FMTID_APP_USER_MODEL: GUID = GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3);
-const PKEY_RELAUNCH_COMMAND: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 2 };
-const PKEY_RELAUNCH_ICON: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 3 };
-const PKEY_RELAUNCH_DISPLAY_NAME: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 4 };
-const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY { fmtid: FMTID_APP_USER_MODEL, pid: 5 };
-const PKEY_ITEM_NAME_DISPLAY: PROPERTYKEY =
-    PROPERTYKEY { fmtid: GUID::from_u128(0xb725f130_47ef_101a_a5f1_02608c9eebac), pid: 10 };
-const PKEY_TITLE: PROPERTYKEY =
-    PROPERTYKEY { fmtid: GUID::from_u128(0xf29f85e0_4ff9_1068_ab91_08002b27b3d9), pid: 2 };
-
-#[repr(C)]
-struct RawPropVariant {
-    vt: u16,
-    r1: u16,
-    r2: u16,
-    r3: u16,
-    pwsz_val: *const u16,
-    pad: usize,
-}
-
-#[repr(C)]
-struct PropertyStoreVtbl {
-    query_interface: usize,
-    add_ref: usize,
-    release: unsafe extern "system" fn(*mut PropertyStoreObj) -> u32,
-    get_count: usize,
-    get_at: usize,
-    get_value: usize,
-    set_value: unsafe extern "system" fn(*mut PropertyStoreObj, *const PROPERTYKEY, *const RawPropVariant) -> HRESULT,
-    commit: unsafe extern "system" fn(*mut PropertyStoreObj) -> HRESULT,
-}
-
-#[repr(C)]
-struct PropertyStoreObj {
-    vtbl: *const PropertyStoreVtbl,
-}
 
 #[link(name = "shell32")]
 extern "system" {
-    fn SHGetPropertyStoreForWindow(hwnd: HWND, riid: *const GUID, ppv: *mut *mut c_void) -> HRESULT;
-    fn SetCurrentProcessExplicitAppUserModelID(app_id: PCWSTR) -> HRESULT;
     fn SHChangeNotify(w_event_id: i32, u_flags: u32, dw_item1: *const c_void, dw_item2: *const c_void);
 }
 
@@ -110,54 +69,13 @@ fn set_mui_cache_string(value_name: &str, text: &str) {
     }
 }
 
-/// Registers the process AppUserModelID, writes the clean Swift Tab taskbar icon file,
+/// Registers the clean Swift Tab taskbar icon file,
 /// updates Windows Explorer's MuiCache so `swifttab-settings.exe` / `swifttab.exe` show as
 /// "Swift Tab" instead of the raw `.exe` filename, and notifies the Shell.
 pub fn register_app_identity() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let aumid_str = APP_USER_MODEL_ID;
-        let aumid = HSTRING::from(aumid_str);
-        unsafe {
-            let _ = SetCurrentProcessExplicitAppUserModelID(PCWSTR(aumid.as_ptr()));
-        }
-        let ico_path = cached_nobg_ico_path();
-        if let Some(ico) = &ico_path {
-            let key = format!("Software\\Classes\\AppUserModelId\\{aumid_str}");
-            let key_h = HSTRING::from(key.as_str());
-            let name_val = HSTRING::from("DisplayName");
-            let data_name: Vec<u16> = "Swift Tab".encode_utf16().chain(std::iter::once(0)).collect();
-            unsafe {
-                let _ = RegSetKeyValueW(
-                    HKEY_CURRENT_USER,
-                    &key_h,
-                    &name_val,
-                    REG_SZ.0,
-                    Some(data_name.as_ptr() as *const _),
-                    (data_name.len() * 2) as u32,
-                );
-                let icon_val = HSTRING::from("IconUri");
-                let data_ico: Vec<u16> = ico.display().to_string().encode_utf16().chain(std::iter::once(0)).collect();
-                let _ = RegSetKeyValueW(
-                    HKEY_CURRENT_USER,
-                    &key_h,
-                    &icon_val,
-                    REG_SZ.0,
-                    Some(data_ico.as_ptr() as *const _),
-                    (data_ico.len() * 2) as u32,
-                );
-                let bg_val = HSTRING::from("IconBackgroundColor");
-                let data_bg: Vec<u16> = "transparent".encode_utf16().chain(std::iter::once(0)).collect();
-                let _ = RegSetKeyValueW(
-                    HKEY_CURRENT_USER,
-                    &key_h,
-                    &bg_val,
-                    REG_SZ.0,
-                    Some(data_bg.as_ptr() as *const _),
-                    (data_bg.len() * 2) as u32,
-                );
-            }
-        }
+        let _ = cached_nobg_ico_path();
         if let Ok(exe) = std::env::current_exe() {
             let mut paths = vec![exe.clone()];
             if let Some(parent) = exe.parent() {
@@ -171,70 +89,15 @@ pub fn register_app_identity() {
                 set_mui_cache_string(&format!("{s}.ApplicationCompany"), "Swift Tab");
             }
         }
-        // Ensure Start Menu shortcut exists so Windows Taskbar associates the icon immediately
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            let lnk = std::path::PathBuf::from(appdata)
-                .join("Microsoft\\Windows\\Start Menu\\Programs\\Swift Tab.lnk");
-            if !lnk.exists() {
-                if let Ok(exe) = std::env::current_exe() {
-                    use std::os::windows::process::CommandExt;
-                    let main_exe = exe.parent().map(|d| d.join("swifttab.exe")).unwrap_or(exe);
-                    let ico = ico_path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
-                    let target = main_exe.display().to_string();
-                    let work_dir = main_exe.parent().map(|p| p.display().to_string()).unwrap_or_default();
-                    let script = format!(
-                        "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('{}'); $s.TargetPath = '{}'; $s.WorkingDirectory = '{}'; $s.IconLocation = '{},0'; $s.Description = 'Swift Tab'; $s.Save()",
-                        lnk.display(), target, work_dir, ico
-                    );
-                    let _ = std::process::Command::new("powershell")
-                        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-                        .creation_flags(0x08000000)
-                        .spawn();
-                }
-            }
-        }
         unsafe {
             SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
         }
     });
 }
 
-unsafe fn set_prop_str(store: *mut PropertyStoreObj, key: &PROPERTYKEY, value: &str) {
-    let wide: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
-    let pv = RawPropVariant {
-        vt: 31, // VT_LPWSTR
-        r1: 0,
-        r2: 0,
-        r3: 0,
-        pwsz_val: wide.as_ptr(),
-        pad: 0,
-    };
-    let _ = unsafe { ((*(*store).vtbl).set_value)(store, key, &pv) };
-}
-
 pub fn apply_window_icon_and_identity(hwnd: HWND) {
     register_app_identity();
     unsafe {
-        let mut store: *mut c_void = std::ptr::null_mut();
-        if SHGetPropertyStoreForWindow(hwnd, &IID_PROPERTY_STORE, &mut store).is_ok() && !store.is_null() {
-            let store = store as *mut PropertyStoreObj;
-            set_prop_str(store, &PKEY_APP_USER_MODEL_ID, APP_USER_MODEL_ID);
-            set_prop_str(store, &PKEY_RELAUNCH_DISPLAY_NAME, "Swift Tab");
-            set_prop_str(store, &PKEY_ITEM_NAME_DISPLAY, "Swift Tab");
-            set_prop_str(store, &PKEY_TITLE, "Swift Tab");
-            if let Ok(exe) = std::env::current_exe() {
-                set_prop_str(store, &PKEY_RELAUNCH_COMMAND, &format!("\"{}\"", exe.display()));
-                let icon_res = cached_nobg_ico_path()
-                    .map(|p| format!("{},0", p.display()))
-                    .unwrap_or_else(|| format!("{},-2", exe.display()));
-                set_prop_str(store, &PKEY_RELAUNCH_ICON, &icon_res);
-            }
-            let _ = ((*(*store).vtbl).commit)(store);
-            let _ = ((*(*store).vtbl).release)(store);
-        }
-
-        // Set taskbar/window and class icon: the exe's icon resource (ID 2, the no-background Swift Tab
-        // ribbon logo), or when the exe was built without rc.exe the .ico written to %LOCALAPPDATA%.
         use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SendMessageW, ICON_BIG, ICON_SMALL, SM_CXICON, SM_CXSMICON, WM_SETICON};
         let sm = GetSystemMetrics(SM_CXSMICON).max(16);
         let lg = GetSystemMetrics(SM_CXICON).max(32);
@@ -249,15 +112,10 @@ pub fn apply_window_icon_and_identity(hwnd: HWND) {
     }
 }
 
-/// The window icon at `size` px. Built straight from the .ico compiled into the exe, so it never
-/// depends on rc.exe (the Windows SDK), a resource id or a file on disk: the taskbar used to show
-/// Windows' blank page whenever one of those was missing. The exe's icon resource (2, then 1) and
-/// the cached .ico file remain as fallbacks.
+/// The window icon at `size` px. Checks embedded PE resources first (2, then 1),
+/// then memory icon, then cached file.
 unsafe fn load_window_icon(size: i32) -> Option<isize> {
     use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, LR_SHARED};
-    if let Some(h) = icon_from_memory(NOBG_ICO, size) {
-        return Some(h);
-    }
     if let Ok(hinst) = windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
         for id in [2usize, 1] {
             if let Ok(h) = LoadImageW(Some(hinst.into()), PCWSTR(id as _), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_SHARED) {
@@ -266,6 +124,9 @@ unsafe fn load_window_icon(size: i32) -> Option<isize> {
                 }
             }
         }
+    }
+    if let Some(h) = icon_from_memory(NOBG_ICO, size) {
+        return Some(h);
     }
     let path = HSTRING::from(cached_nobg_ico_path()?.display().to_string());
     match LoadImageW(None, PCWSTR(path.as_ptr()), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_LOADFROMFILE) {
