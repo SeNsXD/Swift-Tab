@@ -216,6 +216,8 @@ pub enum ShelfOp {
     Share,
     /// A picture's text onto the clipboard (Windows' own recogniser).
     CopyText,
+    /// Encodes an image as a Base64 data URI onto the clipboard.
+    Base64,
     /// Pictures made smaller, as JPEGs beside them.
     Shrink,
     /// One zip of them all.
@@ -227,6 +229,7 @@ pub fn op_label(op: ShelfOp) -> &'static str {
     match op {
         ShelfOp::Share => tr("Paylaş"),
         ShelfOp::CopyText => tr("Metni kopyala"),
+        ShelfOp::Base64 => "Base64",
         ShelfOp::Shrink => tr("Küçült"),
         ShelfOp::Zip => tr("Zip yap"),
     }
@@ -247,6 +250,7 @@ pub fn ops(targets: &[&ShelfItem], has_selection: bool) -> Vec<ShelfOp> {
     }
     if targets.len() == 1 && targets.iter().all(picture) {
         out.push(ShelfOp::CopyText);
+        out.push(ShelfOp::Base64);
     }
     if !targets.is_empty() && targets.iter().all(picture) {
         out.push(ShelfOp::Shrink);
@@ -448,7 +452,7 @@ mod tests {
         use ShelfOp::*;
         let item = |name: &str, dir: bool| ShelfItem { path: PathBuf::from(format!(r"C:\x\{name}")), name: name.into(), kind: file_kind(name, dir) };
         let ops_of = |items: &[ShelfItem]| ops(&items.iter().collect::<Vec<_>>(), true);
-        assert_eq!(ops_of(&[item("ekran.png", false)]), [Share, CopyText, Shrink], "one picture");
+        assert_eq!(ops_of(&[item("ekran.png", false)]), [Share, CopyText, Base64, Shrink], "one picture");
         assert_eq!(ops_of(&[item("a.png", false), item("b.JPG", false)]), [Share, Shrink, Zip], "pictures");
         assert_eq!(ops_of(&[item("a.png", false), item("rapor.pdf", false)]), [Share, Zip], "a picture and a document");
         assert_eq!(ops_of(&[item("rapor.pdf", false)]), [Share], "one document");

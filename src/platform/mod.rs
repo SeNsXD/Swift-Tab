@@ -17,6 +17,7 @@ pub mod media_launch;
 pub mod os;
 pub mod power;
 pub mod privacy;
+pub mod quicklook;
 pub mod session;
 pub mod share;
 pub mod taskbar;

@@ -515,6 +515,7 @@ pub fn op_icon(op: ShelfOp) -> Icon {
     match op {
         ShelfOp::Share => Icon::Share,
         ShelfOp::CopyText => Icon::Copy,
+        ShelfOp::Base64 => Icon::Copy,
         ShelfOp::Shrink => Icon::Shrink,
         ShelfOp::Zip => Icon::Archive,
     }

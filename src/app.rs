@@ -88,7 +88,8 @@ use crate::platform::log::log;
 use crate::platform::taskbar::{self, ItemsMailbox};
 use crate::platform::tray::{
     create_tray, remove_tray, show_menu, show_shelf_menu, MENU_AUTOSTART, MENU_BRIEF, MENU_CLIPBOARD, MENU_MATCH_HIDE, MENU_MATCH_OPEN, MENU_MUSIC, MENU_QUESTION,
-    MENU_QUIT, MENU_SETTINGS, MENU_STOPWATCH, MENU_TIMER, MENU_UPDATE, MENU_WELLBEING, SHELF_OPEN, SHELF_REMOVE, SHELF_SHARE,
+    MENU_QUIT, MENU_SETTINGS, MENU_STOPWATCH, MENU_TIMER, MENU_UPDATE, MENU_WELLBEING, SHELF_COPY_BASE64, SHELF_COPY_PATH, SHELF_EXPLORER, SHELF_OPEN, SHELF_PREVIEW,
+    SHELF_REMOVE, SHELF_SHARE,
 };
 use crate::platform::windows::{post_buds, post_effects_changed, post_matches, post_media, watch_foreground, CardEvent, CardWindow, MainWindow, PillEvent, PillWindow, UiEvent};
 use crate::render::card::{
@@ -408,6 +409,12 @@ fn open_url(url: &str) {
             windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
         );
     }
+}
+
+fn show_in_explorer(path: &Path) {
+    let p = path.to_string_lossy().replace('/', "\\");
+    let arg = format!("/select,\"{p}\"");
+    let _ = std::process::Command::new("explorer").arg(arg).spawn();
 }
 
 /// The card's status capsule: the minute, a countdown, or the status in words.
@@ -2316,6 +2323,7 @@ impl App {
         let added = self.shelf.add(&paths, |p| p.is_dir());
         log(&format!("shelf: +{added} of {} dropped", paths.len()));
         if added > 0 {
+            play_windows_sound("Windows Navigation Start");
             let now = now_ms();
             self.shelf_ms = now;
             self.user_front = Some((ActivityKind::Shelf, now));
@@ -2331,11 +2339,26 @@ impl App {
         self.refresh()
     }
 
-    /// Right-click on a shelf file: open it, share it, or take it off the shelf.
+    /// Right-click on a shelf file: open it, preview it, show in explorer, share it, or take it off.
     fn shelf_menu(&mut self, i: usize) -> Result<()> {
         let Some(path) = self.shelf.items().get(i).map(|item| item.path.clone()) else { return Ok(()) };
-        match show_shelf_menu(self.main.hwnd) {
+        let is_img = crate::activities::shelf::is_raster(&path.file_name().unwrap_or_default().to_string_lossy());
+        match show_shelf_menu(self.main.hwnd, is_img) {
             SHELF_OPEN => open_path(&path),
+            SHELF_PREVIEW => crate::platform::quicklook::toggle(&path),
+            SHELF_EXPLORER => show_in_explorer(&path),
+            SHELF_COPY_PATH => {
+                let _ = crate::platform::clipboard::set_text(self.main.hwnd, &path.to_string_lossy());
+                self.shelf_status = Some((ShelfOp::Share, "Path copied".to_string(), now_ms() + 1500));
+                play_windows_sound("Windows Navigation Start");
+            }
+            SHELF_COPY_BASE64 => {
+                if let Some(uri) = crate::activities::shelf_tools::to_base64_data_uri(&path) {
+                    let _ = crate::platform::clipboard::set_text(self.main.hwnd, &uri);
+                    self.shelf_status = Some((ShelfOp::Share, "Base64 copied".to_string(), now_ms() + 1500));
+                    play_windows_sound("Windows Navigation Start");
+                }
+            }
             SHELF_SHARE => {
                 self.shelf.select(std::slice::from_ref(&path));
                 self.shelf_tool(ShelfOp::Share);
@@ -2344,6 +2367,40 @@ impl App {
                 self.shelf.remove(i);
                 self.shelf_hover = None;
                 self.forget_shelf_thumbs();
+            }
+            _ => {}
+        }
+        self.refresh()
+    }
+
+    /// Right-click on an item in the clipboard history: paste, copy plain, pin, delete, clear.
+    fn clipboard_item_menu(&mut self, i: usize) -> Result<()> {
+        let Some(item) = self.clipboard_stash.get(i).cloned() else { return Ok(()) };
+        let is_img = matches!(item.kind, crate::activities::clipboard_stash::ClipboardKind::Image { .. });
+        let has_html = item.html.is_some();
+        match crate::platform::tray::show_clipboard_item_menu(self.main.hwnd, is_img, has_html, item.pinned) {
+            crate::platform::tray::CLIPBOARD_PASTE => {
+                return self.paste_clipboard_item(i, false);
+            }
+            crate::platform::tray::CLIPBOARD_PASTE_PLAIN => {
+                return self.paste_clipboard_item(i, true);
+            }
+            crate::platform::tray::CLIPBOARD_OPEN => {
+                self.open_clipboard_item(i);
+            }
+            crate::platform::tray::CLIPBOARD_PIN => {
+                self.clipboard_stash.toggle_pin(i);
+                self.clipboard_hover = None;
+                self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
+            }
+            crate::platform::tray::CLIPBOARD_DELETE => {
+                self.clipboard_stash.remove(i);
+                self.clipboard_hover = None;
+                self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
+            }
+            crate::platform::tray::CLIPBOARD_CLEAR_ALL => {
+                self.clipboard_stash.clear();
+                self.clipboard_hover = None;
             }
             _ => {}
         }
@@ -2387,6 +2444,15 @@ impl App {
                 if let Some(path) = targets.into_iter().next() {
                     self.shelf_status = Some((op, "Reading…".to_string(), u64::MAX));
                     self.tool_worker.send(ToolJob::Read(path));
+                }
+            }
+            ShelfOp::Base64 => {
+                if let Some(path) = targets.into_iter().next() {
+                    if let Some(uri) = crate::activities::shelf_tools::to_base64_data_uri(&path) {
+                        let _ = crate::platform::clipboard::set_text(self.main.hwnd, &uri);
+                        self.shelf_status = Some((op, "Base64 copied".to_string(), now_ms() + 1500));
+                        play_windows_sound("Windows Navigation Start");
+                    }
                 }
             }
             // Beside each picture; two that share a name ("a.png", "a.jpg") don't share a JPEG.
@@ -4701,6 +4767,7 @@ impl App {
     }
 
     fn close_card(&mut self) -> Result<()> {
+        crate::platform::quicklook::close();
         if matches!(self.card_state, CardState::Closed | CardState::Closing) {
             return Ok(());
         }
@@ -5252,7 +5319,10 @@ impl App {
                 }
                 Ok(())
             }
-            UiEvent::Card(CardEvent::Right { .. }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+            UiEvent::Card(CardEvent::Right { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if let Some(i) = self.ui.card.tile_at(x, y) {
+                    return self.clipboard_item_menu(i);
+                }
                 if crate::platform::tray::show_clear_menu(self.main.hwnd) {
                     self.clipboard_stash.clear();
                     self.clipboard_hover = None;
@@ -5481,6 +5551,26 @@ impl App {
                 } else {
                     Ok(())
                 }
+            }
+            UiEvent::Key(0x20) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) => {
+                let target = self.shelf_hover.and_then(|i| self.shelf.items().get(i)).or_else(|| self.shelf.targets().first().copied());
+                if let Some(item) = target {
+                    crate::platform::quicklook::toggle(&item.path);
+                }
+                Ok(())
+            }
+            UiEvent::Key(0x20) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if let Some(i) = self.clipboard_hover {
+                    self.open_clipboard_item(i);
+                }
+                Ok(())
+            }
+            UiEvent::Key(0x1B) => {
+                crate::platform::quicklook::close();
+                if self.open.is_some() {
+                    self.close_card()?;
+                }
+                Ok(())
             }
             UiEvent::MorphDone { opened: true } if self.card_state == CardState::Opening => {
                 self.card_state = CardState::Open;

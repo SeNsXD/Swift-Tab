@@ -87,6 +87,47 @@ pub fn unique_path(dir: &Path, name: &str, exists: impl Fn(&Path) -> bool) -> Pa
     (2..).map(|n| dir.join(format!("{base} ({n}){ext}"))).find(|p| !exists(p)).unwrap_or(first)
 }
 
+/// Encodes raw bytes to standard Base64.
+pub fn to_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 3) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0x0F) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+/// Converts an image file to a `data:image/<ext>;base64,...` URI.
+pub fn to_base64_data_uri(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png").to_lowercase();
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    };
+    Some(format!("data:{mime};base64,{}", to_base64(&bytes)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

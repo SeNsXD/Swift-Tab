@@ -207,14 +207,59 @@ pub fn show_download_menu(owner: HWND) -> bool {
 pub const SHELF_OPEN: u32 = 1;
 pub const SHELF_SHARE: u32 = 2;
 pub const SHELF_REMOVE: u32 = 3;
+pub const SHELF_EXPLORER: u32 = 4;
+pub const SHELF_COPY_PATH: u32 = 5;
+pub const SHELF_PREVIEW: u32 = 6;
+pub const SHELF_COPY_BASE64: u32 = 7;
+
+pub const CLIPBOARD_PASTE: u32 = 1;
+pub const CLIPBOARD_PASTE_PLAIN: u32 = 2;
+pub const CLIPBOARD_OPEN: u32 = 3;
+pub const CLIPBOARD_PIN: u32 = 4;
+pub const CLIPBOARD_DELETE: u32 = 5;
+pub const CLIPBOARD_CLEAR_ALL: u32 = 6;
 
 /// Right-click menu for one file on the shelf.
-pub fn show_shelf_menu(owner: HWND) -> u32 {
+pub fn show_shelf_menu(owner: HWND, has_image: bool) -> u32 {
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         let _ = AppendMenuW(menu, MF_STRING, SHELF_OPEN as usize, &HSTRING::from("Open"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_PREVIEW as usize, &HSTRING::from("Preview (Quick Look)\tSpace"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_EXPLORER as usize, &HSTRING::from("Show in File Explorer"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_COPY_PATH as usize, &HSTRING::from("Copy File Path"));
+        if has_image {
+            let _ = AppendMenuW(menu, MF_STRING, SHELF_COPY_BASE64 as usize, &HSTRING::from("Copy Image as Base64"));
+        }
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let _ = AppendMenuW(menu, MF_STRING, SHELF_SHARE as usize, &HSTRING::from("Share"));
-        let _ = AppendMenuW(menu, MF_STRING, SHELF_REMOVE as usize, &HSTRING::from("Remove"));
+        let _ = AppendMenuW(menu, MF_STRING, SHELF_REMOVE as usize, &HSTRING::from("Remove from Shelf"));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        chosen
+    }
+}
+
+/// Right-click menu for an item in the clipboard history.
+pub fn show_clipboard_item_menu(owner: HWND, is_image: bool, has_html: bool, is_pinned: bool) -> u32 {
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return 0 };
+        let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE as usize, &HSTRING::from("Copy to Clipboard"));
+        if has_html {
+            let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE_PLAIN as usize, &HSTRING::from("Copy Plain Text Only"));
+        }
+        if is_image {
+            let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_OPEN as usize, &HSTRING::from("Open / Preview Image"));
+        }
+        let pin_label = if is_pinned { "Unpin" } else { "Pin to Top" };
+        let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PIN as usize, &HSTRING::from(pin_label));
+        let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_DELETE as usize, &HSTRING::from("Delete from History"));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+        let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_CLEAR_ALL as usize, &HSTRING::from("Clear All History"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         let _ = SetForegroundWindow(owner);
