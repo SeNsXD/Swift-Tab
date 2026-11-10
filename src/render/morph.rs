@@ -62,6 +62,7 @@ const FLAT_MATERIAL: Color = Color { A: 255, R: 0x20, G: 0x20, B: 0x20 };
 /// Translucent Acrylic panel base over blurred_card_brush (which already darkens by 35%).
 const PANEL_BASE: Color = Color { A: 64, R: 0x20, G: 0x20, B: 0x20 };
 
+#[allow(dead_code)]
 fn color(a: u8, (r, g, b): (u8, u8, u8)) -> Color {
     Color { A: a, R: r, G: g, B: b }
 }

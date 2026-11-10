@@ -20,7 +20,7 @@ import {
 } from "pages.slint";
 
 /// A Home card: what it is, its state on the right, the value and a line under it.
-component HomeCard inherits Rectangle {
+export component HomeCard inherits Rectangle {
     in property <string> label;
     in property <string> tag;
     in property <color> tag-color: Theme.acc;

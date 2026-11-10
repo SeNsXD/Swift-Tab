@@ -2945,6 +2945,7 @@ impl Painter<'_, '_> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn lyrics(&mut self, band: D2D_RECT_F, view: &LyricsView) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         self.ink.rrect(band, d(4.0), [0.0, 0.0, 0.0, 0.68])?;

@@ -906,7 +906,7 @@ pub struct App {
     clipboard_ignore_until: u64,
     clipboard_retries: u8,
     /// The window in front (exe, title), looked at at most a few times a second.
-    fg_cache: std::cell::RefCell<(u64, Option<(String, String)>)>,
+    card_ignore_until: u64,
     updater: Updater,
     update_mailbox: UpdateMailbox,
     /// A newer release the updater found (the tray offers it).
@@ -1149,7 +1149,7 @@ impl App {
             clipboard_scroll_drag: false,
             clipboard_ignore_until: 0,
             clipboard_retries: 0,
-            fg_cache: std::cell::RefCell::new((0, None)),
+            card_ignore_until: 0,
             updater,
             update_mailbox,
             update_ready: updater_state().filter(|s| newer(&s.latest, VERSION)),
@@ -2204,13 +2204,7 @@ impl App {
         }
     }
 
-    /// The level the Buds' chip shows: the lower of the two buds (the one that is on, if the
-    /// other reads nothing); `None` without Buds.
-    /// Media pill stays visible at all times even when the media player window or page is in front.
-    fn media_in_front(&self, _m: &MediaSnapshot) -> bool {
-        let _ = &self.fg_cache;
-        false
-    }
+
 
     /// The small bar beside the pill: the weather (when it is on and known) and the earbuds'
     /// battery (when some are connected); `None` when it has nothing to show.
@@ -2370,6 +2364,11 @@ impl App {
 
     /// A shelf footer chip: the targets' files go to Windows' share sheet.
     fn shelf_tool(&mut self, op: ShelfOp) {
+        if self.shelf.retain_existing(local_exists) {
+            self.shelf_hover = None;
+            self.forget_shelf_thumbs();
+            let _ = self.refresh();
+        }
         let targets: Vec<PathBuf> = self.shelf.targets().iter().map(|i| i.path.clone()).collect();
         match op {
             // The files are looked up off this thread (a network share can take a while); the
@@ -2651,12 +2650,29 @@ impl App {
                 } else if let Some(dib) = &item.raw_dib {
                     if dib.len() >= 40 {
                         let header_size = u32::from_le_bytes(dib[0..4].try_into().unwrap_or([40, 0, 0, 0]));
-                        let mut bmp = Vec::with_capacity(14 + dib.len());
+                        let bit_count = if dib.len() >= 16 { u16::from_le_bytes(dib[14..16].try_into().unwrap_or([0, 0])) } else { 0 };
+                        let compression = if dib.len() >= 20 { u32::from_le_bytes(dib[16..20].try_into().unwrap_or([0, 0, 0, 0])) } else { 0 };
+                        let clr_used = if dib.len() >= 36 { u32::from_le_bytes(dib[32..36].try_into().unwrap_or([0, 0, 0, 0])) } else { 0 };
+                        let palette_colors = if clr_used != 0 {
+                            clr_used
+                        } else if bit_count <= 8 && bit_count > 0 {
+                            1 << bit_count
+                        } else {
+                            0
+                        };
+                        let masks_size = if compression == 3 && header_size == 40 {
+                            if bit_count == 32 { 16 } else { 12 }
+                        } else {
+                            0
+                        };
+                        let off_bits = 14 + header_size + palette_colors * 4 + masks_size;
+
+                        let total_size = 14 + dib.len();
+                        let mut bmp = Vec::with_capacity(total_size);
                         bmp.extend_from_slice(b"BM");
-                        bmp.extend_from_slice(&(14 + dib.len() as u32).to_le_bytes());
+                        bmp.extend_from_slice(&(total_size as u32).to_le_bytes());
                         bmp.extend_from_slice(&0u32.to_le_bytes());
-                        let bit_offset = 14 + header_size;
-                        bmp.extend_from_slice(&bit_offset.to_le_bytes());
+                        bmp.extend_from_slice(&(off_bits as u32).to_le_bytes());
                         bmp.extend_from_slice(dib);
                         let path = temp_dir.join(format!("swifttab_clip_{}.bmp", item.id));
                         if std::fs::write(&path, bmp).is_ok() {
@@ -2669,9 +2685,15 @@ impl App {
                 open_url(&item.text);
             }
             crate::activities::clipboard_stash::ClipboardKind::Text { .. } => {
-                let path = Path::new(&item.text);
-                if path.exists() {
-                    open_path(path);
+                let trimmed = item.text.trim();
+                if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+                    open_url(trimmed);
+                } else {
+                    let cleaned = trimmed.trim_matches('"');
+                    let path = Path::new(cleaned);
+                    if path.exists() {
+                        open_path(path);
+                    }
                 }
             }
         }
@@ -3429,9 +3451,13 @@ impl App {
             }
             CardAction::ClipboardPaste(i) => {
                 let now = now_ms();
+                if now < self.card_ignore_until {
+                    return Ok(());
+                }
                 if let Some((ActivityKind::Clipboard, last_i, last_ms)) = self.card_last_click {
                     if last_i == i && now.saturating_sub(last_ms) < 500 {
                         self.card_last_click = None;
+                        self.card_ignore_until = now + 350;
                         self.open_clipboard_item(i);
                         return Ok(());
                     }
@@ -5295,9 +5321,13 @@ impl App {
             UiEvent::Card(CardEvent::Up { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) && self.ui.card.hit_test(x, y).is_none() => {
                 if let Some((i, _, _)) = self.tile_press.take().filter(|(i, _, _)| self.ui.card.tile_at(x, y) == Some(*i)) {
                     let now = now_ms();
+                    if now < self.card_ignore_until {
+                        return Ok(());
+                    }
                     if let Some((ActivityKind::Shelf, last_i, last_ms)) = self.card_last_click {
                         if last_i == i && now.saturating_sub(last_ms) < 500 {
                             self.card_last_click = None;
+                            self.card_ignore_until = now + 350;
                             if let Some(item) = self.shelf.items().get(i) {
                                 open_path(&item.path);
                             }
@@ -5311,6 +5341,9 @@ impl App {
                 Ok(())
             }
             UiEvent::Card(CardEvent::DoubleClick { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) => {
+                self.tile_press = None;
+                self.card_last_click = None;
+                self.card_ignore_until = now_ms() + 350;
                 if let Some(i) = self.ui.card.tile_at(x, y) {
                     if let Some(item) = self.shelf.items().get(i) {
                         open_path(&item.path);
@@ -5319,6 +5352,9 @@ impl App {
                 Ok(())
             }
             UiEvent::Card(CardEvent::DoubleClick { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                self.tile_press = None;
+                self.card_last_click = None;
+                self.card_ignore_until = now_ms() + 350;
                 if let Some(i) = self.ui.card.tile_at(x, y) {
                     self.open_clipboard_item(i);
                 }

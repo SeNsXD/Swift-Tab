@@ -141,11 +141,6 @@ pub fn fill(pattern: &str, args: &[&dyn Display]) -> String {
     out
 }
 
-#[link(name = "kernel32")]
-extern "system" {
-    fn GetUserDefaultUILanguage() -> u16;
-}
-
 /// Always false: Swift Tab runs permanently in English.
 pub fn windows_is_turkish() -> bool {
     false

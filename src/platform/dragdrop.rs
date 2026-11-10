@@ -9,10 +9,10 @@ use std::path::PathBuf;
 
 use windows::core::{implement, Ref, Result, BOOL, HRESULT};
 use windows::Win32::Foundation::{
-    GlobalFree, DATA_S_SAMEFORMATETC, DV_E_FORMATETC, E_NOTIMPL, HWND, OLE_E_ADVISENOTSUPPORTED, POINT, POINTL, S_OK,
+    GlobalFree, DATA_S_SAMEFORMATETC, DV_E_FORMATETC, E_NOTIMPL, E_POINTER, HWND, OLE_E_ADVISENOTSUPPORTED, POINT, POINTL, S_FALSE, S_OK,
 };
 use windows::Win32::System::Com::{
-    IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumSTATDATA, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0,
+    IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumFORMATETC_Impl, IEnumSTATDATA, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0,
     TYMED_HGLOBAL,
 };
 use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
@@ -123,6 +123,59 @@ fn create_hdrop(paths: &[PathBuf]) -> Result<windows::Win32::Foundation::HGLOBAL
     }
 }
 
+#[implement(IEnumFORMATETC)]
+struct FormatEnumerator {
+    formats: Vec<FORMATETC>,
+    index: Cell<usize>,
+}
+
+impl IEnumFORMATETC_Impl for FormatEnumerator_Impl {
+    fn Next(&self, celt: u32, rgelt: *mut FORMATETC, pcelt_fetched: *mut u32) -> HRESULT {
+        if rgelt.is_null() {
+            return E_POINTER;
+        }
+        let cur = self.index.get();
+        let remaining = self.formats.len().saturating_sub(cur);
+        let count = (celt as usize).min(remaining);
+        for i in 0..count {
+            unsafe {
+                *rgelt.add(i) = self.formats[cur + i];
+            }
+        }
+        self.index.set(cur + count);
+        if !pcelt_fetched.is_null() {
+            unsafe {
+                *pcelt_fetched = count as u32;
+            }
+        }
+        if count == celt as usize {
+            S_OK
+        } else {
+            S_FALSE
+        }
+    }
+
+    fn Skip(&self, celt: u32) -> Result<()> {
+        let cur = self.index.get();
+        let next = (cur + celt as usize).min(self.formats.len());
+        self.index.set(next);
+        Ok(())
+    }
+
+    fn Reset(&self) -> Result<()> {
+        self.index.set(0);
+        Ok(())
+    }
+
+    fn Clone(&self) -> Result<IEnumFORMATETC> {
+        let cloned = FormatEnumerator {
+            formats: self.formats.clone(),
+            index: Cell::new(self.index.get()),
+        };
+        Ok(cloned.into())
+    }
+}
+
 #[implement(IDataObject)]
 struct FileDataObject {
     paths: Vec<PathBuf>,
@@ -187,8 +240,33 @@ impl IDataObject_Impl for FileDataObject_Impl {
         Err(windows::core::Error::from(E_NOTIMPL))
     }
 
-    fn EnumFormatEtc(&self, _: u32) -> Result<IEnumFORMATETC> {
-        Err(windows::core::Error::from(E_NOTIMPL))
+    fn EnumFormatEtc(&self, dw_direction: u32) -> Result<IEnumFORMATETC> {
+        // DATADIR_GET = 1
+        if dw_direction == 1 {
+            let formats = vec![
+                FORMATETC {
+                    cfFormat: CF_HDROP.0,
+                    ptd: std::ptr::null_mut(),
+                    dwAspect: DVASPECT_CONTENT.0,
+                    lindex: -1,
+                    tymed: TYMED_HGLOBAL.0 as u32,
+                },
+                FORMATETC {
+                    cfFormat: preferred_drop_effect_format(),
+                    ptd: std::ptr::null_mut(),
+                    dwAspect: DVASPECT_CONTENT.0,
+                    lindex: -1,
+                    tymed: TYMED_HGLOBAL.0 as u32,
+                },
+            ];
+            let enumerator = FormatEnumerator {
+                formats,
+                index: Cell::new(0),
+            };
+            Ok(enumerator.into())
+        } else {
+            Err(windows::core::Error::from(E_NOTIMPL))
+        }
     }
 
     fn DAdvise(&self, _: *const FORMATETC, _: u32, _: windows::core::Ref<'_, IAdviseSink>) -> Result<u32> {
@@ -385,5 +463,19 @@ mod tests {
         assert_eq!(query.0, 0);
         let paths = paths_of(&data);
         assert_eq!(paths, vec![p]);
+    }
+
+    #[test]
+    fn test_enum_format_etc() {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let data: IDataObject = FileDataObject { paths: vec![p] }.into();
+        let enumerator = unsafe { data.EnumFormatEtc(1) }.expect("EnumFormatEtc(1) should succeed");
+        let mut formats = [FORMATETC::default(); 2];
+        let mut fetched = 0;
+        let hr = unsafe { enumerator.Next(&mut formats, Some(&mut fetched)) };
+        assert_eq!(hr.0, 0, "S_OK when all requested items are returned");
+        assert_eq!(fetched, 2);
+        assert_eq!(formats[0].cfFormat, CF_HDROP.0);
+        assert_eq!(formats[1].cfFormat, preferred_drop_effect_format());
     }
 }
