@@ -130,6 +130,7 @@ pub fn remove_tray(owner: HWND) {
 /// Shows the menu at the cursor and returns the chosen `MENU_*` id (0 if dismissed). A newer
 /// release (`update`, its version) comes first.
 pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         if let Some(version) = update {
@@ -157,6 +158,7 @@ pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
 
 /// Right-click menu on the Clipboard or Shelf pill/card ("Clear All").
 pub fn show_clear_menu(owner: HWND) -> bool {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
         let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Clear All"));
@@ -173,6 +175,7 @@ pub fn show_clear_menu(owner: HWND) -> bool {
 
 /// Right-click menu on the Media pill ("Open · <App>").
 pub fn show_media_menu(owner: HWND, app_name: &str) -> bool {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
         let label = format!("Open · {app_name}");
@@ -190,6 +193,7 @@ pub fn show_media_menu(owner: HWND, app_name: &str) -> bool {
 
 /// Right-click menu on the Download pill ("Open download").
 pub fn show_download_menu(owner: HWND) -> bool {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
         let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Open download folder"));
@@ -209,7 +213,6 @@ pub const SHELF_SHARE: u32 = 2;
 pub const SHELF_REMOVE: u32 = 3;
 pub const SHELF_EXPLORER: u32 = 4;
 pub const SHELF_COPY_PATH: u32 = 5;
-pub const SHELF_PREVIEW: u32 = 6;
 pub const SHELF_COPY_BASE64: u32 = 7;
 
 pub const CLIPBOARD_PASTE: u32 = 1;
@@ -219,12 +222,47 @@ pub const CLIPBOARD_PIN: u32 = 4;
 pub const CLIPBOARD_DELETE: u32 = 5;
 pub const CLIPBOARD_CLEAR_ALL: u32 = 6;
 
+/// Ensures Windows draws context menus with native dark mode styling and rounded corners.
+pub fn enable_dark_menu(owner: HWND) {
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
+    use windows::core::{w, PCSTR};
+
+    unsafe {
+        let on: i32 = 1;
+        let dark_mode = DWMWINDOWATTRIBUTE(crate::platform::os::build().map_or(20, crate::platform::os::dark_mode_attribute) as i32);
+        let _ = DwmSetWindowAttribute(owner, dark_mode, &on as *const i32 as _, 4);
+
+        if let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) {
+            // Ordinal 135: SetPreferredAppMode(2 = ForceDark)
+            if let Some(proc) = GetProcAddress(uxtheme, PCSTR(135 as _)) {
+                let set_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(proc);
+                set_mode(2);
+            }
+            // Ordinal 133: AllowDarkModeForWindow(hwnd, true)
+            if let Some(proc) = GetProcAddress(uxtheme, PCSTR(133 as _)) {
+                let allow_window: unsafe extern "system" fn(HWND, windows::core::BOOL) -> windows::core::BOOL = std::mem::transmute(proc);
+                let _ = allow_window(owner, windows::core::BOOL(1));
+            }
+            // Ordinal 136: FlushMenuThemes()
+            if let Some(proc) = GetProcAddress(uxtheme, PCSTR(136 as _)) {
+                let flush: unsafe extern "system" fn() = std::mem::transmute(proc);
+                flush();
+            }
+            if let Some(proc) = GetProcAddress(uxtheme, windows::core::s!("SetWindowTheme")) {
+                let set_theme: unsafe extern "system" fn(HWND, windows::core::PCWSTR, windows::core::PCWSTR) -> windows::core::HRESULT = std::mem::transmute(proc);
+                let _ = set_theme(owner, w!("DarkMode_Explorer"), windows::core::PCWSTR::null());
+            }
+        }
+    }
+}
+
 /// Right-click menu for one file on the shelf.
 pub fn show_shelf_menu(owner: HWND, has_image: bool) -> u32 {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         let _ = AppendMenuW(menu, MF_STRING, SHELF_OPEN as usize, &HSTRING::from("Open"));
-        let _ = AppendMenuW(menu, MF_STRING, SHELF_PREVIEW as usize, &HSTRING::from("Preview (Quick Look)\tSpace"));
         let _ = AppendMenuW(menu, MF_STRING, SHELF_EXPLORER as usize, &HSTRING::from("Show in File Explorer"));
         let _ = AppendMenuW(menu, MF_STRING, SHELF_COPY_PATH as usize, &HSTRING::from("Copy File Path"));
         if has_image {
@@ -246,6 +284,7 @@ pub fn show_shelf_menu(owner: HWND, has_image: bool) -> u32 {
 
 /// Right-click menu for an item in the clipboard history.
 pub fn show_clipboard_item_menu(owner: HWND, is_image: bool, has_html: bool, is_pinned: bool) -> u32 {
+    enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
         let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE as usize, &HSTRING::from("Copy to Clipboard"));
@@ -253,7 +292,7 @@ pub fn show_clipboard_item_menu(owner: HWND, is_image: bool, has_html: bool, is_
             let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE_PLAIN as usize, &HSTRING::from("Copy Plain Text Only"));
         }
         if is_image {
-            let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_OPEN as usize, &HSTRING::from("Open / Preview Image"));
+            let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_OPEN as usize, &HSTRING::from("Open Image"));
         }
         let pin_label = if is_pinned { "Unpin" } else { "Pin to Top" };
         let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PIN as usize, &HSTRING::from(pin_label));

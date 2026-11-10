@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 
-$logoPath = 'C:\Users\Rishabh Kumar\.gemini\antigravity\brain\649d802d-14da-4412-ba4f-48f5aff8b3b9\.user_uploaded\media_1793552625287_668c8e10.png'
+$logoPath = 'C:\Users\Rishabh Kumar\.gemini\antigravity\brain\649d802d-14da-4412-ba4f-48f5aff8b3b9\.user_uploaded\media_1794290293012_f2398057.png'
 $xdnotPath = 'C:\Users\Rishabh Kumar\.gemini\antigravity\brain\649d802d-14da-4412-ba4f-48f5aff8b3b9\.user_uploaded\media_1793552625249_8b1bdefb.png'
 
 # 1. Copy XDNOT-Labs logo

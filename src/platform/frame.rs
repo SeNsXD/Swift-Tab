@@ -116,11 +116,48 @@ fn set_mui_cache_string(value_name: &str, text: &str) {
 pub fn register_app_identity() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
+        let aumid_str = APP_USER_MODEL_ID;
+        let aumid = HSTRING::from(aumid_str);
         unsafe {
-            let aumid = HSTRING::from(APP_USER_MODEL_ID);
             let _ = SetCurrentProcessExplicitAppUserModelID(PCWSTR(aumid.as_ptr()));
         }
-        let _ = cached_nobg_ico_path();
+        let ico_path = cached_nobg_ico_path();
+        if let Some(ico) = &ico_path {
+            let key = format!("Software\\Classes\\AppUserModelId\\{aumid_str}");
+            let key_h = HSTRING::from(key.as_str());
+            let name_val = HSTRING::from("DisplayName");
+            let data_name: Vec<u16> = "Swift Tab".encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let _ = RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    &key_h,
+                    &name_val,
+                    REG_SZ.0,
+                    Some(data_name.as_ptr() as *const _),
+                    (data_name.len() * 2) as u32,
+                );
+                let icon_val = HSTRING::from("IconUri");
+                let data_ico: Vec<u16> = ico.display().to_string().encode_utf16().chain(std::iter::once(0)).collect();
+                let _ = RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    &key_h,
+                    &icon_val,
+                    REG_SZ.0,
+                    Some(data_ico.as_ptr() as *const _),
+                    (data_ico.len() * 2) as u32,
+                );
+                let bg_val = HSTRING::from("IconBackgroundColor");
+                let data_bg: Vec<u16> = "transparent".encode_utf16().chain(std::iter::once(0)).collect();
+                let _ = RegSetKeyValueW(
+                    HKEY_CURRENT_USER,
+                    &key_h,
+                    &bg_val,
+                    REG_SZ.0,
+                    Some(data_bg.as_ptr() as *const _),
+                    (data_bg.len() * 2) as u32,
+                );
+            }
+        }
         if let Ok(exe) = std::env::current_exe() {
             let mut paths = vec![exe.clone()];
             if let Some(parent) = exe.parent() {
@@ -132,6 +169,28 @@ pub fn register_app_identity() {
                 let s = p.display().to_string();
                 set_mui_cache_string(&format!("{s}.FriendlyAppName"), "Swift Tab");
                 set_mui_cache_string(&format!("{s}.ApplicationCompany"), "Swift Tab");
+            }
+        }
+        // Ensure Start Menu shortcut exists so Windows Taskbar associates the icon immediately
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            let lnk = std::path::PathBuf::from(appdata)
+                .join("Microsoft\\Windows\\Start Menu\\Programs\\Swift Tab.lnk");
+            if !lnk.exists() {
+                if let Ok(exe) = std::env::current_exe() {
+                    use std::os::windows::process::CommandExt;
+                    let main_exe = exe.parent().map(|d| d.join("swifttab.exe")).unwrap_or(exe);
+                    let ico = ico_path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+                    let target = main_exe.display().to_string();
+                    let work_dir = main_exe.parent().map(|p| p.display().to_string()).unwrap_or_default();
+                    let script = format!(
+                        "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('{}'); $s.TargetPath = '{}'; $s.WorkingDirectory = '{}'; $s.IconLocation = '{},0'; $s.Description = 'Swift Tab'; $s.Save()",
+                        lnk.display(), target, work_dir, ico
+                    );
+                    let _ = std::process::Command::new("powershell")
+                        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                        .creation_flags(0x08000000)
+                        .spawn();
+                }
             }
         }
         unsafe {
@@ -153,7 +212,7 @@ unsafe fn set_prop_str(store: *mut PropertyStoreObj, key: &PROPERTYKEY, value: &
     let _ = unsafe { ((*(*store).vtbl).set_value)(store, key, &pv) };
 }
 
-fn apply_window_icon_and_identity(hwnd: HWND) {
+pub fn apply_window_icon_and_identity(hwnd: HWND) {
     register_app_identity();
     unsafe {
         let mut store: *mut c_void = std::ptr::null_mut();
@@ -335,8 +394,22 @@ unsafe extern "system" fn on_create(code: i32, wp: WPARAM, lp: LPARAM) -> LRESUL
                     let _ = UnhookWindowsHookEx(hook);
                 }
                 style_frame(hwnd, dark);
+                apply_window_icon_and_identity(hwnd);
             }
         }
     }
     unsafe { CallNextHookEx(None, code, wp, lp) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_icon() {
+        unsafe {
+            let h = load_window_icon(32);
+            assert!(h.is_some(), "icon must be loaded!");
+        }
+    }
 }

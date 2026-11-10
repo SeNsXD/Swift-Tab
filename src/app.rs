@@ -88,7 +88,7 @@ use crate::platform::log::log;
 use crate::platform::taskbar::{self, ItemsMailbox};
 use crate::platform::tray::{
     create_tray, remove_tray, show_menu, show_shelf_menu, MENU_AUTOSTART, MENU_BRIEF, MENU_CLIPBOARD, MENU_MATCH_HIDE, MENU_MATCH_OPEN, MENU_MUSIC, MENU_QUESTION,
-    MENU_QUIT, MENU_SETTINGS, MENU_STOPWATCH, MENU_TIMER, MENU_UPDATE, MENU_WELLBEING, SHELF_COPY_BASE64, SHELF_COPY_PATH, SHELF_EXPLORER, SHELF_OPEN, SHELF_PREVIEW,
+    MENU_QUIT, MENU_SETTINGS, MENU_STOPWATCH, MENU_TIMER, MENU_UPDATE, MENU_WELLBEING, SHELF_COPY_BASE64, SHELF_COPY_PATH, SHELF_EXPLORER, SHELF_OPEN,
     SHELF_REMOVE, SHELF_SHARE,
 };
 use crate::platform::windows::{post_buds, post_effects_changed, post_matches, post_media, watch_foreground, CardEvent, CardWindow, MainWindow, PillEvent, PillWindow, UiEvent};
@@ -2345,7 +2345,6 @@ impl App {
         let is_img = crate::activities::shelf::is_raster(&path.file_name().unwrap_or_default().to_string_lossy());
         match show_shelf_menu(self.main.hwnd, is_img) {
             SHELF_OPEN => open_path(&path),
-            SHELF_PREVIEW => crate::platform::quicklook::toggle(&path),
             SHELF_EXPLORER => show_in_explorer(&path),
             SHELF_COPY_PATH => {
                 let _ = crate::platform::clipboard::set_text(self.main.hwnd, &path.to_string_lossy());
@@ -4767,7 +4766,6 @@ impl App {
     }
 
     fn close_card(&mut self) -> Result<()> {
-        crate::platform::quicklook::close();
         if matches!(self.card_state, CardState::Closed | CardState::Closing) {
             return Ok(());
         }
@@ -5552,21 +5550,7 @@ impl App {
                     Ok(())
                 }
             }
-            UiEvent::Key(0x20) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) => {
-                let target = self.shelf_hover.and_then(|i| self.shelf.items().get(i)).or_else(|| self.shelf.targets().first().copied());
-                if let Some(item) = target {
-                    crate::platform::quicklook::toggle(&item.path);
-                }
-                Ok(())
-            }
-            UiEvent::Key(0x20) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
-                if let Some(i) = self.clipboard_hover {
-                    self.open_clipboard_item(i);
-                }
-                Ok(())
-            }
             UiEvent::Key(0x1B) => {
-                crate::platform::quicklook::close();
                 if self.open.is_some() {
                     self.close_card()?;
                 }

@@ -1506,7 +1506,7 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     let dark = dark_for(bridge.borrow().settings.settings_theme);
     frame_from_creation(dark);
-    let already_adopted = adopt_frame(&ui, dark);
+    adopt_frame(&ui, dark);
     ui.show()?;
     let frame_timer = Rc::new(slint::Timer::default());
     {
@@ -1515,8 +1515,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let to_front = shots_dir.is_none();
         frame_timer.start(slint::TimerMode::Repeated, Duration::from_millis(10), move || {
             if let Some(ui) = ui_weak.upgrade() {
-                if !already_adopted {
-                    adopt_frame(&ui, dark);
+                adopt_frame(&ui, dark);
+                if let Some(hwnd) = hwnd_of(&ui) {
+                    nowbar::platform::frame::apply_window_icon_and_identity(hwnd);
                 }
                 // Opened from the Swift Tab (which allows it), the window comes in front of the app
                 // the user is in, so its opening animation is seen.
