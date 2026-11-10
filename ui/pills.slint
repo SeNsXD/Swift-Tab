@@ -241,7 +241,7 @@ export component Pill inherits Rectangle {
         }
         if root.kind == 0: Rectangle {
             x: (Store.media-waveform ? 52 : 36) * root.u;
-            width: max(1px, parent.width - self.x - (Store.pill-buttons == 2 ? 14 : Store.pill-buttons == 1 ? 44 : 100) * root.u);
+            width: max(1px, parent.width - self.x - ((Store.pill-buttons == 2 ? 14 : Store.pill-buttons == 1 ? 44 : 100) + (Store.pill-buttons != 2 && Store.media-pill-mute ? 30 : 0)) * root.u);
             height: root.ph;
             clip: true;
             HorizontalLayout {
@@ -259,24 +259,31 @@ export component Pill inherits Rectangle {
             }
         }
         if root.kind == 0 && Store.pill-buttons == 0: PGlyph {
-            x: parent.width - 95 * root.u;
+            x: parent.width - (Store.media-pill-mute ? 125 : 95) * root.u;
             width: 30 * root.u;
             height: root.ph;
             text: "\u{F8AC}";
             font-size: 16 * root.u;
         }
         if root.kind == 0 && Store.pill-buttons != 2: PGlyph {
-            x: parent.width - (Store.pill-buttons == 0 ? 65 : 37) * root.u;
+            x: parent.width - ((Store.pill-buttons == 0 ? 65 : 37) + (Store.media-pill-mute ? 30 : 0)) * root.u;
             width: 30 * root.u;
             height: root.ph;
             text: "\u{F8AE}";
             font-size: 16 * root.u;
         }
         if root.kind == 0 && Store.pill-buttons == 0: PGlyph {
-            x: parent.width - 35 * root.u;
+            x: parent.width - (Store.media-pill-mute ? 65 : 35) * root.u;
             width: 30 * root.u;
             height: root.ph;
             text: "\u{F8AD}";
+            font-size: 16 * root.u;
+        }
+        if root.kind == 0 && Store.pill-buttons != 2 && Store.media-pill-mute: PGlyph {
+            x: parent.width - 35 * root.u;
+            width: 30 * root.u;
+            height: root.ph;
+            text: "\u{E767}";
             font-size: 16 * root.u;
         }
 

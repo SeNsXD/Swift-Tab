@@ -470,6 +470,7 @@ fn fill(ui: &SettingsWindow, s: &Settings, live_apps: &[String]) {
     st.set_pill_buttons(index_of(&[PillButtons::All, PillButtons::Play, PillButtons::None], &s.media_pill_buttons, 0));
     st.set_pill_artist(s.media_pill_artist);
     st.set_media_waveform(s.media_waveform);
+    st.set_media_pill_mute(s.media_pill_mute);
     st.set_media_lyrics(s.media_lyrics);
     st.set_pill_lyrics(s.media_pill_lyrics);
     st.set_card_wave(s.media_card_wave);
@@ -605,6 +606,7 @@ fn read(ui: &SettingsWindow, base: &Settings) -> Settings {
         media_pill_buttons: pick(&[PillButtons::All, PillButtons::Play, PillButtons::None], st.get_pill_buttons(), PillButtons::All),
         media_pill_artist: st.get_pill_artist(),
         media_waveform: st.get_media_waveform(),
+        media_pill_mute: st.get_media_pill_mute(),
         media_lyrics: st.get_media_lyrics(),
         media_pill_lyrics: st.get_pill_lyrics(),
         media_card_wave: st.get_card_wave(),

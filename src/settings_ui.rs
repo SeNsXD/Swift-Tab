@@ -54,6 +54,7 @@ pub const INDEX: &[Entry] = &[
     e(2, "paused-keep", n_("Davranış"), n_("Duraklatınca pilde kalma süresi"), n_("Sonra pil kaybolur; çalınca geri gelir"), "duraklat kalma süre"),
     e(2, "apps", n_("Uygulamalar"), n_("Uygulamalar"), n_("Pilde gösterilecek medya uygulamaları"), "spotify brave chrome gizle uygulama"),
     e(2, "devices", n_("Ses çıkışı seçicisi"), n_("Ses çıkışı seçicisi"), n_("Medya kartındaki çıkış sayfasında görünen cihazlar"), "hoparlör kulaklık çıkış cihaz ses"),
+    e(2, "pill-mute", n_("Pill"), n_("Mute button"), n_("A speaker next to the controls that mutes the playing app"), "mute unmute volume speaker sound button sessiz ses"),
     e(2, "media-pinned", n_("Pil"), n_("Always show"), n_("Even when nothing is playing"), "media always show pinned nothing playing hep görünür sabit boş"),
     e(6, "fullscreen-hide", n_("Tam ekran"), n_("Tam ekranda gizle"), n_("Pil ve kartlar, tam ekran bir uygulama öndeyken gizlenir"), "oyun video sunum gizle"),
     e(6, "exceptions", n_("İstisnalar"), n_("İstisnalar"), n_("Bu uygulamalar tam ekran olsa da Swift Tab görünür kalır"), "istisna uygulama exe"),

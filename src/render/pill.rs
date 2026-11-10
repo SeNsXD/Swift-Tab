@@ -94,16 +94,28 @@ const FADE_OUT_MS: i64 = 150;
 const FADE_IN_MS: i64 = 200;
 /// Media pill: title starts here; the three transport buttons sit at the right.
 const MEDIA_TEXT_X_DIP: f32 = 50.0;
-const MEDIA_BUTTONS_DIP: [(f32, PillButton); 3] = [(82.0, PillButton::Prev), (52.0, PillButton::PlayPause), (22.0, PillButton::Next)];
-const MEDIA_PLAY_ONLY_DIP: [(f32, PillButton); 1] = [(22.0, PillButton::PlayPause)];
+/// The media pill's buttons sit 30 dip apart; the last one's centre is this far from the right edge.
+const MEDIA_BUTTON_LAST_DIP: f32 = 22.0;
+const MEDIA_BUTTON_STEP_DIP: f32 = 30.0;
 
-/// The media pill's buttons (settings: all three, play/pause only, none), from the right edge.
-fn media_buttons() -> &'static [(f32, PillButton)] {
-    match crate::settings::current().media_pill_buttons {
-        crate::settings::PillButtons::All => &MEDIA_BUTTONS_DIP,
-        crate::settings::PillButtons::Play => &MEDIA_PLAY_ONLY_DIP,
-        crate::settings::PillButtons::None => &[],
+/// The media pill's buttons (settings: all three, play/pause only, none; and the mute button
+/// after them, unless it is switched off), as their distance from the right edge.
+fn media_buttons() -> Vec<(f32, PillButton)> {
+    let s = crate::settings::current();
+    let mut buttons = match s.media_pill_buttons {
+        crate::settings::PillButtons::All => vec![PillButton::Prev, PillButton::PlayPause, PillButton::Next],
+        crate::settings::PillButtons::Play => vec![PillButton::PlayPause],
+        crate::settings::PillButtons::None => Vec::new(),
+    };
+    if s.media_pill_mute && !buttons.is_empty() {
+        buttons.push(PillButton::Mute);
     }
+    let n = buttons.len();
+    buttons
+        .into_iter()
+        .enumerate()
+        .map(|(i, b)| (MEDIA_BUTTON_LAST_DIP + MEDIA_BUTTON_STEP_DIP * (n - 1 - i) as f32, b))
+        .collect()
 }
 
 /// Where the title stops, from the right edge, so it never runs under a button.
@@ -111,7 +123,9 @@ fn media_text_right_dip() -> f32 {
     match media_buttons().len() {
         0 => 14.0,
         1 => 46.0,
-        _ => 108.0,
+        2 => 76.0,
+        3 => 108.0,
+        _ => 138.0,
     }
 }
 /// Equalizer bars next to the cover and title: four 3px bars, 2px apart, up to 14px tall.
@@ -298,6 +312,8 @@ pub enum PillButton {
     Prev,
     PlayPause,
     Next,
+    /// Mutes / unmutes the playing app.
+    Mute,
 }
 
 fn color(a: u8, (r, g, b): (u8, u8, u8)) -> Color {
@@ -1157,7 +1173,7 @@ fn paint_layer(
                 place_bars(layer, init_lv, h, s)?;
             }
             if m.id != IDLE_MEDIA {
-                for &(from_right, button) in media_buttons() {
+                for (from_right, button) in media_buttons() {
                     let cx = w - d(from_right);
                     buttons.push(((cx - d(15.0)) as i32, (cx + d(15.0)) as i32, button));
                 }
@@ -1549,7 +1565,9 @@ fn paint_shelf(ink: &Ink, _c: &PillContent, label: &str, count: usize, thumbs: &
     let head = "Shelf";
     let head_w = ink.measure(head, &title)?;
     ink.text(head, rect(x, 0.0, head_w + d(2.0), h), &title)?;
-    let detail = if count > 0 {
+    let detail = if count == 1 {
+        "1 file".to_string()
+    } else if count > 1 {
         format!("{} files", count)
     } else {
         label.to_string()
@@ -2181,7 +2199,7 @@ fn paint_media(ink: &Ink, m: &MediaSnapshot, w: f32, h: f32, s: &Scale) -> Resul
     let main_w = match btns.len() {
         0 => w,
         1 => (w - d(42.0)).round(),
-        _ => (w - d(104.0)).round(),
+        n => (w - d(14.0 + MEDIA_BUTTON_STEP_DIP * n as f32)).round(),
     };
     paint_win11_row_chrome(ink, w, h, main_w, s)?;
     if main_w < w {
@@ -2206,12 +2224,14 @@ fn paint_media(ink: &Ink, m: &MediaSnapshot, w: f32, h: f32, s: &Scale) -> Resul
         (Icon::Prev, m.can.prev, false),
         (if m.playing { Icon::Pause } else { Icon::Play }, m.can.play_pause, true),
         (Icon::Next, m.can.next, false),
+        (if m.muted { Icon::Mute } else { Icon::Volume }, m.id != IDLE_MEDIA, false),
     ];
     let icons: Vec<(Icon, bool, bool)> = btns
         .iter()
         .map(|(_, b)| match b {
             PillButton::Prev => icons[0],
             PillButton::Next => icons[2],
+            PillButton::Mute => icons[3],
             _ => icons[1],
         })
         .collect();
@@ -2361,6 +2381,7 @@ mod tests {
             art_size: (0, 0),
             accent: [1, 2, 3],
             changed_ms: 5,
+            muted: false,
         }
     }
 

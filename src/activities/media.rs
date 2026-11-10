@@ -232,6 +232,8 @@ pub struct MediaSnapshot {
     pub accent: [u8; 3],
     /// When the session last started or stopped playing (GetTickCount64 ms).
     pub changed_ms: u64,
+    /// The player is muted in the Windows volume mixer (the pill's speaker button shows it).
+    pub muted: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -343,6 +345,7 @@ mod tests {
             art_size: (0, 0),
             accent: [0, 0, 0],
             changed_ms: 0,
+            muted: false,
         }
     }
 

@@ -1,64 +1,65 @@
-// Window tokens in the XDNOT Labs brand: near-black ground (#0B0C10), one violet accent
-// (#A78BFA, the "Labs" colour of the logo) marks state, and cyan and pink come only from the
-// pixel-logo gradient. Colour otherwise comes from content (pills, crests, app badges).
+// Window tokens in the Antigravity palette: near-black ground (#08090C) with a faint navy glow,
+// one blue accent (#6FA3FF) marks state. Colour otherwise comes from content (pills, crests,
+// app badges).
 
 export global Theme {
     in-out property <bool> dark: true;
     /// The window ground (Windows 11 Mica base).
-    out property <color> ground: dark ? #0B0C10 : #F3F3F3;
-    out property <color> ground-lit: dark ? #1B1436 : #FAFAFA;
+    out property <color> ground: dark ? #08090C : #F3F3F3;
+    out property <color> glow: dark ? #0F1D33 : #E8F0FE;
+    out property <color> ground-lit: dark ? #0C1626 : #FAFAFA;
     /// The inset list panel.
-    out property <color> side-top: dark ? #101118 : #F9F9F9;
-    out property <color> side-bot: dark ? #0D0E13 : #F0F0F0;
+    out property <color> side-top: dark ? #0C0D11 : #F9F9F9;
+    out property <color> side-bot: dark ? #0A0B0F : #F0F0F0;
     out property <color> side-edge: dark ? #FFFFFF12 : #00000012;
     /// The preview panel.
-    out property <color> pv-dark: dark ? #0B0C10 : #F3F3F3;
-    out property <color> pv-mid: dark ? #101117 : #F8F8F8;
-    out property <color> pv-lit: dark ? #14151C : #FFFFFF;
+    out property <color> pv-dark: dark ? #08090C : #F3F3F3;
+    out property <color> pv-mid: dark ? #0C0D12 : #F8F8F8;
+    out property <color> pv-lit: dark ? #101218 : #FFFFFF;
     out property <color> pv-edge: dark ? #FFFFFF14 : #00000014;
     out property <color> pv-rule: dark ? #FFFFFF12 : #0000000F;
-    out property <color> insp: dark ? #0D0E13 : #F9F9F9;
+    out property <color> insp: dark ? #0A0B0F : #F9F9F9;
     out property <color> insp-edge: dark ? #FFFFFF12 : #E2E2E5;
     out property <color> line: dark ? #FFFFFF14 : #ECECEE;
-    out property <color> field: dark ? #13141B : #FFFFFF;
+    out property <color> field: dark ? #0F1116 : #FFFFFF;
     out property <color> field-edge: dark ? #FFFFFF14 : #CFCFD3;
-    out property <color> sel: dark ? #A78BFA24 : #6B46D814;
+    out property <color> sel: dark ? #6FA3FF24 : #1F6FEB14;
     out property <color> hov: dark ? #FFFFFF0D : #00000008;
-    out property <color> tile: dark ? #13141B : #F3F3F3;
+    out property <color> tile: dark ? #0F1116 : #F3F3F3;
     /// Titles semibold white; secondary text white at 65% (#FFFFFFA6).
     out property <color> text: dark ? #F2F2F7 : #1A1A1A;
     out property <color> strong: dark ? #FFFFFF : #111111;
     out property <color> text2: dark ? #FFFFFFA3 : #5C5C5C;
     out property <color> text3: dark ? #FFFFFF66 : #8A8A8A;
-    out property <color> section: dark ? #A78BFACC : #6B46D8;
+    out property <color> section: dark ? #6FA3FFCC : #1F6FEB;
     out property <color> label: dark ? #FFFFFFA3 : #5C5C5C;
     out property <color> placeholder: dark ? #FFFFFF66 : #8A8A8A;
     out property <color> key: dark ? #FFFFFF14 : #E6E6E8;
     out property <color> key-text: dark ? #FFFFFF : #1A1A1A;
-    out property <color> chip: dark ? #0B0C10CC : #FFFFFFE6;
-    out property <color> act: dark ? #0B0C10CC : #FFFFFFEB;
-    out property <color> seg-on: dark ? #A78BFA26 : #6B46D81A;
-    out property <color> glyph: dark ? #D4D0E8 : #444448;
+    out property <color> chip: dark ? #08090CCC : #FFFFFFE6;
+    out property <color> act: dark ? #08090CCC : #FFFFFFEB;
+    out property <color> seg-on: dark ? #6FA3FF26 : #1F6FEB1A;
+    out property <color> glyph: dark ? #D3DAEA : #444448;
     /// Windows 11 system accent color (lighter variant in dark mode).
-    out property <color> acc: dark ? #A78BFA : #6B46D8;
-    out property <color> loader: dark ? #A78BFA : #6B46D8;
-    out property <color> sel-row: dark ? #A78BFA24 : #6B46D81A;
-    out property <color> tile-on: dark ? #A78BFA : #6B46D8;
+    out property <color> acc: dark ? #6FA3FF : #1F6FEB;
+    out property <color> loader: dark ? #6FA3FF : #1F6FEB;
+    out property <color> sel-row: dark ? #6FA3FF24 : #1F6FEB1A;
+    out property <color> tile-on: dark ? #6FA3FF : #1F6FEB;
     out property <color> knob-on: dark ? #FFFFFF : #FFFFFF;
     out property <color> track: dark ? #FFFFFF2E : #D6D6DA;
     out property <color> off-track: dark ? #FFFFFF2E : #CBCBD0;
     out property <color> off-knob: dark ? #FFFFFFE6 : #FFFFFF;
-    out property <color> ring: dark ? #A78BFA : #6B46D8;
+    out property <color> ring: dark ? #6FA3FF : #1F6FEB;
     out property <color> danger: dark ? #FF9AA8 : #C73A3A;
-    out property <color> pop: dark ? #14151C : #FFFFFF;
+    out property <color> pop: dark ? #101218 : #FFFFFF;
     out property <color> pop-edge: dark ? #FFFFFF1F : #00000017;
     out property <color> pop-shadow: dark ? #00000066 : #0000002E;
     out property <color> scrim: dark ? #000000B3 : #0000004D;
     /// XDNOT Labs brand: the toggle's "on" track, the pixel-logo cyan and pink, and the card fill.
-    out property <color> on-track: dark ? #8B64F1 : #6B46D8;
+    out property <color> on-track: dark ? #4D8DFF : #1F6FEB;
     out property <color> brand-cyan: #34BFEF;
-    out property <color> brand-pink: #DC6CC4;
-    out property <color> card: dark ? #12131A : #FFFFFF;
+    out property <color> brand-pink: #6FA3FF;
+    out property <color> card: dark ? #0E1015 : #FFFFFF;
     out property <color> card-edge: dark ? #FFFFFF14 : #00000014;
     /// The system's fonts, set from Rust (gfx::SystemFaces): Windows 10 has Segoe MDL2 Assets
     /// and Segoe UI for Windows 11's Segoe Fluent Icons and Segoe UI Variable.

@@ -3,23 +3,34 @@
 
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
-use std::os::windows::ffi::OsStringExt;
+use std::mem::ManuallyDrop;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 
-use windows::core::{implement, Ref, Result, HSTRING};
-use windows::Win32::Foundation::{HWND, POINTL};
-use windows::Win32::System::Com::{CoTaskMemFree, IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
-use windows::Win32::System::Ole::{
-    IDropSource, IDropTarget, IDropTarget_Impl, OleInitialize, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop, CF_HDROP, DROPEFFECT, DROPEFFECT_COPY,
-    DROPEFFECT_NONE,
+use windows::core::{implement, Ref, Result, BOOL, HRESULT};
+use windows::Win32::Foundation::{
+    GlobalFree, DATA_S_SAMEFORMATETC, DV_E_FORMATETC, E_NOTIMPL, HWND, OLE_E_ADVISENOTSUPPORTED, POINT, POINTL, S_OK,
 };
-use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+use windows::Win32::System::Com::{
+    IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumSTATDATA, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, STGMEDIUM_0,
+    TYMED_HGLOBAL,
+};
+use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Ole::{
+    DoDragDrop, IDropSource, IDropSource_Impl, IDropTarget, IDropTarget_Impl, OleInitialize, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
+    CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
+};
+use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
-use windows::Win32::UI::Shell::Common::ITEMIDLIST;
-use windows::Win32::UI::Shell::{DragQueryFileW, SHCreateDataObject, SHDoDragDrop, SHParseDisplayName, HDROP};
+use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXDRAG, SM_CYDRAG};
 
 use super::windows::{push_event, UiEvent};
+
+const DRAGDROP_S_DROP: HRESULT = HRESULT(0x00040100);
+const DRAGDROP_S_CANCEL: HRESULT = HRESULT(0x00040101);
+const DRAGDROP_S_USEDEFAULTCURSORS: HRESULT = HRESULT(0x00040102);
 
 /// Which window a drag is over.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,35 +78,177 @@ pub fn drag_moved(dx: i32, dy: i32) -> bool {
     dx.abs() >= cx || dy.abs() >= cy
 }
 
-/// Drags `paths` out of the shelf, copy only; returns once they are dropped somewhere (or the
-/// drag is cancelled). Paths that no longer parse are left out.
-pub fn drag_out(paths: &[PathBuf]) -> Result<()> {
-    let pidls: Vec<*mut ITEMIDLIST> = paths
-        .iter()
-        .filter_map(|p| {
-            let mut pidl = std::ptr::null_mut();
-            unsafe { SHParseDisplayName(&HSTRING::from(p.as_os_str()), None, &mut pidl, 0, None) }.ok().map(|_| pidl)
-        })
-        .collect();
-    let result = (|| {
-        if pidls.is_empty() {
-            return Ok(());
-        }
-        let items: Vec<*const ITEMIDLIST> = pidls.iter().map(|p| *p as *const _).collect();
-        unsafe {
-            // Full PIDLs under the desktop, so files from different folders go together.
-            let data: IDataObject = SHCreateDataObject(None, Some(&items), None)?;
-            let _ = ReleaseCapture();
-            OUTGOING.with(|o| o.set(true));
-            let done = SHDoDragDrop(None, &data, None::<&IDropSource>, DROPEFFECT_COPY).map(|_| ());
-            OUTGOING.with(|o| o.set(false));
-            done
-        }
-    })();
-    for pidl in pidls {
-        unsafe { CoTaskMemFree(Some(pidl as *const _)) };
+fn preferred_drop_effect_format() -> u16 {
+    static FMT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    *FMT.get_or_init(|| unsafe { RegisterClipboardFormatW(windows::core::w!("Preferred DropEffect")) as u16 })
+}
+
+fn create_hdrop(paths: &[PathBuf]) -> Result<windows::Win32::Foundation::HGLOBAL> {
+    let mut total_chars = 0;
+    let mut wide_paths: Vec<Vec<u16>> = Vec::new();
+    for p in paths {
+        let mut wide: Vec<u16> = p.as_os_str().encode_wide().collect();
+        wide.push(0);
+        total_chars += wide.len();
+        wide_paths.push(wide);
     }
-    result
+    total_chars += 1;
+
+    let header_size = std::mem::size_of::<DROPFILES>();
+    let total_bytes = header_size + total_chars * std::mem::size_of::<u16>();
+
+    unsafe {
+        let mem = GlobalAlloc(GMEM_MOVEABLE, total_bytes)?;
+        let ptr = GlobalLock(mem) as *mut u8;
+        if ptr.is_null() {
+            let _ = GlobalFree(Some(mem));
+            return Err(windows::core::Error::empty());
+        }
+
+        let df = ptr as *mut DROPFILES;
+        (*df).pFiles = header_size as u32;
+        (*df).pt = POINT { x: 0, y: 0 };
+        (*df).fNC = false.into();
+        (*df).fWide = true.into();
+
+        let mut dest = ptr.add(header_size) as *mut u16;
+        for wide in wide_paths {
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), dest, wide.len());
+            dest = dest.add(wide.len());
+        }
+        *dest = 0;
+
+        let _ = GlobalUnlock(mem);
+        Ok(mem)
+    }
+}
+
+#[implement(IDataObject)]
+struct FileDataObject {
+    paths: Vec<PathBuf>,
+}
+
+impl IDataObject_Impl for FileDataObject_Impl {
+    fn GetData(&self, pformatetc_in: *const FORMATETC) -> Result<STGMEDIUM> {
+        let Some(fmt) = (unsafe { pformatetc_in.as_ref() }) else {
+            return Err(windows::core::Error::from(DV_E_FORMATETC));
+        };
+        if fmt.cfFormat == CF_HDROP.0 && (fmt.tymed & TYMED_HGLOBAL.0 as u32 != 0) {
+            let hmem = create_hdrop(&self.paths)?;
+            return Ok(STGMEDIUM {
+                tymed: TYMED_HGLOBAL.0 as u32,
+                u: STGMEDIUM_0 { hGlobal: hmem },
+                pUnkForRelease: ManuallyDrop::new(None),
+            });
+        }
+        if fmt.cfFormat == preferred_drop_effect_format() && (fmt.tymed & TYMED_HGLOBAL.0 as u32 != 0) {
+            let hmem = unsafe {
+                let mem = GlobalAlloc(GMEM_MOVEABLE, 4)?;
+                let ptr = GlobalLock(mem) as *mut u32;
+                if ptr.is_null() {
+                    let _ = GlobalFree(Some(mem));
+                    return Err(windows::core::Error::empty());
+                }
+                *ptr = DROPEFFECT_COPY.0;
+                let _ = GlobalUnlock(mem);
+                mem
+            };
+            return Ok(STGMEDIUM {
+                tymed: TYMED_HGLOBAL.0 as u32,
+                u: STGMEDIUM_0 { hGlobal: hmem },
+                pUnkForRelease: ManuallyDrop::new(None),
+            });
+        }
+        Err(windows::core::Error::from(DV_E_FORMATETC))
+    }
+
+    fn GetDataHere(&self, _: *const FORMATETC, _: *mut STGMEDIUM) -> Result<()> {
+        Err(windows::core::Error::from(E_NOTIMPL))
+    }
+
+    fn QueryGetData(&self, pformatetc: *const FORMATETC) -> HRESULT {
+        let Some(fmt) = (unsafe { pformatetc.as_ref() }) else {
+            return DV_E_FORMATETC;
+        };
+        if fmt.cfFormat == CF_HDROP.0 && (fmt.tymed & TYMED_HGLOBAL.0 as u32 != 0) {
+            return S_OK;
+        }
+        if fmt.cfFormat == preferred_drop_effect_format() && (fmt.tymed & TYMED_HGLOBAL.0 as u32 != 0) {
+            return S_OK;
+        }
+        DV_E_FORMATETC
+    }
+
+    fn GetCanonicalFormatEtc(&self, _: *const FORMATETC, _: *mut FORMATETC) -> HRESULT {
+        DATA_S_SAMEFORMATETC
+    }
+
+    fn SetData(&self, _: *const FORMATETC, _: *const STGMEDIUM, _: BOOL) -> Result<()> {
+        Err(windows::core::Error::from(E_NOTIMPL))
+    }
+
+    fn EnumFormatEtc(&self, _: u32) -> Result<IEnumFORMATETC> {
+        Err(windows::core::Error::from(E_NOTIMPL))
+    }
+
+    fn DAdvise(&self, _: *const FORMATETC, _: u32, _: windows::core::Ref<'_, IAdviseSink>) -> Result<u32> {
+        Err(windows::core::Error::from(OLE_E_ADVISENOTSUPPORTED))
+    }
+
+    fn DUnadvise(&self, _: u32) -> Result<()> {
+        Err(windows::core::Error::from(OLE_E_ADVISENOTSUPPORTED))
+    }
+
+    fn EnumDAdvise(&self) -> Result<IEnumSTATDATA> {
+        Err(windows::core::Error::from(OLE_E_ADVISENOTSUPPORTED))
+    }
+}
+
+#[implement(IDropSource)]
+struct FileDropSource;
+
+impl IDropSource_Impl for FileDropSource_Impl {
+    fn QueryContinueDrag(&self, f_escape_pressed: BOOL, grf_key_state: MODIFIERKEYS_FLAGS) -> HRESULT {
+        if f_escape_pressed.as_bool() {
+            return DRAGDROP_S_CANCEL;
+        }
+        if (grf_key_state.0 & MK_LBUTTON.0) == 0 {
+            return DRAGDROP_S_DROP;
+        }
+        S_OK
+    }
+
+    fn GiveFeedback(&self, _dw_effect: DROPEFFECT) -> HRESULT {
+        DRAGDROP_S_USEDEFAULTCURSORS
+    }
+}
+
+/// Drags `paths` out of the shelf, copy only; returns once they are dropped somewhere (or the
+/// drag is cancelled). Paths that do not exist are filtered out.
+pub fn drag_out(paths: &[PathBuf]) -> Result<()> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let valid_paths: Vec<PathBuf> = paths.iter().filter(|p| p.exists()).cloned().collect();
+    if valid_paths.is_empty() {
+        return Ok(());
+    }
+    super::log::log(&format!("drag_out: starting drag with {} path(s)", valid_paths.len()));
+    unsafe {
+        let _ = ReleaseCapture();
+        let data: IDataObject = FileDataObject { paths: valid_paths.clone() }.into();
+        let source: IDropSource = FileDropSource.into();
+        OUTGOING.with(|o| o.set(true));
+        let mut effect = DROPEFFECT(0);
+        let outcome = DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect);
+        OUTGOING.with(|o| o.set(false));
+        if outcome.is_ok() {
+            super::log::log(&format!("drag_out: success, effect {}", effect.0));
+        } else {
+            super::log::log(&format!("drag_out: DoDragDrop ended with {outcome:?}"));
+        }
+        outcome.ok()
+    }
 }
 
 /// What a drag over the pill or card gets: a copy of files from elsewhere, offered as a copy;
@@ -221,5 +374,16 @@ mod tests {
         assert!(drag_moved(cx, 0));
         assert!(drag_moved(0, -cy));
         assert!(!drag_moved(0, 0));
+    }
+
+    #[test]
+    fn test_create_data_object_hdrop() {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert!(p.exists());
+        let data: IDataObject = FileDataObject { paths: vec![p.clone()] }.into();
+        let query = unsafe { data.QueryGetData(&hdrop_format()) };
+        assert_eq!(query.0, 0);
+        let paths = paths_of(&data);
+        assert_eq!(paths, vec![p]);
     }
 }

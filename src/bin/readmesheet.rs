@@ -80,6 +80,7 @@ fn song(art: &Crest, side: u32) -> MediaSnapshot {
         art_size: (side, side),
         accent: accent_from_rgba(&art.px, side as usize, side as usize),
         changed_ms: 0,
+        muted: false,
     }
 }
 

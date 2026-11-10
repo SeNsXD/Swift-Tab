@@ -203,6 +203,8 @@ pub struct Settings {
     pub media_paused_keep_min: u32,
     pub media_middle_click: bool,
     pub media_pill_buttons: PillButtons,
+    /// A speaker button after the transport buttons on the media pill: mutes the playing app.
+    pub media_pill_mute: bool,
     pub media_pill_artist: bool,
     pub media_card_wave: bool,
     /// Synced lyrics on the media card (from lrclib.net).
@@ -376,6 +378,7 @@ impl Default for Settings {
             media_paused_keep_min: 10,
             media_middle_click: true,
             media_pill_buttons: PillButtons::All,
+            media_pill_mute: true,
             media_pill_artist: true,
             media_card_wave: true,
             media_lyrics: true,

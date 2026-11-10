@@ -174,27 +174,81 @@ fn apply_window_icon_and_identity(hwnd: HWND) {
             let _ = ((*(*store).vtbl).release)(store);
         }
 
-        // Set taskbar/window and class icon to Resource ID 2 (the no-background Swift Tab ribbon logo).
-        if let Ok(hinst) = windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
-            use windows::Win32::UI::WindowsAndMessaging::{
-                GetSystemMetrics, LoadImageW, SendMessageW, ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_DEFAULTCOLOR, LR_SHARED, SM_CXICON, SM_CXSMICON, WM_SETICON,
-            };
-            let sm = GetSystemMetrics(SM_CXSMICON).max(16);
-            let lg = GetSystemMetrics(SM_CXICON).max(32);
-            if let Ok(h_sm) = LoadImageW(Some(hinst.into()), windows::core::PCWSTR(2 as _), IMAGE_ICON, sm, sm, LR_DEFAULTCOLOR | LR_SHARED) {
-                if !h_sm.is_invalid() {
-                    let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(h_sm.0 as isize)));
-                    let _ = SetClassLongPtrW(hwnd, GCLP_HICONSM, h_sm.0 as isize);
-                }
-            }
-            if let Ok(h_lg) = LoadImageW(Some(hinst.into()), windows::core::PCWSTR(2 as _), IMAGE_ICON, lg, lg, LR_DEFAULTCOLOR | LR_SHARED) {
-                if !h_lg.is_invalid() {
-                    let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(h_lg.0 as isize)));
-                    let _ = SetClassLongPtrW(hwnd, GCLP_HICON, h_lg.0 as isize);
+        // Set taskbar/window and class icon: the exe's icon resource (ID 2, the no-background Swift Tab
+        // ribbon logo), or when the exe was built without rc.exe the .ico written to %LOCALAPPDATA%.
+        use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SendMessageW, ICON_BIG, ICON_SMALL, SM_CXICON, SM_CXSMICON, WM_SETICON};
+        let sm = GetSystemMetrics(SM_CXSMICON).max(16);
+        let lg = GetSystemMetrics(SM_CXICON).max(32);
+        if let Some(h_sm) = load_window_icon(sm) {
+            let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(h_sm)));
+            let _ = SetClassLongPtrW(hwnd, GCLP_HICONSM, h_sm);
+        }
+        if let Some(h_lg) = load_window_icon(lg) {
+            let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_BIG as usize)), Some(LPARAM(h_lg)));
+            let _ = SetClassLongPtrW(hwnd, GCLP_HICON, h_lg);
+        }
+    }
+}
+
+/// The window icon at `size` px. Built straight from the .ico compiled into the exe, so it never
+/// depends on rc.exe (the Windows SDK), a resource id or a file on disk: the taskbar used to show
+/// Windows' blank page whenever one of those was missing. The exe's icon resource (2, then 1) and
+/// the cached .ico file remain as fallbacks.
+unsafe fn load_window_icon(size: i32) -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, LR_SHARED};
+    if let Some(h) = icon_from_memory(NOBG_ICO, size) {
+        return Some(h);
+    }
+    if let Ok(hinst) = windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
+        for id in [2usize, 1] {
+            if let Ok(h) = LoadImageW(Some(hinst.into()), PCWSTR(id as _), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_SHARED) {
+                if !h.is_invalid() {
+                    return Some(h.0 as isize);
                 }
             }
         }
     }
+    let path = HSTRING::from(cached_nobg_ico_path()?.display().to_string());
+    match LoadImageW(None, PCWSTR(path.as_ptr()), IMAGE_ICON, size, size, LR_DEFAULTCOLOR | LR_LOADFROMFILE) {
+        Ok(h) if !h.is_invalid() => Some(h.0 as isize),
+        _ => None,
+    }
+}
+
+/// An HICON at `size` px from the bytes of an .ico file: the smallest image that is at least
+/// `size` (or the largest there is), handed to `CreateIconFromResourceEx` (PNG images included).
+unsafe fn icon_from_memory(ico: &[u8], size: i32) -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::{CreateIconFromResourceEx, LR_DEFAULTCOLOR};
+    let u16_at = |o: usize| ico.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
+    let u32_at = |o: usize| ico.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    if u16_at(2)? != 1 {
+        return None;
+    }
+    let count = u16_at(4)?;
+    let mut best: Option<(usize, usize, usize)> = None; // (width, offset, length)
+    for i in 0..count {
+        let e = 6 + i * 16;
+        let w = match *ico.get(e)? {
+            0 => 256,
+            n => n as usize,
+        };
+        let len = u32_at(e + 8)?;
+        let off = u32_at(e + 12)?;
+        let better = match best {
+            None => true,
+            Some((bw, _, _)) => {
+                let want = size.max(1) as usize;
+                if bw >= want { w >= want && w < bw } else { w > bw }
+            }
+        };
+        if better {
+            best = Some((w, off, len));
+        }
+    }
+    let (_, off, len) = best?;
+    let bits = ico.get(off..off.checked_add(len)?)?;
+    let h = CreateIconFromResourceEx(bits, true, 0x0003_0000, size, size, LR_DEFAULTCOLOR).ok()?;
+    (!h.is_invalid()).then_some(h.0 as isize)
 }
 
 /// Takes over a window made without the hook (it existed already): its title bar goes now.

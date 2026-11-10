@@ -36,6 +36,7 @@ fn media(accent: [u8; 3]) -> MediaSnapshot {
         art_size: (0, 0),
         accent,
         changed_ms: 0,
+        muted: false,
     }
 }
 

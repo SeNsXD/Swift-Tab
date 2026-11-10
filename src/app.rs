@@ -256,8 +256,14 @@ fn local_exists(p: &Path) -> bool {
 /// What a drag takes: every item (from the pill, newest first) or one tile's file.
 pub fn drag_paths(shelf: &Shelf, tile: Option<usize>) -> Vec<PathBuf> {
     match tile {
-        None => shelf.items().iter().map(|i| i.path.clone()).collect(),
-        Some(i) => shelf.items().get(i).map(|i| i.path.clone()).into_iter().collect(),
+        None => shelf.targets().into_iter().map(|i| i.path.clone()).collect(),
+        Some(i) => {
+            if shelf.is_selected(i) {
+                shelf.targets().into_iter().map(|i| i.path.clone()).collect()
+            } else {
+                shelf.items().get(i).map(|i| i.path.clone()).into_iter().collect()
+            }
+        }
     }
 }
 
@@ -491,6 +497,7 @@ fn idle_media() -> MediaSnapshot {
         art_size: (0, 0),
         accent: [0x60, 0xCD, 0xFF],
         changed_ms: 0,
+        muted: false,
     }
 }
 
@@ -768,6 +775,8 @@ pub struct App {
     outputs: Vec<OutputDevice>,
     volume_drag: bool,
     app_volume_drag: bool,
+    /// The media pill's mute state, looked up a moment ago: (app id, when, muted).
+    mute_cache: std::cell::RefCell<Option<(String, u64, bool)>>,
     /// Whether the pill was last shown, for the log line when that changes.
     pill_shown: Option<bool>,
     /// The waveform: the output's peak meter (made on the first tick), the bars' levels, and
@@ -878,6 +887,7 @@ pub struct App {
     shelf_hover: Option<usize>,
     /// The tile the left button went down on, and where.
     tile_press: Option<(usize, i32, i32)>,
+    card_last_click: Option<(ActivityKind, usize, u64)>,
     /// A footer chip's result shown in its place, until when (ms; `u64::MAX` while it works).
     shelf_status: Option<(ShelfOp, String, u64)>,
     tool_worker: ToolWorker,
@@ -1051,6 +1061,7 @@ impl App {
             outputs: Vec::new(),
             volume_drag: false,
             app_volume_drag: false,
+            mute_cache: std::cell::RefCell::new(None),
             pill_shown: None,
             meter: None,
             levels: [0.0; 3],
@@ -1123,6 +1134,7 @@ impl App {
             pill_drag_ms: 0,
             shelf_hover: None,
             tile_press: None,
+            card_last_click: None,
             shelf_status: None,
             tool_worker,
             tool_mailbox,
@@ -1791,6 +1803,7 @@ impl App {
             ActivityKind::Media(IDLE_MEDIA) => settings::current().media_pinned.then(|| PillContent::media(idle_media())),
             ActivityKind::Media(id) => self.media_of(id).map(|m| {
                 let mut shown = styled(m.clone());
+                shown.muted = self.app_muted(&m.app_id, &m.app_name, now);
                 if let Some((Some(line), _)) = self.pill_lyric(m) {
                     shown.title = line;
                     shown.artist = String::new();
@@ -2625,6 +2638,45 @@ impl App {
         self.refresh()
     }
 
+    fn open_clipboard_item(&mut self, i: usize) {
+        let Some(item) = self.clipboard_stash.get(i).cloned() else { return; };
+        match &item.kind {
+            crate::activities::clipboard_stash::ClipboardKind::Image { .. } => {
+                let temp_dir = std::env::temp_dir();
+                if let Some(png) = &item.raw_png {
+                    let path = temp_dir.join(format!("swifttab_clip_{}.png", item.id));
+                    if std::fs::write(&path, png).is_ok() {
+                        open_path(&path);
+                    }
+                } else if let Some(dib) = &item.raw_dib {
+                    if dib.len() >= 40 {
+                        let header_size = u32::from_le_bytes(dib[0..4].try_into().unwrap_or([40, 0, 0, 0]));
+                        let mut bmp = Vec::with_capacity(14 + dib.len());
+                        bmp.extend_from_slice(b"BM");
+                        bmp.extend_from_slice(&(14 + dib.len() as u32).to_le_bytes());
+                        bmp.extend_from_slice(&0u32.to_le_bytes());
+                        let bit_offset = 14 + header_size;
+                        bmp.extend_from_slice(&bit_offset.to_le_bytes());
+                        bmp.extend_from_slice(dib);
+                        let path = temp_dir.join(format!("swifttab_clip_{}.bmp", item.id));
+                        if std::fs::write(&path, bmp).is_ok() {
+                            open_path(&path);
+                        }
+                    }
+                }
+            }
+            crate::activities::clipboard_stash::ClipboardKind::Url { .. } => {
+                open_url(&item.text);
+            }
+            crate::activities::clipboard_stash::ClipboardKind::Text { .. } => {
+                let path = Path::new(&item.text);
+                if path.exists() {
+                    open_path(path);
+                }
+            }
+        }
+    }
+
     /// The next waiting weather alert takes the pill once the one before has had its moment.
     fn next_alert(&mut self, now: u64) {
         if self.alert_moment.is_none_or(|(_, at)| now.saturating_sub(at) >= ALERT_MOMENT_MS) {
@@ -3304,6 +3356,7 @@ impl App {
                 if let Some((app_id, app_name)) = app_info {
                     if let Some((_, muted)) = crate::platform::audio::app_volume(&app_id, &app_name) {
                         let _ = crate::platform::audio::set_app_mute(&app_id, &app_name, !muted);
+                        *self.mute_cache.borrow_mut() = None;
                         self.refresh()?;
                     }
                 }
@@ -3374,7 +3427,18 @@ impl App {
                 self.clipboard_hover = None;
                 self.clipboard_scroll = self.clipboard_scroll.clamp(0.0, self.clipboard_max_scroll());
             }
-            CardAction::ClipboardPaste(i) => return self.paste_clipboard_item(i, false),
+            CardAction::ClipboardPaste(i) => {
+                let now = now_ms();
+                if let Some((ActivityKind::Clipboard, last_i, last_ms)) = self.card_last_click {
+                    if last_i == i && now.saturating_sub(last_ms) < 500 {
+                        self.card_last_click = None;
+                        self.open_clipboard_item(i);
+                        return Ok(());
+                    }
+                }
+                self.card_last_click = Some((ActivityKind::Clipboard, i, now));
+                return self.paste_clipboard_item(i, false);
+            }
             CardAction::ClipboardPastePlain(i) => return self.paste_clipboard_item(i, true),
             CardAction::OutputSettings => {
                 unsafe {
@@ -3842,6 +3906,36 @@ impl App {
             (Some(OpenCard::Activity(ActivityKind::Media(id))), _) | (_, Some(ActivityKind::Media(id))) => Some(id),
             _ => None,
         }
+    }
+
+    /// Whether the player is muted in the Windows mixer, for the pill's speaker button. Looked up
+    /// at most every 400 ms, and not at all when the button is off.
+    fn app_muted(&self, app_id: &str, app_name: &str, now: u64) -> bool {
+        let s = settings::current();
+        if !s.media_pill_mute || s.media_pill_buttons == settings::PillButtons::None {
+            return false;
+        }
+        if let Some((id, at, muted)) = self.mute_cache.borrow().as_ref() {
+            if id == app_id && now.saturating_sub(*at) < 400 {
+                return *muted;
+            }
+        }
+        let muted = crate::platform::audio::app_volume(app_id, app_name).is_some_and(|(_, muted)| muted);
+        *self.mute_cache.borrow_mut() = Some((app_id.to_string(), now, muted));
+        muted
+    }
+
+    /// The pill's speaker button: mutes the playing app, or unmutes it.
+    fn toggle_media_mute(&mut self) -> Result<()> {
+        let app_info = self.media_target().and_then(|id| self.media_of(id)).map(|m| (m.app_id.clone(), m.app_name.clone()));
+        if let Some((app_id, app_name)) = app_info {
+            if let Some((_, muted)) = crate::platform::audio::app_volume(&app_id, &app_name) {
+                let _ = crate::platform::audio::set_app_mute(&app_id, &app_name, !muted);
+            }
+            *self.mute_cache.borrow_mut() = None;
+            self.refresh()?;
+        }
+        Ok(())
     }
 
     fn media_command(&mut self, c: MediaCommand) -> Result<()> {
@@ -4584,6 +4678,7 @@ impl App {
         if matches!(self.card_state, CardState::Closed | CardState::Closing) {
             return Ok(());
         }
+        self.card_last_click = None;
         self.card_pinned = false;
         self.app_volume_drag = false;
         self.disarm_leave();
@@ -4790,6 +4885,7 @@ impl App {
                     (_, Some(PillButton::Prev)) => self.media_command(MediaCommand::Prev),
                     (_, Some(PillButton::PlayPause)) => self.media_command(MediaCommand::PlayPause),
                     (_, Some(PillButton::Next)) => self.media_command(MediaCommand::Next),
+                    (_, Some(PillButton::Mute)) => self.toggle_media_mute(),
                     (_, None) => self.open_front_card(),
                     _ => Ok(()),
                 }
@@ -5198,8 +5294,33 @@ impl App {
             // A tile pressed and let go where it was (no drag): selected for the footer, or let go.
             UiEvent::Card(CardEvent::Up { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) && self.ui.card.hit_test(x, y).is_none() => {
                 if let Some((i, _, _)) = self.tile_press.take().filter(|(i, _, _)| self.ui.card.tile_at(x, y) == Some(*i)) {
+                    let now = now_ms();
+                    if let Some((ActivityKind::Shelf, last_i, last_ms)) = self.card_last_click {
+                        if last_i == i && now.saturating_sub(last_ms) < 500 {
+                            self.card_last_click = None;
+                            if let Some(item) = self.shelf.items().get(i) {
+                                open_path(&item.path);
+                            }
+                            return Ok(());
+                        }
+                    }
+                    self.card_last_click = Some((ActivityKind::Shelf, i, now));
                     self.shelf.toggle(i);
                     return self.refresh();
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::DoubleClick { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Shelf)) => {
+                if let Some(i) = self.ui.card.tile_at(x, y) {
+                    if let Some(item) = self.shelf.items().get(i) {
+                        open_path(&item.path);
+                    }
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::DoubleClick { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Clipboard)) => {
+                if let Some(i) = self.ui.card.tile_at(x, y) {
+                    self.open_clipboard_item(i);
                 }
                 Ok(())
             }
@@ -5440,6 +5561,18 @@ mod tests {
     }
 
     #[test]
+    fn drag_set_for_selected_tiles_drags_selection() {
+        let mut shelf = Shelf::default();
+        shelf.add(&paths(&["a.txt", "b.txt", "c.txt"]), no_dirs);
+        shelf.toggle(0); // c.txt
+        shelf.toggle(2); // a.txt
+        // Dragging a selected tile drags all selected items
+        assert_eq!(super::drag_paths(&shelf, Some(0)), paths(&["c.txt", "a.txt"]));
+        // Dragging an unselected tile drags only that tile
+        assert_eq!(super::drag_paths(&shelf, Some(1)), paths(&["b.txt"]));
+    }
+
+    #[test]
     fn goal_sound_only_for_our_goals() {
         use crate::activities::football::{Moment, Side};
         assert_eq!(super::goal_sound(Moment::Goal(Side::Away), Some(Side::Away), "tada"), Some("tada"));
@@ -5531,6 +5664,7 @@ mod tests {
             art_size: (0, 0),
             accent: [0, 0, 0],
             changed_ms,
+            muted: false,
         }
     }
 

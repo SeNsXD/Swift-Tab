@@ -331,6 +331,7 @@ fn session_snapshot(key: &str, t: &Tracked, arts: &mut HashMap<String, Art>) -> 
         art_size: a.size,
         accent: a.accent,
         changed_ms: t.last_change_ms,
+        muted: false,
     })
 }
 

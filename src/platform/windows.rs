@@ -42,6 +42,7 @@ pub enum PillEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardEvent {
     Down { x: i32, y: i32 },
+    DoubleClick { x: i32, y: i32 },
     Move { x: i32, y: i32 },
     Up { x: i32, y: i32 },
     Right { x: i32, y: i32 },
@@ -435,6 +436,7 @@ extern "system" fn card_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             unsafe { SetCapture(hwnd) };
             card(CardEvent::Down { x, y })
         }
+        WM_LBUTTONDBLCLK => card(CardEvent::DoubleClick { x, y }),
         WM_LBUTTONUP => {
             unsafe {
                 let _ = ReleaseCapture();
@@ -586,14 +588,15 @@ fn register_classes() {
     ONCE.call_once(|| unsafe {
         let instance = GetModuleHandleW(None).unwrap_or_default().into();
         let arrow = LoadCursorW(None, IDC_ARROW).unwrap_or_default();
-        let classes: [(PCWSTR, WNDPROC); 4] = [
-            (PASSIVE_CLASS, Some(passive_proc)),
-            (PILL_INPUT_CLASS, Some(pill_input_proc)),
-            (CARD_INPUT_CLASS, Some(card_input_proc)),
-            (MAIN_CLASS, Some(main_proc)),
+        let classes: [(PCWSTR, WNDPROC, WNDCLASS_STYLES); 4] = [
+            (PASSIVE_CLASS, Some(passive_proc), WNDCLASS_STYLES(0)),
+            (PILL_INPUT_CLASS, Some(pill_input_proc), WNDCLASS_STYLES(0)),
+            (CARD_INPUT_CLASS, Some(card_input_proc), CS_DBLCLKS),
+            (MAIN_CLASS, Some(main_proc), WNDCLASS_STYLES(0)),
         ];
-        for (class, proc_) in classes {
+        for (class, proc_, style) in classes {
             RegisterClassW(&WNDCLASSW {
+                style,
                 lpfnWndProc: proc_,
                 hInstance: instance,
                 lpszClassName: class,

@@ -37,6 +37,7 @@ fn song(line: Option<&str>) -> PillContent {
         art_size: (0, 0),
         accent: [0x1D, 0xB9, 0x54],
         changed_ms: 0,
+        muted: false,
     })
 }
 use windows::core::{Interface, Result, HSTRING};

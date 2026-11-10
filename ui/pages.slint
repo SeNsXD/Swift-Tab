@@ -561,6 +561,14 @@ export component MediaInspector inherits VerticalLayout {
             }
         }
         IRow {
+            label: @tr("Mute button");
+            note: @tr("A speaker next to the controls that mutes the playing app");
+            Toggle {
+                checked <=> Store.media-pill-mute;
+                toggled => { Ui.changed(); }
+            }
+        }
+        IRow {
             label: @tr("Marquee title");
             Select {
                 options: [@tr("On change"), @tr("On hover"), @tr("Off")];
