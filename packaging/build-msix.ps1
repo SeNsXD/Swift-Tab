@@ -5,7 +5,7 @@ $root  = Split-Path -Parent $PSScriptRoot
 $stage = Join-Path $root "target\msix-stage"
 $out   = Join-Path $root "dist\SwiftTab.msix"
 
-cargo build --release
+cargo build --release --bin swifttab --bin swifttab-settings
 if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
