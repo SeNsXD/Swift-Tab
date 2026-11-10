@@ -1358,8 +1358,14 @@ impl App {
         let cx = pill.x + pill.w / 2;
         let w = s.even_px(CARD_FRAME_W_DIP + 2.0 * SHADOW_BLUR_DIP) as i32;
         let tallest = card_rect(info, cx, CARD_FRAME_W_DIP, CARD_FRAME_H_DIP, CARD_GAP_DIP, s);
-        let top = tallest.y - s.px(SHADOW_BLUR_DIP) as i32;
-        RectPx { x: frame_x(info, cx, w), y: top, w, h: info.rect.bottom() - top }
+        if info.bottom {
+            let top = tallest.y - s.px(SHADOW_BLUR_DIP) as i32;
+            RectPx { x: frame_x(info, cx, w), y: top, w, h: info.rect.bottom() - top }
+        } else {
+            let top = info.rect.y;
+            let bottom = tallest.bottom() + s.px(SHADOW_BLUR_DIP) as i32;
+            RectPx { x: frame_x(info, cx, w), y: top, w, h: bottom - top }
+        }
     }
 
     fn pill_screen(&self) -> RectPx {
@@ -4769,11 +4775,13 @@ impl App {
         if matches!(self.card_state, CardState::Closed | CardState::Closing) {
             return Ok(());
         }
+        self.switch_pending = None;
         self.card_last_click = None;
         self.card_pinned = false;
         self.app_volume_drag = false;
         self.disarm_leave();
         unsafe {
+            let _ = KillTimer(Some(self.ui.card_window.timer_owner()), TIMER_PAGE);
             let _ = KillTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE);
         }
         if self.open.is_some_and(OpenCard::takes_keys) {
@@ -4783,13 +4791,17 @@ impl App {
         self.leave_question();
         self.leave_output_page();
         self.ui.card_window.hide_hit();
-        // Into the pill as it is now (after a resize the shape's start is the previous card).
         self.stop_brief_idle();
-        if self.open.is_some_and(OpenCard::grows_from_pill) {
-            let f = self.ui.card_window.frame;
-            let pill = self.pill_screen();
-            self.ui.morph.set_from(RectPx { x: pill.x - f.x, y: pill.y - f.y, ..pill }, self.ui.pill_layout.radius as f32)?;
-        }
+        let s = self.ui.card_scale;
+        let f = self.ui.card_window.frame;
+        let slide_to = RectPx {
+            x: self.card_screen.x - f.x,
+            y: self.card_screen.y - f.y + s.px(PICKER_SLIDE_DIP) as i32,
+            w: self.card_screen.w,
+            h: self.card_screen.h,
+        };
+        let to_r = self.open.and_then(|o| self.card_content(o, now_ms())).map_or(s.px(36.0), |c| s.px(card_radius_dip(&c)));
+        let _ = self.ui.morph.set_from(slide_to, to_r);
         // The whole way down into the pill stays in front of the taskbar.
         self.ui.card_window.raise();
         unsafe { SetTimer(Some(self.ui.card_window.timer_owner()), TIMER_RAISE, RAISE_EVERY_MS, None) };
@@ -5083,6 +5095,10 @@ impl App {
             UiEvent::Timer(TIMER_PAGE) => {
                 unsafe {
                     let _ = KillTimer(Some(self.ui.card_window.timer_owner()), TIMER_PAGE);
+                }
+                if matches!(self.card_state, CardState::Closed | CardState::Closing) {
+                    self.switch_pending = None;
+                    return Ok(());
                 }
                 match self.switch_pending.take() {
                     Some(kind) => self.apply_switch(kind),
