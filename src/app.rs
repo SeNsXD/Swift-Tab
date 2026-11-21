@@ -1471,7 +1471,7 @@ impl App {
             };
             p.push(Presence { kind: ActivityKind::Clipboard, state, changed_ms: self.clipboard_ms });
         }
-        if !self.notes_stash.is_empty() {
+        if s.notes_enabled && (!self.notes_stash.is_empty() || s.notes_pinned) {
             p.push(Presence { kind: ActivityKind::Notes, state: PresenceState::Running, changed_ms: 0 });
         }
         // Games: a moment (updated, played) stands for its game while it plays. Like the matches,
@@ -2299,6 +2299,14 @@ impl App {
         crate::render::card::clipboard_categorized_max_scroll(pinned, unpinned)
     }
 
+    fn notes_max_scroll(&self) -> f32 {
+        let count = self.notes_stash.count() as f32;
+        let item_h = 62.0;
+        let total_h = count * item_h;
+        let view_h = 240.0;
+        (total_h - view_h).max(0.0)
+    }
+
     fn clipboard_card(&self) -> crate::render::card::ClipboardCard {
         let tiles = self.clipboard_stash.items().iter().map(|item| {
             let (is_url, is_image, has_html, badge) = match &item.kind {
@@ -2458,7 +2466,7 @@ impl App {
     fn notes_pill(&self) -> PillContent {
         let count = self.notes_stash.count();
         let thumb = self.notes_stash.notes().first().and_then(|n| n.thumb.clone());
-        let label = self.notes_stash.notes().first().map_or_else(|| "Middle click to write".to_string(), |n| n.record.title.clone());
+        let label = self.notes_stash.notes().first().map_or_else(|| "Sticky Notes".to_string(), |n| n.record.title.clone());
         PillContent::Notes { label, count, thumb }
     }
 
@@ -5056,6 +5064,9 @@ impl App {
         unsafe { SetTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE, OUTSIDE_POLL_MS, None) };
         if which.takes_keys() {
             self.ui.card_window.set_focusable(true);
+            if matches!(which, OpenCard::Note(_)) && !settings::current().notes_translucent_on_leave {
+                self.arm_leave();
+            }
         } else if by_pointer {
             self.arm_leave();
         }
@@ -5299,7 +5310,8 @@ impl App {
                     self.toggle_pause(kind);
                     self.refresh()
                 }
-                _ => self.open_new_note(),
+                _ if settings::current().notes_enabled => self.open_new_note(),
+                _ => Ok(()),
             },
             UiEvent::Media => self.take_media(),
             UiEvent::Clipboard => {
@@ -5489,7 +5501,8 @@ impl App {
             UiEvent::Timer(TIMER_DEMO) => Ok(()),
             UiEvent::Foreground => {
                 // A pinned card or floating sticky note stays while you work in other windows.
-                if !self.brief_auto && !self.card_pinned && !matches!(self.open, Some(OpenCard::Note(_))) {
+                let note_stays = matches!(self.open, Some(OpenCard::Note(_))) && settings::current().notes_translucent_on_leave;
+                if !self.brief_auto && !self.card_pinned && !note_stays {
                     self.close_card()?;
                 }
                 self.move_hook.follow_foreground();
@@ -5501,7 +5514,13 @@ impl App {
             }
             UiEvent::ForegroundMoved => self.check_fullscreen(),
             // A drag on a slider or a floating sticky note keeps the card open even when the mouse wanders off it.
-            UiEvent::Timer(TIMER_LEAVE) if matches!(self.open, Some(OpenCard::Note(_))) || self.volume_drag || self.app_volume_drag || self.clipboard_scroll_drag || self.seeking.is_some() || dragdrop::hover().is_some() => Ok(()),
+            UiEvent::Timer(TIMER_LEAVE)
+                if (matches!(self.open, Some(OpenCard::Note(_))) && settings::current().notes_translucent_on_leave)
+                    || self.volume_drag
+                    || self.app_volume_drag
+                    || self.clipboard_scroll_drag
+                    || self.seeking.is_some()
+                    || dragdrop::hover().is_some() => Ok(()),
             UiEvent::Timer(TIMER_LEAVE) => self.close_card(),
             UiEvent::TaskbarCreated => {
                 log("taskbar: TaskbarCreated");
@@ -5572,7 +5591,10 @@ impl App {
                 self.ui.morph.set_blur(effects_enabled())?;
                 self.repaint()
             }
-            UiEvent::Timer(TIMER_OUTSIDE) if !self.card_pinned && !matches!(self.open, Some(OpenCard::Note(_))) && self.clicked_outside() => self.close_card(),
+            UiEvent::Timer(TIMER_OUTSIDE)
+                if !self.card_pinned
+                    && (!matches!(self.open, Some(OpenCard::Note(_))) || !settings::current().notes_translucent_on_leave)
+                    && self.clicked_outside() => self.close_card(),
             UiEvent::Pill(PillEvent::Hover(over)) | UiEvent::Card(CardEvent::Hover(over)) => {
                 let is_pill = matches!(e, UiEvent::Pill(_));
                 if is_pill {
@@ -5580,7 +5602,11 @@ impl App {
                 } else {
                     self.card_hover = over;
                     if matches!(self.open, Some(OpenCard::Note(_))) {
-                        self.ui.card_window.set_opacity(if over { 1.0 } else { 0.50 });
+                        if settings::current().notes_translucent_on_leave {
+                            self.ui.card_window.set_opacity(if over { 1.0 } else { 0.50 });
+                        } else {
+                            self.ui.card_window.set_opacity(1.0);
+                        }
                     }
                 }
                 let marquee_on_hover = settings::current().marquee != settings::Marquee::Off;
@@ -5606,7 +5632,7 @@ impl App {
                 }
                 if over {
                     self.disarm_leave();
-                } else if !self.open.is_some_and(OpenCard::takes_keys) {
+                } else if !self.open.is_some_and(OpenCard::takes_keys) || (matches!(self.open, Some(OpenCard::Note(_))) && !settings::current().notes_translucent_on_leave) {
                     self.arm_leave();
                 }
                 Ok(())
@@ -5840,6 +5866,14 @@ impl App {
             {
                 let max_scroll = self.shelf_max_scroll();
                 self.shelf_scroll = (self.shelf_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
+                self.refresh()
+            }
+            UiEvent::Card(CardEvent::Wheel { delta, .. })
+                if self.open == Some(OpenCard::Activity(ActivityKind::Notes))
+                    && self.notes_max_scroll() > 0.0 =>
+            {
+                let max_scroll = self.notes_max_scroll();
+                self.notes_scroll = (self.notes_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
                 self.refresh()
             }
             UiEvent::Card(CardEvent::Wheel { x, y, delta }) => {
@@ -6098,6 +6132,29 @@ mod tests {
         };
         assert_eq!(walk(120), vec![Media(IDLE_MEDIA), Clipboard, Shelf, Media(IDLE_MEDIA)]);
         assert_eq!(walk(-120), vec![Media(IDLE_MEDIA), Shelf, Clipboard, Media(IDLE_MEDIA)]);
+    }
+
+    #[test]
+    fn wheel_steps_visit_all_four_idle_cards_in_turn() {
+        let live = [
+            Presence { kind: Media(IDLE_MEDIA), state: PresenceState::Paused, changed_ms: 0 },
+            Presence { kind: Shelf, state: PresenceState::Running, changed_ms: 0 },
+            Presence { kind: Clipboard, state: PresenceState::Running, changed_ms: 0 },
+            Presence { kind: Notes, state: PresenceState::Running, changed_ms: 0 },
+        ];
+        let now = 60_000;
+        let walk = |delta: i32| {
+            let mut front = Media(IDLE_MEDIA);
+            let mut seen = vec![front];
+            for _ in 0..4 {
+                let next = wheel_step(&live, now, front, delta).unwrap();
+                front = next;
+                seen.push(front);
+            }
+            seen
+        };
+        assert_eq!(walk(120), vec![Media(IDLE_MEDIA), Clipboard, Shelf, Notes, Media(IDLE_MEDIA)]);
+        assert_eq!(walk(-120), vec![Media(IDLE_MEDIA), Notes, Shelf, Clipboard, Media(IDLE_MEDIA)]);
     }
 
     fn paused(changed_ms: u64) -> MediaSnapshot {

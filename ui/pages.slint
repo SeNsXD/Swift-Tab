@@ -1809,3 +1809,63 @@ export component ShelfInspector inherits VerticalLayout {
         }
     }
 }
+
+// ================================================================== 15 Sticky Notes
+
+export component NotesBody inherits VerticalLayout {
+    alignment: start;
+    spacing: 6px;
+    H4 {
+        title: @tr("How to Use");
+        count: @tr("4 tips");
+    }
+    LRow {
+        title: @tr("Middle-click to write");
+        sub: @tr("middle-click the pill to immediately open a new note");
+        lead: 1;
+        glyph: "\u{E70B}";
+    }
+    LRow {
+        title: @tr("Scroll between activities");
+        sub: @tr("scroll wheel on the pill cycles between Notes, Shelf and Clipboard");
+        lead: 1;
+        glyph: "\u{E72A}";
+    }
+    LRow {
+        title: @tr("Paste images");
+        sub: @tr("press Ctrl+V inside the note to attach screenshots or images");
+        lead: 1;
+        glyph: "\u{EB9F}";
+    }
+    LRow {
+        title: @tr("Continuous auto-save");
+        sub: @tr("everything you write is automatically saved to notes.json");
+        lead: 1;
+        glyph: "\u{E74E}";
+    }
+}
+
+export component NotesInspector inherits VerticalLayout {
+    alignment: start;
+    ISection {
+        title: @tr("Floating Behavior");
+        first: true;
+        IRow {
+            label: @tr("Translucent when inactive");
+            note: @tr("Stays open at 50% opacity. Turn off to auto-close when mouse leaves.");
+            Toggle {
+                checked <=> Store.notes-translucent-on-leave;
+                toggled => { Ui.changed(); }
+            }
+        }
+        IRow {
+            label: @tr("Always show in pill");
+            note: @tr("Include Sticky Notes in the pill and wheel cycle even when empty");
+            Toggle {
+                checked <=> Store.notes-pinned;
+                toggled => { Ui.changed(); }
+            }
+        }
+    }
+}
+

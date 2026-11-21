@@ -130,7 +130,8 @@ pub fn settings_page_for(kind: ActivityKind) -> u8 {
         ActivityKind::Capture | ActivityKind::Transfer | ActivityKind::Privacy | ActivityKind::Download => 14,
         ActivityKind::Match(_) => 5,
         ActivityKind::Clipboard => 11,
-        ActivityKind::Shelf | ActivityKind::Notes => 12,
+        ActivityKind::Shelf => 12,
+        ActivityKind::Notes => 15,
         ActivityKind::Volume
         | ActivityKind::Power
         | ActivityKind::Clock
@@ -215,8 +216,8 @@ fn rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> 
         // Only present while it has items or always show is on.
         (ActivityKind::Shelf, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" { 7 } else { 8 }),
         (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
-        (ActivityKind::Clipboard, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" || crate::settings::current().preferred_idle_activity == "media" { 8 } else { 7 }),
-        (ActivityKind::Notes, _) => Some(8),
+        (ActivityKind::Clipboard, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" || crate::settings::current().preferred_idle_activity == "media" || crate::settings::current().preferred_idle_activity == "notes" { 8 } else { 7 }),
+        (ActivityKind::Notes, _) => Some(if crate::settings::current().preferred_idle_activity == "notes" { 7 } else { 8 }),
         (ActivityKind::Clock, _) => Some(10),
         // Always on with a city: the last thing behind everything else.
         (ActivityKind::Weather, _) => Some(10),
@@ -277,10 +278,10 @@ fn canonical_rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> O
         (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
         (ActivityKind::Clipboard, _) => Some(8),
         (ActivityKind::Shelf, _) => Some(9),
-        (ActivityKind::Notes, _) => Some(9),
-        (ActivityKind::Media(id), _) if id != u32::MAX && age <= keep_ms => Some(10),
+        (ActivityKind::Notes, _) => Some(10),
+        (ActivityKind::Media(id), _) if id != u32::MAX && age <= keep_ms => Some(11),
         (ActivityKind::Media(_), _) => None,
-        (ActivityKind::Buds, _) => Some(11),
+        (ActivityKind::Buds, _) => Some(12),
         (ActivityKind::Game(_), PresenceState::Moment) if age < GAME_MOMENT_MS => Some(1),
         (ActivityKind::Game(_), PresenceState::Moment) => None,
         (ActivityKind::Game(_), _) => Some(6),
@@ -299,9 +300,9 @@ fn canonical_rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> O
         (ActivityKind::Live(_), PresenceState::Done) if age < live::LIVE_DONE_MS => Some(1),
         (ActivityKind::Live(_), PresenceState::Done) => None,
         (ActivityKind::Live(_), _) => Some(6),
-        (ActivityKind::Headset(_), _) => Some(11),
-        (ActivityKind::Clock, _) => Some(12),
-        (ActivityKind::Weather, _) => Some(12),
+        (ActivityKind::Headset(_), _) => Some(12),
+        (ActivityKind::Clock, _) => Some(13),
+        (ActivityKind::Weather, _) => Some(13),
         (ActivityKind::Rain, _) if age < RAIN_MOMENT_MS => Some(1),
         (ActivityKind::Rain, _) => None,
         (ActivityKind::WeatherAlert, _) if age < ALERT_MOMENT_MS => Some(1),

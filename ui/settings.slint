@@ -16,6 +16,7 @@ import {
     AppearanceBody, AppearanceInspector, GeneralBody, GeneralInspector, MediaBody, MediaInspector, TimerBody, TimerInspector,
     MatchBody, MatchInspector, FullscreenBody, FullscreenInspector, AboutBody, AboutInspector,
     SystemBody, SystemInspector, EventsInspector, GamesBody, GamesInspector, WellbeingBody, WellbeingInspector, ClipboardBody, ClipboardInspector, ShelfBody, ShelfInspector,
+    NotesBody, NotesInspector,
     Win11TaskbarMockup
 } from "pages.slint";
 
@@ -681,6 +682,13 @@ export component SettingsWindow inherits Window {
                                 clicked => { root.go(12); }
                             }
                             SideItem {
+                                title: "Sticky Notes";
+                                glyph: "\u{E70B}";
+                                current: Store.page == 15;
+                                off: !Store.notes-on;
+                                clicked => { root.go(15); }
+                            }
+                            SideItem {
                                 title: "Games";
                                 glyph: "\u{E7FC}";
                                 current: Store.page == 9;
@@ -761,6 +769,7 @@ export component SettingsWindow inherits Window {
                                         : Store.page == 9 ? "Games"
                                         : Store.page == 11 ? "Clipboard"
                                         : Store.page == 12 ? "Shelf"
+                                        : Store.page == 15 ? "Sticky Notes"
                                         : "Swift Tab Control Center";
                                     font-size: 16px;
                                     font-weight: 600;
@@ -1307,6 +1316,25 @@ export component SettingsWindow inherits Window {
                                         ShelfBody { }
                                     }
                                     if !Store.shelf-on: TouchArea { }
+                                }
+                            }
+                            if !root.searching && Store.page == 15: VerticalLayout {
+                                spacing: 14px;
+                                PageHero {
+                                    title: "Sticky Notes";
+                                    sub: "Quick desktop notes with auto-save and translucent floating mode";
+                                    glyph: "\u{E70B}";
+                                    checked <=> Store.notes-on;
+                                    toggled => { Ui.changed(); }
+                                }
+                                Rectangle {
+                                    opacity: Store.notes-on ? 1 : 0.38;
+                                    VerticalLayout {
+                                        spacing: 14px;
+                                        NotesInspector { }
+                                        NotesBody { }
+                                    }
+                                    if !Store.notes-on: TouchArea { }
                                 }
                             }
                             if !root.searching && Store.page == 14: VerticalLayout {

@@ -149,6 +149,14 @@ pub struct Settings {
     pub shelf_enabled: bool,
     /// The shelf stays in the stack (and opens by scrolling) even when it is empty.
     pub shelf_pinned: bool,
+    /// Whether the sticky notes module is enabled at all.
+    pub notes_enabled: bool,
+    /// The sticky notes pill stays in the stack (and opens by scrolling) even when empty.
+    pub notes_pinned: bool,
+    /// When the mouse moves away from a floating sticky note:
+    /// true -> stay open and become translucent (50% opacity);
+    /// false -> automatically close the note.
+    pub notes_translucent_on_leave: bool,
     /// The clipboard stays in the stack even when nothing is copied (while its history is on).
     pub clipboard_pinned: bool,
     /// The media pill stays in the stack even when nothing is playing.
@@ -339,6 +347,9 @@ impl Default for Settings {
             open_delay_ms: 500,
             shelf_enabled: true,
             shelf_pinned: true,
+            notes_enabled: true,
+            notes_pinned: true,
+            notes_translucent_on_leave: true,
             clipboard_pinned: true,
             media_pinned: true,
             media_spotify_button: true,
@@ -667,6 +678,7 @@ mod tests {
     fn defaults_match_v1() {
         let s = Settings::default();
         assert!(s.enabled && s.autostart && s.card_blur && s.use_cover_color && s.fullscreen_hide);
+        assert!(s.notes_enabled && s.notes_pinned && s.notes_translucent_on_leave);
         assert_eq!(s.card_leave_close_ms, 600);
         assert_eq!(s.media_paused_keep_min, 10);
         assert_eq!(s.buds_low_battery_pct, 15);
