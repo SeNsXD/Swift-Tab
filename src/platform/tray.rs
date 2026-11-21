@@ -134,6 +134,7 @@ pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
         if let Some(version) = update {
             let _ = AppendMenuW(menu, MF_STRING, MENU_UPDATE as usize, &HSTRING::from(format!("Update: {version}")));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
@@ -153,7 +154,7 @@ pub fn show_menu(owner: HWND, autostart: bool, update: Option<&str>) -> u32 {
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen
     }
 }
@@ -163,6 +164,7 @@ pub fn show_clear_menu(owner: HWND) -> bool {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
+        apply_dark_menu_style(menu);
         let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Clear All"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
@@ -170,7 +172,7 @@ pub fn show_clear_menu(owner: HWND) -> bool {
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen == 1
     }
 }
@@ -180,6 +182,7 @@ pub fn show_media_menu(owner: HWND, app_name: &str) -> bool {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
+        apply_dark_menu_style(menu);
         let label = format!("Open · {app_name}");
         let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from(label));
         let mut p = POINT::default();
@@ -188,7 +191,7 @@ pub fn show_media_menu(owner: HWND, app_name: &str) -> bool {
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen == 1
     }
 }
@@ -198,6 +201,7 @@ pub fn show_download_menu(owner: HWND) -> bool {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return false };
+        apply_dark_menu_style(menu);
         let _ = AppendMenuW(menu, MF_STRING, 1, &HSTRING::from("Open download folder"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
@@ -205,7 +209,7 @@ pub fn show_download_menu(owner: HWND) -> bool {
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_CENTERALIGN;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen == 1
     }
 }
@@ -231,6 +235,64 @@ pub const NOTE_PIN: u32 = 3;
 pub const NOTE_SHARE: u32 = 4;
 pub const NOTE_DELETE: u32 = 5;
 pub const NOTE_CLEAR_ALL: u32 = 6;
+
+/// Initializes dark mode preferences globally in the process before windows are opened.
+pub fn init_dark_mode() {
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    use windows::core::{w, PCSTR};
+
+    unsafe {
+        if let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) {
+            // Ordinal 135: SetPreferredAppMode(2 = ForceDark)
+            if let Some(proc) = GetProcAddress(uxtheme, PCSTR(135 as _)) {
+                let set_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(proc);
+                set_mode(2);
+            }
+            // Ordinal 136: FlushMenuThemes()
+            if let Some(proc) = GetProcAddress(uxtheme, PCSTR(136 as _)) {
+                let flush: unsafe extern "system" fn() = std::mem::transmute(proc);
+                flush();
+            }
+        }
+    }
+}
+
+/// Applies a dark background brush and theme settings to an HMENU so it matches Windows 11 dark mode.
+pub fn apply_dark_menu_style(menu: HMENU) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetMenuInfo, MENUINFO, MIM_BACKGROUND, MIM_APPLYTOSUBMENUS};
+    use windows::Win32::Graphics::Gdi::CreateSolidBrush;
+    use windows::Win32::Foundation::COLORREF;
+
+    unsafe {
+        // Windows 11 dark context menu surface (#2C2C2C)
+        let brush = CreateSolidBrush(COLORREF(0x002C_2C2C));
+        let mi = MENUINFO {
+            cbSize: std::mem::size_of::<MENUINFO>() as u32,
+            fMask: MIM_BACKGROUND | MIM_APPLYTOSUBMENUS,
+            hbrBack: brush,
+            ..Default::default()
+        };
+        let _ = SetMenuInfo(menu, &mi);
+    }
+}
+
+/// Cleans up any custom background brush allocated for the menu and destroys it.
+pub fn destroy_dark_menu(menu: HMENU) {
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyMenu, GetMenuInfo, MENUINFO, MIM_BACKGROUND};
+    use windows::Win32::Graphics::Gdi::DeleteObject;
+
+    unsafe {
+        let mut mi = MENUINFO {
+            cbSize: std::mem::size_of::<MENUINFO>() as u32,
+            fMask: MIM_BACKGROUND,
+            ..Default::default()
+        };
+        if GetMenuInfo(menu, &mut mi).is_ok() && !mi.hbrBack.is_invalid() {
+            let _ = DeleteObject(mi.hbrBack.into());
+        }
+        let _ = DestroyMenu(menu);
+    }
+}
 
 /// Ensures Windows draws context menus with native dark mode styling and rounded corners.
 pub fn enable_dark_menu(owner: HWND) {
@@ -259,10 +321,6 @@ pub fn enable_dark_menu(owner: HWND) {
                 let flush: unsafe extern "system" fn() = std::mem::transmute(proc);
                 flush();
             }
-            if let Some(proc) = GetProcAddress(uxtheme, windows::core::s!("SetWindowTheme")) {
-                let set_theme: unsafe extern "system" fn(HWND, windows::core::PCWSTR, windows::core::PCWSTR) -> windows::core::HRESULT = std::mem::transmute(proc);
-                let _ = set_theme(owner, w!("DarkMode_Explorer"), windows::core::PCWSTR::null());
-            }
         }
     }
 }
@@ -272,6 +330,7 @@ pub fn show_shelf_menu(owner: HWND, has_image: bool, is_pinned: bool) -> u32 {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
         let _ = AppendMenuW(menu, MF_STRING, SHELF_OPEN as usize, &HSTRING::from("Open"));
         let _ = AppendMenuW(menu, MF_STRING, SHELF_EXPLORER as usize, &HSTRING::from("Show in File Explorer"));
         let _ = AppendMenuW(menu, MF_STRING, SHELF_COPY_PATH as usize, &HSTRING::from("Copy File Path"));
@@ -289,7 +348,7 @@ pub fn show_shelf_menu(owner: HWND, has_image: bool, is_pinned: bool) -> u32 {
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen
     }
 }
@@ -299,6 +358,7 @@ pub fn show_note_item_menu(owner: HWND, _has_image: bool, is_pinned: bool) -> u3
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
         let _ = AppendMenuW(menu, MF_STRING, NOTE_OPEN as usize, &HSTRING::from("Open Note"));
         let _ = AppendMenuW(menu, MF_STRING, NOTE_COPY as usize, &HSTRING::from("Copy Note Text"));
         let pin_label = if is_pinned { "Unpin" } else { "Pin to Top" };
@@ -313,7 +373,7 @@ pub fn show_note_item_menu(owner: HWND, _has_image: bool, is_pinned: bool) -> u3
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen
     }
 }
@@ -323,6 +383,7 @@ pub fn show_clipboard_item_menu(owner: HWND, is_image: bool, has_html: bool, is_
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
         let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE as usize, &HSTRING::from("Copy to Clipboard"));
         if has_html {
             let _ = AppendMenuW(menu, MF_STRING, CLIPBOARD_PASTE_PLAIN as usize, &HSTRING::from("Copy Plain Text Only"));
@@ -341,7 +402,7 @@ pub fn show_clipboard_item_menu(owner: HWND, is_image: bool, has_html: bool, is_
         let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
         let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        destroy_dark_menu(menu);
         chosen
     }
 }

@@ -611,7 +611,9 @@ fn create(class: PCWSTR, ex: WINDOW_EX_STYLE, r: RectPx) -> Result<HWND> {
     register_classes();
     unsafe {
         let instance = GetModuleHandleW(None)?.into();
-        CreateWindowExW(ex, class, w!("Swift Tab"), WS_POPUP, r.x, r.y, r.w, r.h, None, None, Some(instance), None)
+        let hwnd = CreateWindowExW(ex, class, w!("Swift Tab"), WS_POPUP, r.x, r.y, r.w, r.h, None, None, Some(instance), None)?;
+        crate::platform::tray::enable_dark_menu(hwnd);
+        Ok(hwnd)
     }
 }
 

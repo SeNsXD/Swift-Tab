@@ -38,7 +38,9 @@ fn autostart_on_start() {
 }
 
 fn run() -> Result<()> {
+    nowbar::platform::tray::init_dark_mode();
     unsafe {
+        let _ = windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(w!("xdNOTLabs.SwiftTab"));
         // The manifest already asks for Per-Monitor v2; this only matters if it is missing,
         // and fails with "access denied" when it isn't.
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

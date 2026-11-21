@@ -98,9 +98,10 @@ pub fn register_app_identity() {
 pub fn apply_window_icon_and_identity(hwnd: HWND) {
     register_app_identity();
     unsafe {
+        let _ = windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(w!("xdNOTLabs.SwiftTab.Settings"));
         use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SendMessageW, ICON_BIG, ICON_SMALL, SM_CXICON, SM_CXSMICON, WM_SETICON};
         let sm = GetSystemMetrics(SM_CXSMICON).max(16);
-        let lg = GetSystemMetrics(SM_CXICON).max(32);
+        let lg = GetSystemMetrics(SM_CXICON).max(48);
         if let Some(h_sm) = load_window_icon(sm) {
             let _ = SendMessageW(hwnd, WM_SETICON, Some(WPARAM(ICON_SMALL as usize)), Some(LPARAM(h_sm)));
             let _ = SetClassLongPtrW(hwnd, GCLP_HICONSM, h_sm);

@@ -965,6 +965,9 @@ struct Bridge {
 
 fn main() -> Result<(), slint::PlatformError> {
     register_app_identity();
+    unsafe {
+        let _ = windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(w!("xdNOTLabs.SwiftTab.Settings"));
+    }
     // Dev: NOWBAR_SETTINGS_SHOTS=<dir> draws every page with the real renderer, off-screen, into
     // <dir>, and quits without saving (and without touching a settings window that is open).
     let shots_dir = std::env::var("NOWBAR_SETTINGS_SHOTS").ok();
@@ -1519,7 +1522,8 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_weak = ui.as_weak();
         let timer = Rc::downgrade(&frame_timer);
         let to_front = shots_dir.is_none();
-        frame_timer.start(slint::TimerMode::Repeated, Duration::from_millis(10), move || {
+        let retries = Cell::new(0);
+        frame_timer.start(slint::TimerMode::Repeated, Duration::from_millis(15), move || {
             if let Some(ui) = ui_weak.upgrade() {
                 adopt_frame(&ui, dark);
                 if let Some(hwnd) = hwnd_of(&ui) {
@@ -1547,8 +1551,12 @@ fn main() -> Result<(), slint::PlatformError> {
                         }
                     }
                 }
-                if let Some(t) = timer.upgrade() {
-                    t.stop();
+                let c = retries.get() + 1;
+                retries.set(c);
+                if c >= 6 {
+                    if let Some(t) = timer.upgrade() {
+                        t.stop();
+                    }
                 }
             }
         });
