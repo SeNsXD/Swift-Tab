@@ -106,7 +106,7 @@ fn shelf(n: usize, side: u32) -> ShelfCard {
     let tiles = files
         .iter()
         .take(n)
-        .map(|(name, hue)| ShelfTile { name: name.to_string(), thumb: hue.map(|h: usize| swatch(side, photo[h].0, photo[h].1)), kind: file_kind(name, *name == "Projeler"), selected: false })
+        .map(|(name, hue)| ShelfTile { name: name.to_string(), thumb: hue.map(|h: usize| swatch(side, photo[h].0, photo[h].1)), kind: file_kind(name, *name == "Projeler"), selected: false, pinned: false })
         .collect::<Vec<_>>();
     // Nothing selected: the chips act on everything.
     let items: Vec<nowbar::activities::shelf::ShelfItem> =

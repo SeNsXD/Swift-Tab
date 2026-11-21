@@ -63,8 +63,10 @@ pub fn extension_label(name: &str) -> Option<String> {
 pub struct Shelf {
     /// Newest first: the grid's order, and `items[0]` is the pill's thumbnail.
     items: Vec<ShelfItem>,
-    /// The tiles clicked for the footer's chips, by path (a drop moves them down the grid).
+    /// The tiles clicked for the footer's chips, by path (transient selection).
     selected: Vec<PathBuf>,
+    /// Pinned to the top of the shelf (persisted across restarts).
+    pinned: Vec<PathBuf>,
 }
 
 /// Windows paths compare without case and either separator.
@@ -97,6 +99,7 @@ impl Shelf {
         // One pushed off is no longer picked: back later, it comes as new.
         let items = &self.items;
         self.selected.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
+        self.pinned.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
         added
     }
 
@@ -104,23 +107,29 @@ impl Shelf {
         if i < self.items.len() {
             let gone = self.items.remove(i);
             self.selected.retain(|p| key(p) != key(&gone.path));
-            self.save_pinned();
+            let was_pinned = self.pinned.iter().any(|p| key(p) == key(&gone.path));
+            self.pinned.retain(|p| key(p) != key(&gone.path));
+            if was_pinned {
+                self.save_pinned();
+            }
         }
     }
 
     pub fn clear(&mut self) {
         self.items.clear();
         self.selected.clear();
+        self.pinned.clear();
         self.save_pinned();
     }
 
     pub fn clear_unpinned(&mut self) {
-        let selected = &self.selected;
-        self.items.retain(|i| selected.iter().any(|p| key(p) == key(&i.path)));
-        self.save_pinned();
+        let pinned = &self.pinned;
+        self.items.retain(|i| pinned.iter().any(|p| key(p) == key(&i.path)));
+        let items = &self.items;
+        self.selected.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
     }
 
-    /// A click on tile `i`: selected, or let go.
+    /// A click on tile `i`: selected for footer operations, or let go.
     pub fn toggle(&mut self, i: usize) {
         let Some(item) = self.items.get(i) else { return };
         let k = key(&item.path);
@@ -128,6 +137,17 @@ impl Shelf {
             self.selected.retain(|p| key(p) != k);
         } else {
             self.selected.push(item.path.clone());
+        }
+    }
+
+    /// Toggles the pinned state of tile `i`: pinned items stay in the PINNED section.
+    pub fn toggle_pin(&mut self, i: usize) {
+        let Some(item) = self.items.get(i) else { return };
+        let k = key(&item.path);
+        if self.pinned.iter().any(|p| key(p) == k) {
+            self.pinned.retain(|p| key(p) != k);
+        } else {
+            self.pinned.push(item.path.clone());
         }
         self.save_pinned();
     }
@@ -140,6 +160,10 @@ impl Shelf {
 
     pub fn is_selected(&self, i: usize) -> bool {
         self.items.get(i).is_some_and(|item| self.selected.iter().any(|p| key(p) == key(&item.path)))
+    }
+
+    pub fn is_pinned(&self, i: usize) -> bool {
+        self.items.get(i).is_some_and(|item| self.pinned.iter().any(|p| key(p) == key(&item.path)))
     }
 
     pub fn has_selection(&self) -> bool {
@@ -159,7 +183,7 @@ impl Shelf {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        if let Ok(json) = serde_json::to_string_pretty(&self.selected) {
+        if let Ok(json) = serde_json::to_string_pretty(&self.pinned) {
             let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
             if std::fs::write(&tmp, json.as_bytes()).is_ok() {
                 let _ = std::fs::rename(&tmp, &path);
@@ -177,7 +201,7 @@ impl Shelf {
             for p in existing.iter().rev() {
                 self.add(std::slice::from_ref(p), &is_dir);
             }
-            self.selected = existing;
+            self.pinned = existing;
         }
     }
 
@@ -200,9 +224,10 @@ impl Shelf {
         let before = self.items.len();
         self.items.retain(|i| exists(&i.path));
         let items = &self.items;
-        let sel_before = self.selected.len();
         self.selected.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
-        if self.selected.len() != sel_before {
+        let pin_before = self.pinned.len();
+        self.pinned.retain(|p| items.iter().any(|i| key(&i.path) == key(p)));
+        if self.pinned.len() != pin_before {
             self.save_pinned();
         }
         self.items.len() != before
@@ -347,13 +372,13 @@ mod tests {
         let mut s = Shelf::default();
         s.add(&files(&[r"C:\pinned.txt", r"C:\recent.txt"]), no_dirs);
         let idx = s.items().iter().position(|i| i.name == "pinned.txt").unwrap();
-        s.toggle(idx);
-        assert!(s.is_selected(idx));
+        s.toggle_pin(idx);
+        assert!(s.is_pinned(idx));
 
         s.clear_unpinned();
         assert_eq!(s.items().len(), 1);
         assert_eq!(s.items()[0].name, "pinned.txt");
-        assert!(s.is_selected(0));
+        assert!(s.is_pinned(0));
 
         s.clear_unpinned();
         assert_eq!(s.items().len(), 1);
@@ -387,6 +412,20 @@ mod tests {
         assert_eq!(card_height_dip(1), 206.0);
         assert_eq!(card_height_dip(4), 312.0);
         assert_eq!(card_height_dip(9), 418.0);
+    }
+
+    #[test]
+    fn single_click_selects_but_does_not_pin() {
+        let mut s = Shelf::default();
+        s.add(&files(&[r"C:\a.png", r"C:\b.png"]), no_dirs);
+        s.toggle(0);
+        assert!(s.is_selected(0), "single click selects for footer chips");
+        assert!(!s.is_pinned(0), "single click MUST NOT pin the item");
+
+        s.toggle_pin(0);
+        assert!(s.is_pinned(0), "toggle_pin pins the item");
+        s.toggle_pin(0);
+        assert!(!s.is_pinned(0), "toggle_pin unpins the item");
     }
 
     #[test]

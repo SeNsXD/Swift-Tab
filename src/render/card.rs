@@ -288,6 +288,38 @@ pub enum CardContent {
     Music(Box<MusicCard>),
     Question(Box<QuestionCard>),
     Download(DownloadCard),
+    Note(Box<NoteCard>),
+    NotesList(Box<NotesListCard>),
+}
+
+/// Floating sticky note card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteCard {
+    pub id: u64,
+    pub title: String,
+    pub text: String,
+    pub caret: usize,
+    pub caret_visible: bool,
+    pub pinned: bool,
+    pub thumb: Option<Crest>,
+}
+
+/// Stored sticky notes list card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NotesListCard {
+    pub notes: Vec<NoteListItem>,
+    pub hover: Option<usize>,
+    pub scroll: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteListItem {
+    pub id: u64,
+    pub title: String,
+    pub preview: String,
+    pub time_str: String,
+    pub pinned: bool,
+    pub thumb: Option<Crest>,
 }
 
 /// "Sen yokken": what happened while the PC was locked.
@@ -463,8 +495,10 @@ pub struct ShelfTile {
     pub name: String,
     pub thumb: Option<Crest>,
     pub kind: FileKind,
-    /// Clicked for the footer's chips: the accent ring and a tick.
+    /// Clicked for the footer's chips: the accent ring and selection.
     pub selected: bool,
+    /// Pinned to the top PINNED section.
+    pub pinned: bool,
 }
 
 /// The shelf's grid (newest first); `hover` shows that tile's close button. `chips`: the footer's
@@ -621,8 +655,8 @@ pub fn shelf_categorized_layout(c: &ShelfCard, s: &Scale) -> CategorizedShelfLay
     let mut closes = vec![D2D_RECT_F::default(); c.tiles.len()];
     let mut headers = Vec::new();
 
-    let pinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| c.tiles[i].selected).collect();
-    let unpinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| !c.tiles[i].selected).collect();
+    let pinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| c.tiles[i].pinned).collect();
+    let unpinned_indices: Vec<usize> = (0..c.tiles.len()).filter(|&i| !c.tiles[i].pinned).collect();
 
     let mut y = 48.0;
     if !pinned_indices.is_empty() {
@@ -1032,6 +1066,26 @@ pub enum CardAction {
     DownloadOpen,
     /// Open the downloads folder in File Explorer.
     DownloadFolder,
+    /// Close the floating sticky note.
+    NoteClose,
+    /// Toggle pin state of sticky note.
+    NotePin(u64),
+    /// Create a new sticky note.
+    NoteNew,
+    /// Delete a sticky note.
+    NoteDelete(u64),
+    /// Copy sticky note text.
+    NoteCopy(u64),
+    /// Share sticky note.
+    NoteShare(u64),
+    /// Open a note from the notes list into the floating editor.
+    NoteOpen(u64),
+    /// Open the all notes list card.
+    NoteOpenList,
+    /// Clear all notes.
+    NoteClearAll,
+    /// Remove attached image from note.
+    NoteRemoveImage(u64),
 }
 
 /// Card size in DIP.
@@ -1071,6 +1125,8 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
         CardContent::Away(c) => (370.0, BRIEF_HEADER + BRIEF_GAP + away_panel_dip(c) + 12.0),
         CardContent::Music(c) => (370.0, music_height_dip(c)),
         CardContent::Question(c) => (370.0, question_height_dip(c)),
+        CardContent::Note(c) => (340.0, if c.thumb.is_some() { 330.0 } else { 240.0 }),
+        CardContent::NotesList(_) => (340.0, 320.0),
     }
 }
 
@@ -1148,6 +1204,7 @@ pub fn card_accent(c: &CardContent) -> (u8, u8, u8) {
         CardContent::Wellbeing(_) => WELLBEING_ACCENT,
         CardContent::Music(c) => c.accent,
         CardContent::Download(_) => (0x00, 0x78, 0xD4),
+        CardContent::Note(_) | CardContent::NotesList(_) => (0xF5, 0x9E, 0x0B),
     }
 }
 
@@ -1355,6 +1412,8 @@ pub fn paint_card(ink: &Ink, c: &CardContent, s: &Scale, w: f32, h: f32) -> Resu
         CardContent::Music(c) => p.music(c),
         CardContent::Question(c) => p.question(c, &mut out.answer),
         CardContent::Download(d) => p.download(d),
+        CardContent::Note(c) => p.note(c),
+        CardContent::NotesList(c) => p.notes_list(c),
     }?;
     Ok(out)
 }
@@ -2103,7 +2162,7 @@ impl Painter<'_, '_> {
                 let hovered = c.hover == Some(orig_idx);
 
                 let tile_fill = if tile.selected {
-                    white(0.09)
+                    white(0.12)
                 } else if hovered {
                     white(0.07)
                 } else {
@@ -2111,7 +2170,11 @@ impl Painter<'_, '_> {
                 };
                 self.ink.rrect(t, radius, tile_fill)?;
                 let border_rect = rect(t.left + 0.5, t.top + 0.5, tw - 1.0, th - 1.0);
-                self.ink.rrect_outline(border_rect, (radius - 0.5).max(1.0), 1.0, white(0.07))?;
+                if tile.selected {
+                    self.ink.rrect_outline(border_rect, (radius - 0.5).max(1.0), 1.5, rgba(pr, pg, pb, 0.9))?;
+                } else {
+                    self.ink.rrect_outline(border_rect, (radius - 0.5).max(1.0), 1.0, white(0.07))?;
+                }
 
                 let ((r, g, b), icon) = kind_style(tile.kind);
                 let icon_color = if tile.kind == FileKind::Pdf { rgba(r, g, b, 1.0) } else { neutral_icon() };
@@ -2120,7 +2183,7 @@ impl Painter<'_, '_> {
 
                 self.ink.text(&tile.name, rect(t.left + d(6.0), t.top + d(46.0), tw - d(12.0), d(34.0)), &name_style)?;
 
-                if tile.selected && !hovered {
+                if tile.pinned && !hovered {
                     let pin_mark = rect((t.right - d(17.0)).round(), (t.top + d(5.0)).round(), d(12.0).round(), d(12.0).round());
                     self.ink.svg(PIN_SVG, pin_mark, rgba(pr, pg, pb, 1.0))?;
                 }
@@ -2140,7 +2203,7 @@ impl Painter<'_, '_> {
                         ip_sz,
                         ip_sz,
                     );
-                    let ip_color = if tile.selected { rgba(pr, pg, pb, 1.0) } else { white(1.0) };
+                    let ip_color = if tile.pinned { rgba(pr, pg, pb, 1.0) } else { white(1.0) };
                     self.ink.svg(PIN_SVG, ip_icon, ip_color)?;
                     self.hits.push((item_pin, CardAction::ShelfItemPin(orig_idx)));
 
@@ -3486,6 +3549,206 @@ impl Painter<'_, '_> {
 
         Ok(())
     }
+
+    fn note(&mut self, c: &NoteCard) -> Result<()> {
+        let (ar, ag, ab) = (0xF5, 0x9E, 0x0B);
+
+        // Header area
+        let title_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.0), white(0.95)).ellipsis();
+        let display_title = if c.title.is_empty() { "Sticky Note" } else { &c.title };
+        self.ink.text(display_title, rect(self.d(18.0), self.d(14.0), self.d(160.0), self.d(22.0)), &title_style)?;
+
+        // Top right buttons: Pin, New (+), Close (X)
+        let btn_sz = self.d(22.0).round();
+        let btn_y = self.d(12.0).round();
+
+        // 1. Pin
+        let pin_btn = rect(self.w - self.d(18.0) - btn_sz * 3.0 - self.d(16.0), btn_y, btn_sz, btn_sz);
+        self.ink.rrect(pin_btn, self.d(4.0), white(if c.pinned { 0.18 } else { 0.08 }))?;
+        let pin_color = if c.pinned { rgba(ar, ag, ab, 1.0) } else { white(0.85) };
+        let pin_icon_r = rect(pin_btn.left + self.d(5.0), pin_btn.top + self.d(5.0), self.d(12.0), self.d(12.0));
+        self.ink.svg(PIN_SVG, pin_icon_r, pin_color)?;
+        self.hits.push((pin_btn, CardAction::NotePin(c.id)));
+
+        // 2. New (+)
+        let add_btn = rect(self.w - self.d(18.0) - btn_sz * 2.0 - self.d(8.0), btn_y, btn_sz, btn_sz);
+        self.ink.rrect(add_btn, self.d(4.0), white(0.08))?;
+        let plus_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.0), white(0.85)).centered();
+        self.ink.text("+", add_btn, &plus_style)?;
+        self.hits.push((add_btn, CardAction::NoteNew));
+
+        // 3. Close (X)
+        let close_btn = rect(self.w - self.d(18.0) - btn_sz, btn_y, btn_sz, btn_sz);
+        self.ink.rrect(close_btn, self.d(4.0), white(0.08))?;
+        let x_style = TextStyle::new(Face::Icons, Weight::Regular, self.d(10.0), white(0.85)).centered();
+        self.ink.text(&glyph(Icon::Close).to_string(), close_btn, &x_style)?;
+        self.hits.push((close_btn, CardAction::NoteClose));
+
+        let mut content_top = self.d(42.0);
+
+        // Attached image preview if any
+        if let Some(thumb) = &c.thumb {
+            let img_h = self.d(80.0);
+            let img_rect = rect(self.d(16.0), content_top, self.w - self.d(32.0), img_h);
+            self.ink.image_cover_rounded(&thumb.px, thumb.size, img_rect, self.d(6.0))?;
+
+            let rm_sz = self.d(18.0);
+            let rm_btn = rect(img_rect.right - rm_sz - self.d(6.0), img_rect.top + self.d(6.0), rm_sz, rm_sz);
+            self.ink.rrect(rm_btn, self.d(3.0), [0.0, 0.0, 0.0, 0.65])?;
+            self.ink.text(&glyph(Icon::Close).to_string(), rm_btn, &TextStyle::new(Face::Icons, Weight::Regular, self.d(8.0), white(0.9)).centered())?;
+            self.hits.push((rm_btn, CardAction::NoteRemoveImage(c.id)));
+
+            content_top += img_h + self.d(10.0);
+        }
+
+        // Text editor area
+        let footer_h = self.d(36.0);
+        let body_h = (self.h - content_top - footer_h - self.d(10.0)).max(self.d(80.0));
+        let body_rect = rect(self.d(16.0), content_top, self.w - self.d(32.0), body_h);
+        self.ink.rrect(body_rect, self.d(6.0), white(0.04))?;
+        self.ink.rrect_outline(rect(body_rect.left + 0.5, body_rect.top + 0.5, body_rect.right - body_rect.left - 1.0, body_rect.bottom - body_rect.top - 1.0), (self.d(6.0) - 0.5).max(1.0), 1.0, white(0.07))?;
+
+        let text_pad = self.d(10.0);
+        let inner_rect = rect(body_rect.left + text_pad, body_rect.top + text_pad, body_rect.right - body_rect.left - 2.0 * text_pad, body_rect.bottom - body_rect.top - 2.0 * text_pad);
+        let typed_style = TextStyle::new(Face::Text, Weight::Regular, self.d(13.0), white(0.95)).top().wrap();
+
+        if c.text.is_empty() {
+            let placeholder = TextStyle::new(Face::Text, Weight::Regular, self.d(13.0), white(0.35)).top().wrap();
+            self.ink.text("Take a note…\nCtrl+V to paste image or text", inner_rect, &placeholder)?;
+            if c.caret_visible {
+                let caret_h = self.d(16.0).round();
+                self.ink.rrect(rect(inner_rect.left, inner_rect.top + self.d(1.0), self.d(2.0).round(), caret_h), self.d(1.0), rgba(ar, ag, ab, 1.0))?;
+            }
+        } else {
+            unsafe {
+                self.ink.dc.PushAxisAlignedClip(&inner_rect, windows::Win32::Graphics::Direct2D::D2D1_ANTIALIAS_MODE_ALIASED);
+            }
+            let _ = self.ink.text(&c.text, inner_rect, &typed_style);
+            unsafe {
+                self.ink.dc.PopAxisAlignedClip();
+            }
+
+            if c.caret_visible {
+                let chars: Vec<char> = c.text.chars().collect();
+                let up_to: String = chars[..c.caret.min(chars.len())].iter().collect();
+                let last_line = up_to.rsplit('\n').next().unwrap_or("");
+                let line_count = up_to.matches('\n').count();
+                let line_h = self.ink.text_height("Ag", inner_rect.right - inner_rect.left, &typed_style).unwrap_or(self.d(18.0)).max(self.d(18.0));
+                let line_w = self.ink.measure(last_line, &typed_style).unwrap_or(0.0);
+                let cy = inner_rect.top + (line_count as f32 * line_h);
+                let cx = (inner_rect.left + line_w).min(inner_rect.right - self.d(4.0));
+                if cy + line_h <= inner_rect.bottom + self.d(4.0) {
+                    let caret_h = self.d(16.0).round();
+                    self.ink.rrect(rect(cx, cy + (line_h - caret_h) / 2.0, self.d(2.0).round(), caret_h), self.d(1.0), rgba(ar, ag, ab, 1.0))?;
+                }
+            }
+        }
+
+        // Footer chips
+        let footer_y = self.h - footer_h;
+        let chip_style = TextStyle::new(Face::Text, Weight::Medium, self.d(11.5), white(0.85));
+
+        let copy_w = self.ink.measure("Copy", &chip_style).unwrap_or(self.d(28.0));
+        let copy_chip = rect(self.d(16.0), footer_y + self.d(4.0), copy_w + self.d(20.0), self.d(26.0));
+        self.ink.rrect(copy_chip, self.d(13.0), white(0.08))?;
+        self.ink.text("Copy", D2D_RECT_F { left: copy_chip.left + self.d(10.0), ..copy_chip }, &chip_style)?;
+        self.hits.push((copy_chip, CardAction::NoteCopy(c.id)));
+
+        let share_w = self.ink.measure("Share", &chip_style).unwrap_or(self.d(30.0));
+        let share_chip = rect(copy_chip.right + self.d(8.0), footer_y + self.d(4.0), share_w + self.d(20.0), self.d(26.0));
+        self.ink.rrect(share_chip, self.d(13.0), white(0.08))?;
+        self.ink.text("Share", D2D_RECT_F { left: share_chip.left + self.d(10.0), ..share_chip }, &chip_style)?;
+        self.hits.push((share_chip, CardAction::NoteShare(c.id)));
+
+        let del_w = self.ink.measure("Delete", &chip_style).unwrap_or(self.d(34.0));
+        let del_chip = rect(share_chip.right + self.d(8.0), footer_y + self.d(4.0), del_w + self.d(20.0), self.d(26.0));
+        self.ink.rrect(del_chip, self.d(13.0), white(0.08))?;
+        self.ink.text("Delete", D2D_RECT_F { left: del_chip.left + self.d(10.0), ..del_chip }, &chip_style)?;
+        self.hits.push((del_chip, CardAction::NoteDelete(c.id)));
+
+        let list_w = self.ink.measure("All Notes", &chip_style).unwrap_or(self.d(50.0));
+        let list_chip = rect(self.w - self.d(16.0) - list_w - self.d(20.0), footer_y + self.d(4.0), list_w + self.d(20.0), self.d(26.0));
+        self.ink.rrect(list_chip, self.d(13.0), white(0.08))?;
+        self.ink.text("All Notes", D2D_RECT_F { left: list_chip.left + self.d(10.0), ..list_chip }, &chip_style)?;
+        self.hits.push((list_chip, CardAction::NoteOpenList));
+
+        Ok(())
+    }
+
+    fn notes_list(&mut self, c: &NotesListCard) -> Result<()> {
+        let (ar, ag, ab) = (0xF5, 0x9E, 0x0B);
+
+        // Header: "Sticky Notes"
+        let title_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(16.0), white(1.0)).top();
+        self.ink.text("Sticky Notes", rect(self.d(18.0), self.d(16.0), self.d(140.0), self.d(24.0)), &title_style)?;
+
+        // New Note (+) button
+        let btn_style = TextStyle::new(Face::Text, Weight::Medium, self.d(12.0), white(0.9));
+        let nw = self.ink.measure("+ New Note", &btn_style).unwrap_or(self.d(60.0));
+        let new_btn = rect(self.w - self.d(18.0) - nw - self.d(18.0), self.d(14.0), nw + self.d(18.0), self.d(26.0));
+        self.ink.rrect(new_btn, self.d(13.0), rgba(ar, ag, ab, 0.35))?;
+        self.ink.text("+ New Note", D2D_RECT_F { left: new_btn.left + self.d(9.0), ..new_btn }, &btn_style)?;
+        self.hits.push((new_btn, CardAction::NoteNew));
+
+        if c.notes.is_empty() {
+            let empty_style = TextStyle::new(Face::Text, Weight::Regular, self.d(13.5), white(0.45)).centered();
+            self.ink.text("No notes yet\nMiddle click the bar or tap + New Note", rect(self.d(20.0), self.d(100.0), self.w - self.d(40.0), self.d(60.0)), &empty_style)?;
+            return Ok(());
+        }
+
+        let item_h = self.d(56.0);
+        let item_gap = self.d(6.0);
+        let list_clip = rect(self.d(14.0), self.d(50.0), self.w - self.d(28.0), self.h - self.d(50.0) - self.d(12.0));
+        let scroll_px = c.scroll * self.s.0;
+
+        unsafe {
+            self.ink.dc.PushAxisAlignedClip(&list_clip, windows::Win32::Graphics::Direct2D::D2D1_ANTIALIAS_MODE_ALIASED);
+        }
+
+        for (idx, note) in c.notes.iter().enumerate() {
+            let item_top = list_clip.top + idx as f32 * (item_h + item_gap) - scroll_px;
+            let item_rect = rect(list_clip.left, item_top, list_clip.right - list_clip.left, item_h);
+            if item_rect.bottom < list_clip.top || item_rect.top > list_clip.bottom {
+                continue;
+            }
+
+            let hovered = c.hover == Some(idx);
+            let fill = if hovered { white(0.10) } else { white(0.05) };
+            self.ink.rrect(item_rect, self.d(6.0), fill)?;
+            self.ink.rrect_outline(rect(item_rect.left + 0.5, item_rect.top + 0.5, item_rect.right - item_rect.left - 1.0, item_rect.bottom - item_rect.top - 1.0), (self.d(6.0) - 0.5).max(1.0), 1.0, white(0.07))?;
+
+            let mut text_right = item_rect.right - self.d(12.0);
+
+            if let Some(thumb) = &note.thumb {
+                let th_sz = self.d(40.0);
+                let th_rect = rect(item_rect.right - th_sz - self.d(8.0), item_rect.top + self.d(8.0), th_sz, th_sz);
+                self.ink.image_cover_rounded(&thumb.px, thumb.size, th_rect, self.d(4.0))?;
+                text_right = th_rect.left - self.d(8.0);
+            }
+
+            let note_title_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(12.5), white(0.95)).ellipsis();
+            let title_rect = rect(item_rect.left + self.d(12.0), item_rect.top + self.d(8.0), text_right - item_rect.left - self.d(12.0), self.d(18.0));
+            self.ink.text(&note.title, title_rect, &note_title_style)?;
+
+            let note_prev_style = TextStyle::new(Face::Text, Weight::Regular, self.d(11.5), white(0.55)).ellipsis();
+            let prev_rect = rect(item_rect.left + self.d(12.0), item_rect.top + self.d(28.0), text_right - item_rect.left - self.d(12.0), self.d(18.0));
+            let prev_str = if note.preview.is_empty() { "(Empty note)" } else { &note.preview };
+            self.ink.text(prev_str, prev_rect, &note_prev_style)?;
+
+            if note.pinned {
+                let pin_r = rect(item_rect.right - self.d(20.0), item_rect.top + self.d(4.0), self.d(10.0), self.d(10.0));
+                self.ink.svg(PIN_SVG, pin_r, rgba(ar, ag, ab, 1.0))?;
+            }
+
+            self.hits.push((item_rect, CardAction::NoteOpen(note.id)));
+        }
+
+        unsafe {
+            self.ink.dc.PopAxisAlignedClip();
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -3595,7 +3858,7 @@ mod tests {
     }
 
     fn shelf_card(n: usize) -> ShelfCard {
-        let tiles = (0..n).map(|i| ShelfTile { name: format!("f{i}.txt"), thumb: None, kind: FileKind::Document, selected: false }).collect();
+        let tiles = (0..n).map(|i| ShelfTile { name: format!("f{i}.txt"), thumb: None, kind: FileKind::Document, selected: false, pinned: false }).collect();
         ShelfCard { tiles, hover: None, chips: vec![], said: None, pinned: false, scroll: 0.0 }
     }
 

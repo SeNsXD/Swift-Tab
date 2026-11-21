@@ -24,6 +24,7 @@ pub mod island;
 pub mod live;
 pub mod lyrics;
 pub mod lyrics_worker;
+pub mod notes;
 pub mod power;
 pub mod shelf;
 pub mod shelf_tools;
@@ -64,6 +65,8 @@ pub enum ActivityKind {
     Shelf,
     /// Copied texts, URLs and images stash.
     Clipboard,
+    /// Persistent sticky notes stash.
+    Notes,
     /// Nothing else on: the clock and the weather.
     Clock,
     /// The picked city's weather, at the back of the stack while other things are on.
@@ -127,7 +130,7 @@ pub fn settings_page_for(kind: ActivityKind) -> u8 {
         ActivityKind::Capture | ActivityKind::Transfer | ActivityKind::Privacy | ActivityKind::Download => 14,
         ActivityKind::Match(_) => 5,
         ActivityKind::Clipboard => 11,
-        ActivityKind::Shelf => 12,
+        ActivityKind::Shelf | ActivityKind::Notes => 12,
         ActivityKind::Volume
         | ActivityKind::Power
         | ActivityKind::Clock
@@ -213,6 +216,7 @@ fn rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> Option<u8> 
         (ActivityKind::Shelf, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" { 7 } else { 8 }),
         (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
         (ActivityKind::Clipboard, _) => Some(if crate::settings::current().preferred_idle_activity == "shelf" || crate::settings::current().preferred_idle_activity == "media" { 8 } else { 7 }),
+        (ActivityKind::Notes, _) => Some(8),
         (ActivityKind::Clock, _) => Some(10),
         // Always on with a city: the last thing behind everything else.
         (ActivityKind::Weather, _) => Some(10),
@@ -273,6 +277,7 @@ fn canonical_rank(p: &Presence, now_ms: u64, keep_ms: u64, buds_front: u64) -> O
         (ActivityKind::Clipboard, PresenceState::Moment) if age < clipboard_stash::CLIPBOARD_MOMENT_MS => Some(1),
         (ActivityKind::Clipboard, _) => Some(8),
         (ActivityKind::Shelf, _) => Some(9),
+        (ActivityKind::Notes, _) => Some(9),
         (ActivityKind::Media(id), _) if id != u32::MAX && age <= keep_ms => Some(10),
         (ActivityKind::Media(_), _) => None,
         (ActivityKind::Buds, _) => Some(11),
@@ -342,7 +347,7 @@ pub fn stack_order(p: &[Presence], now_ms: u64, user_front: Option<(ActivityKind
     let mut order: Vec<ActivityKind> = ranked.into_iter().map(|(_, _, k)| k).collect();
     let mut picked_by_user = false;
     if let Some((kind, picked_ms)) = user_front {
-        let is_passive_or_idle = |k: &ActivityKind| matches!(k, ActivityKind::Media(u32::MAX) | ActivityKind::Shelf | ActivityKind::Clipboard | ActivityKind::Weather | ActivityKind::Clock);
+        let is_passive_or_idle = |k: &ActivityKind| matches!(k, ActivityKind::Media(u32::MAX) | ActivityKind::Shelf | ActivityKind::Clipboard | ActivityKind::Notes | ActivityKind::Weather | ActivityKind::Clock);
         let superseded = p.iter().any(|x| !is_passive_or_idle(&x.kind) && x.changed_ms > picked_ms);
         let match_kind = |k: &ActivityKind| *k == kind || (matches!((k, kind), (ActivityKind::Media(_), ActivityKind::Media(_))) && order.iter().all(|o| !matches!(o, ActivityKind::Media(id) if *id != u32::MAX)));
         if let (false, Some(i)) = (superseded, order.iter().position(match_kind)) {

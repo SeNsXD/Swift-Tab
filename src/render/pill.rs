@@ -204,6 +204,8 @@ pub enum PillContent {
     Shelf { label: String, count: usize, thumbs: Vec<PillThumb>, drop_hint: bool, min_width_dip: f32 },
     /// Copied item stash: preview text/label, count, and optional image thumbnail.
     Clipboard { label: String, count: usize, thumb: Option<Crest> },
+    /// Stored sticky notes stash.
+    Notes { label: String, count: usize, thumb: Option<Crest> },
     /// Nothing else on: "20:42 · Çar 21 Eki" and, with a city picked, the weather's emoji and
     /// "· 18°" (and its effect behind).
     Clock { time: String, date: String, weather: Option<(String, String)>, fx: Option<WeatherFx> },
@@ -369,6 +371,13 @@ impl PillContent {
                     240.0
                 }
             }
+            PillContent::Notes { count, .. } => {
+                if *count == 0 {
+                    260.0
+                } else {
+                    240.0
+                }
+            }
             PillContent::Live { claude: true, .. } | PillContent::App { .. } => 300.0,
             PillContent::Clock { .. } | PillContent::Weather { .. } | PillContent::Live { .. } => 220.0,
             PillContent::Match(m) if m.moment.is_some() => 240.0,
@@ -388,6 +397,7 @@ impl PillContent {
             PillContent::Transfer { .. } => TRANSFER_ACCENT,
             PillContent::Download { .. } => DOWNLOAD_ACCENT,
             PillContent::Clipboard { .. } => (0x25, 0x63, 0xEB),
+            PillContent::Notes { .. } => (0xF5, 0x9E, 0x0B),
             PillContent::Rain { snow: false, .. } => RAIN_ACCENT,
             PillContent::Rain { snow: true, .. } => SNOW_ACCENT,
             PillContent::WeatherAlert { kind, .. } => alert_style(*kind).0,
@@ -1146,6 +1156,7 @@ fn paint_layer(
         | PillContent::Headset { .. }
         | PillContent::Shelf { .. }
         | PillContent::Clipboard { .. }
+        | PillContent::Notes { .. }
         | PillContent::BudsMode(_)
         | PillContent::Clock { .. }
         | PillContent::Weather { .. }
@@ -1249,6 +1260,7 @@ pub fn paint_pill_content(ink: &Ink, c: &PillContent, w: f32, h: f32, s: &Scale)
         PillContent::Headset { name, pct } => paint_headset(ink, c, name, *pct, w, h, s),
         PillContent::Shelf { label, count, thumbs, drop_hint, .. } => paint_shelf(ink, c, label, *count, thumbs, *drop_hint, w, h, s),
         PillContent::Clipboard { label, count, thumb } => paint_clipboard(ink, label, *count, thumb.as_ref(), w, h, s),
+        PillContent::Notes { label, count, thumb } => paint_notes(ink, label, *count, thumb.as_ref(), w, h, s),
         PillContent::BudsMode(mode) => paint_buds_mode(ink, *mode, w, h, s),
         PillContent::Clock { time, date, weather, fx } => paint_clock(ink, time, date, weather.as_ref(), *fx, w, h, s),
         PillContent::Weather { symbol, temp, desc, fx } => paint_value_label(ink, Some((symbol, fx_accent(*fx))), temp, desc, w, h, s),
@@ -1535,6 +1547,39 @@ fn paint_clipboard(ink: &Ink, label: &str, count: usize, thumb: Option<&Crest>, 
     if count == 0 && thumb.is_none() && crate::settings::current().pill_cleaner_animation {
         paint_cleaner_guy(ink, w, h, s)?;
     }
+    Ok(())
+}
+
+fn paint_notes(ink: &Ink, label: &str, count: usize, thumb: Option<&Crest>, w: f32, h: f32, s: &Scale) -> Result<()> {
+    let d = |v: f32| v * s.0;
+    paint_win11_row_chrome(ink, w, h, w, s)?;
+    let x = if let Some(t) = thumb {
+        let side = d(28.0).round();
+        let dot = rect(d(14.0), ((h - side) / 2.0).round(), side, side);
+        ink.image_cover_rounded(&t.px, t.size, dot, d(4.0))?;
+        d(50.0)
+    } else {
+        ink.text(
+            &glyph(Icon::Document).to_string(),
+            rect(d(14.0), 0.0, d(20.0), h),
+            &TextStyle::new(Face::Icons, Weight::Regular, d(16.0), rgba(0xF5, 0x9E, 0x0B, 1.0)).centered(),
+        )?;
+        d(42.0)
+    };
+    let title = TextStyle::new(Face::Text, Weight::SemiBold, d(14.0), white(1.0));
+    let head = "Notes";
+    let head_w = ink.measure(head, &title)?;
+    ink.text(head, rect(x, 0.0, head_w + d(2.0), h), &title)?;
+    let rx = x + head_w + d(8.0);
+    let rest = TextStyle::new(Face::Text, Weight::Regular, d(12.5), sec_text()).ellipsis();
+    let label_text = if count == 0 {
+        "Middle click to write".to_string()
+    } else if count > 1 {
+        format!("{} notes", count)
+    } else {
+        label.to_string()
+    };
+    ink.text(&label_text, rect(rx, 0.0, (w - rx - d(14.0)).max(0.0), h), &rest)?;
     Ok(())
 }
 

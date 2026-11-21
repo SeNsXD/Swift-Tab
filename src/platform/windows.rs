@@ -840,6 +840,11 @@ impl CardWindow {
         }
     }
 
+    /// Sets the opacity of the card composition visual (e.g. translucent when unfocused/typing away).
+    pub fn set_opacity(&self, opacity: f32) {
+        let _ = self.root.SetOpacity(opacity.clamp(0.0, 1.0));
+    }
+
     /// Moves the (hidden) window to `frame`, the same size: the pill it grows from has moved.
     pub fn move_to(&mut self, frame: RectPx) -> Result<()> {
         unsafe { SetWindowPos(self.hwnd, None, frame.x, frame.y, frame.w, frame.h, SWP_NOACTIVATE | SWP_NOZORDER)? };

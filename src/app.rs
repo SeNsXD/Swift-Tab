@@ -24,7 +24,8 @@ use crate::activities::football_worker::crest_path;
 use crate::render::color::{accent_from_rgba, team_palette, TeamPalette};
 use crate::render::crest::{load_crest, Crest};
 use crate::render::pill::{MatchPill, MomentKind, PillMoment, PillTeam, PillThumb};
-use crate::render::card::{AwayCard, AwayRow, BriefCard, BriefMatchRow, BriefMusic, BriefWeather, CardTeam, ClaudeAsk, ClaudeCard, GameCard, LiveCard, MatchCard, ShelfCard, ShelfTile, WeatherCard, WellbeingApp, WellbeingCard, GAME_COVER_DIP, LYRIC_MOVE_MS};
+use crate::render::card::{AwayCard, AwayRow, BriefCard, BriefMatchRow, BriefMusic, BriefWeather, CardTeam, ClaudeAsk, ClaudeCard, GameCard, LiveCard, MatchCard, NoteCard, NotesListCard, NoteListItem, ShelfCard, ShelfTile, WeatherCard, WellbeingApp, WellbeingCard, GAME_COVER_DIP, LYRIC_MOVE_MS};
+use crate::activities::notes::{format_note_age, note_images_dir, NoteEdit, NoteField, NotesStash};
 use crate::activities::brief::{date_line, day_key, due, first_name, greeting, pick_matches, rain_later, should_auto_open};
 use crate::platform::session::{brief_day, set_brief_day, windows_full_name};
 use crate::activities::shelf::{op_label, ops, FileKind, Shelf, ShelfOp};
@@ -87,9 +88,9 @@ use crate::platform::dragdrop::{self, DropZone};
 use crate::platform::log::log;
 use crate::platform::taskbar::{self, ItemsMailbox};
 use crate::platform::tray::{
-    create_tray, remove_tray, show_menu, show_shelf_menu, MENU_AUTOSTART, MENU_BRIEF, MENU_CLIPBOARD, MENU_MATCH_HIDE, MENU_MATCH_OPEN, MENU_MUSIC, MENU_QUESTION,
+    create_tray, remove_tray, show_menu, show_shelf_menu, MENU_AUTOSTART, MENU_BRIEF, MENU_CLIPBOARD, MENU_MATCH_HIDE, MENU_MATCH_OPEN, MENU_MUSIC, MENU_NOTES, MENU_QUESTION,
     MENU_QUIT, MENU_SETTINGS, MENU_STOPWATCH, MENU_TIMER, MENU_UPDATE, MENU_WELLBEING, SHELF_COPY_BASE64, SHELF_COPY_PATH, SHELF_EXPLORER, SHELF_OPEN,
-    SHELF_REMOVE, SHELF_SHARE,
+    SHELF_PIN, SHELF_REMOVE, SHELF_SHARE,
 };
 use crate::platform::windows::{post_buds, post_effects_changed, post_matches, post_media, watch_foreground, CardEvent, CardWindow, MainWindow, PillEvent, PillWindow, UiEvent};
 use crate::render::card::{
@@ -210,6 +211,8 @@ enum OpenCard {
     Music,
     /// A quick question to Claude.
     Question,
+    /// Floating sticky note editor.
+    Note(u64),
 }
 
 impl OpenCard {
@@ -219,7 +222,7 @@ impl OpenCard {
 
     /// Takes the keyboard: focused while open, and not closed by the mouse leaving.
     fn takes_keys(self) -> bool {
-        matches!(self, OpenCard::Picker | OpenCard::Question)
+        matches!(self, OpenCard::Picker | OpenCard::Question | OpenCard::Note(_))
     }
 }
 
@@ -912,6 +915,11 @@ pub struct App {
     /// Our own paste changes the clipboard: updates until this time are not new copies.
     clipboard_ignore_until: u64,
     clipboard_retries: u8,
+    notes_stash: NotesStash,
+    active_note_id: Option<u64>,
+    active_note_field: Option<NoteField>,
+    notes_scroll: f32,
+    notes_hover: Option<usize>,
     /// The window in front (exe, title), looked at at most a few times a second.
     card_ignore_until: u64,
     updater: Updater,
@@ -1156,6 +1164,11 @@ impl App {
             clipboard_scroll_drag: false,
             clipboard_ignore_until: 0,
             clipboard_retries: 0,
+            notes_stash: NotesStash::load(),
+            active_note_id: None,
+            active_note_field: None,
+            notes_scroll: 0.0,
+            notes_hover: None,
             card_ignore_until: 0,
             updater,
             update_mailbox,
@@ -1237,6 +1250,9 @@ impl App {
         if self.open.is_some_and(OpenCard::takes_keys) {
             self.ui.card_window.set_focusable(false);
         }
+        self.ui.card_window.set_opacity(1.0);
+        self.active_note_id = None;
+        self.active_note_field = None;
         self.leave_question();
         self.leave_output_page();
         self.ui.card_window.hide();
@@ -1454,6 +1470,9 @@ impl App {
                 PresenceState::Running
             };
             p.push(Presence { kind: ActivityKind::Clipboard, state, changed_ms: self.clipboard_ms });
+        }
+        if !self.notes_stash.is_empty() {
+            p.push(Presence { kind: ActivityKind::Notes, state: PresenceState::Running, changed_ms: 0 });
         }
         // Games: a moment (updated, played) stands for its game while it plays. Like the matches,
         // changed_ms 0: a download starting doesn't take the user's pick away.
@@ -1869,6 +1888,7 @@ impl App {
                 let s = settings::current();
                 (!self.clipboard_stash.is_empty() || (s.clipboard_pinned && s.clipboard_stash)).then(|| self.clipboard_pill())
             }
+            ActivityKind::Notes => Some(self.notes_pill()),
             ActivityKind::Clock => {
                 let (time, date) = clock_text(unix_now() + tz_offset_s());
                 // Hours offline: no stale sky in the clock pill.
@@ -1896,6 +1916,8 @@ impl App {
             OpenCard::Away => self.away.as_ref().map(|r| CardContent::Away(Box::new(self.away_card_shown(r)))),
             OpenCard::Music => Some(CardContent::Music(Box::new(self.music_card()))),
             OpenCard::Question => Some(CardContent::Question(Box::new(self.question_card()))),
+            OpenCard::Note(id) => self.note_card(id).map(|c| CardContent::Note(Box::new(c))),
+            OpenCard::Activity(ActivityKind::Notes) => Some(CardContent::NotesList(Box::new(self.notes_list_card()))),
             OpenCard::Activity(ActivityKind::Timer) => self.timer.as_ref().map(|slot| {
                 let state = slot.t.state(now);
                 let done = state == RunState::Done;
@@ -1960,7 +1982,13 @@ impl App {
                         .items()
                         .iter()
                         .enumerate()
-                        .map(|(n, i)| ShelfTile { name: i.name.clone(), thumb: self.shelf_thumbs.get(&i.path).cloned().flatten(), kind: i.kind, selected: self.shelf.is_selected(n) })
+                        .map(|(n, i)| ShelfTile {
+                            name: i.name.clone(),
+                            thumb: self.shelf_thumbs.get(&i.path).cloned().flatten(),
+                            kind: i.kind,
+                            selected: self.shelf.is_selected(n),
+                            pinned: self.shelf.is_pinned(n),
+                        })
                         .collect();
                     CardContent::Shelf(ShelfCard { tiles, hover: self.shelf_hover, chips: self.shelf_chips(), said: self.shelf_status.as_ref().map(|(op, _, _)| *op), pinned: self.card_pinned, scroll: self.shelf_scroll })
                 })
@@ -2305,6 +2333,135 @@ impl App {
         }
     }
 
+    fn note_card(&self, id: u64) -> Option<NoteCard> {
+        let note = self.notes_stash.get(id)?;
+        let text = self.active_note_field.as_ref().map_or_else(|| note.record.text.clone(), |f| f.text.clone());
+        let caret = self.active_note_field.as_ref().map_or_else(|| text.chars().count(), |f| f.caret);
+        Some(NoteCard {
+            id,
+            title: note.record.title.clone(),
+            text,
+            caret,
+            caret_visible: self.question_caret,
+            pinned: note.record.pinned,
+            thumb: note.thumb.clone(),
+        })
+    }
+
+    fn notes_list_card(&self) -> NotesListCard {
+        let now = now_ms();
+        let notes = self.notes_stash.notes().iter().map(|n| {
+            let preview = n.record.text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
+            let time_str = format_note_age(n.record.updated_at, now);
+            NoteListItem {
+                id: n.record.id,
+                title: n.record.title.clone(),
+                preview,
+                time_str,
+                pinned: n.record.pinned,
+                thumb: n.thumb.clone(),
+            }
+        }).collect();
+        NotesListCard {
+            notes,
+            hover: self.notes_hover,
+            scroll: self.notes_scroll,
+        }
+    }
+
+    pub fn open_new_note(&mut self) -> Result<()> {
+        let id = self.notes_stash.create_note();
+        self.active_note_id = Some(id);
+        self.active_note_field = Some(NoteField::new(String::new()));
+        self.open_card(OpenCard::Note(id), false)
+    }
+
+    pub fn open_note(&mut self, id: u64) -> Result<()> {
+        let Some(note) = self.notes_stash.get(id) else { return Ok(()) };
+        let text = note.record.text.clone();
+        self.active_note_id = Some(id);
+        self.active_note_field = Some(NoteField::new(text));
+        self.open_card(OpenCard::Note(id), false)
+    }
+
+    pub fn note_char(&mut self, unit: u16) -> Result<()> {
+        let Some(id) = self.active_note_id else { return Ok(()) };
+        let Some(field) = self.active_note_field.as_mut() else { return Ok(()) };
+        match field.key(unit) {
+            NoteEdit::Changed => {
+                let text = field.text.clone();
+                self.notes_stash.update_text(id, text);
+                self.refresh()
+            }
+            NoteEdit::Paste => self.note_paste(id),
+            NoteEdit::Close => self.close_card(),
+            NoteEdit::None => Ok(()),
+        }
+    }
+
+    pub fn note_key(&mut self, vk: u16) -> Result<()> {
+        let Some(field) = self.active_note_field.as_mut() else { return Ok(()) };
+        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RIGHT};
+        if vk == VK_LEFT.0 {
+            field.move_left();
+            self.refresh()
+        } else if vk == VK_RIGHT.0 {
+            field.move_right();
+            self.refresh()
+        } else if vk == VK_HOME.0 {
+            field.move_home();
+            self.refresh()
+        } else if vk == VK_END.0 {
+            field.move_end();
+            self.refresh()
+        } else if vk == VK_ESCAPE.0 {
+            self.close_card()
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn note_paste(&mut self, id: u64) -> Result<()> {
+        if let Some(snapshot) = crate::platform::clipboard::read_snapshot(self.main.hwnd) {
+            match snapshot {
+                crate::platform::clipboard::RawClipboardContent::Image { raw_png, bmp_bytes, .. } => {
+                    let dir = note_images_dir();
+                    let _ = std::fs::create_dir_all(&dir);
+                    let now = now_ms();
+                    let (path, bytes) = if let Some(png) = raw_png {
+                        (dir.join(format!("note_{id}_{now}.png")), png)
+                    } else if let Some(bmp) = bmp_bytes {
+                        (dir.join(format!("note_{id}_{now}.bmp")), bmp)
+                    } else {
+                        return Ok(());
+                    };
+                    if std::fs::write(&path, &bytes).is_ok() {
+                        let thumb = crate::render::crest::load_cover(&path, 320, 160);
+                        self.notes_stash.attach_image(id, path.display().to_string(), thumb);
+                        play_windows_sound("Windows Navigation Start");
+                        return self.refresh();
+                    }
+                }
+                crate::platform::clipboard::RawClipboardContent::Text { text, .. } => {
+                    if let Some(field) = self.active_note_field.as_mut() {
+                        field.insert_str(&text);
+                        let full = field.text.clone();
+                        self.notes_stash.update_text(id, full);
+                        return self.refresh();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn notes_pill(&self) -> PillContent {
+        let count = self.notes_stash.count();
+        let thumb = self.notes_stash.notes().first().and_then(|n| n.thumb.clone());
+        let label = self.notes_stash.notes().first().map_or_else(|| "Middle click to write".to_string(), |n| n.record.title.clone());
+        PillContent::Notes { label, count, thumb }
+    }
+
     /// The shelf's pill: the newest three, the newest one's name and the count; with `drop_hint`
     /// (a file drag over the pill, whatever is in front) the accent ring, "Drop to shelf" while empty.
     fn shelf_pill(&self, drop_hint: bool) -> PillContent {
@@ -2349,9 +2506,11 @@ impl App {
     fn shelf_menu(&mut self, i: usize) -> Result<()> {
         let Some(path) = self.shelf.items().get(i).map(|item| item.path.clone()) else { return Ok(()) };
         let is_img = crate::activities::shelf::is_raster(&path.file_name().unwrap_or_default().to_string_lossy());
-        match show_shelf_menu(self.main.hwnd, is_img) {
+        let is_pinned = self.shelf.is_pinned(i);
+        match show_shelf_menu(self.main.hwnd, is_img, is_pinned) {
             SHELF_OPEN => open_path(&path),
             SHELF_EXPLORER => show_in_explorer(&path),
+            SHELF_PIN => self.shelf.toggle_pin(i),
             SHELF_COPY_PATH => {
                 let _ = crate::platform::clipboard::set_text(self.main.hwnd, &path.to_string_lossy());
                 self.shelf_status = Some((ShelfOp::Share, "Path copied".to_string(), now_ms() + 1500));
@@ -2410,6 +2569,102 @@ impl App {
             _ => {}
         }
         self.refresh()
+    }
+
+    fn note_index_at(&self, _x: i32, y: i32) -> Option<usize> {
+        let s = self.ui.card_scale;
+        let d = |v: f32| v * s.0;
+        let item_h = d(56.0);
+        let item_gap = d(6.0);
+        let list_top = d(50.0);
+        let fy = y as f32 + self.notes_scroll * s.0;
+        if fy < list_top {
+            return None;
+        }
+        let idx = ((fy - list_top) / (item_h + item_gap)) as usize;
+        if idx < self.notes_stash.count() {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    fn note_item_menu(&mut self, i: usize) -> Result<()> {
+        let Some(note) = self.notes_stash.notes().get(i).cloned() else { return Ok(()) };
+        let is_pinned = note.record.pinned;
+        let has_image = note.record.image_path.is_some();
+        match crate::platform::tray::show_note_item_menu(self.main.hwnd, has_image, is_pinned) {
+            crate::platform::tray::NOTE_OPEN => self.open_note(note.record.id),
+            crate::platform::tray::NOTE_COPY => {
+                let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                play_windows_sound("Windows Navigation Start");
+                Ok(())
+            }
+            crate::platform::tray::NOTE_PIN => {
+                self.notes_stash.toggle_pin(note.record.id);
+                self.refresh()
+            }
+            crate::platform::tray::NOTE_SHARE => {
+                if let Some(img) = &note.record.image_path {
+                    let path = PathBuf::from(img);
+                    if path.exists() {
+                        crate::platform::share::prepare(vec![path], note.record.title.clone(), self.share_box.clone(), crate::platform::windows::post_shelf_tool);
+                    }
+                } else {
+                    let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                    play_windows_sound("Windows Navigation Start");
+                }
+                Ok(())
+            }
+            crate::platform::tray::NOTE_DELETE => {
+                self.notes_stash.remove(note.record.id);
+                self.refresh()
+            }
+            crate::platform::tray::NOTE_CLEAR_ALL => {
+                self.notes_stash.clear_unpinned();
+                self.refresh()
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn note_menu_by_id(&mut self, id: u64) -> Result<()> {
+        let Some(note) = self.notes_stash.get(id).cloned() else { return Ok(()) };
+        let is_pinned = note.record.pinned;
+        let has_image = note.record.image_path.is_some();
+        match crate::platform::tray::show_note_item_menu(self.main.hwnd, has_image, is_pinned) {
+            crate::platform::tray::NOTE_OPEN => Ok(()),
+            crate::platform::tray::NOTE_COPY => {
+                let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                play_windows_sound("Windows Navigation Start");
+                Ok(())
+            }
+            crate::platform::tray::NOTE_PIN => {
+                self.notes_stash.toggle_pin(id);
+                self.refresh()
+            }
+            crate::platform::tray::NOTE_SHARE => {
+                if let Some(img) = &note.record.image_path {
+                    let path = PathBuf::from(img);
+                    if path.exists() {
+                        crate::platform::share::prepare(vec![path], note.record.title.clone(), self.share_box.clone(), crate::platform::windows::post_shelf_tool);
+                    }
+                } else {
+                    let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                    play_windows_sound("Windows Navigation Start");
+                }
+                Ok(())
+            }
+            crate::platform::tray::NOTE_DELETE => {
+                self.notes_stash.remove(id);
+                self.close_card()
+            }
+            crate::platform::tray::NOTE_CLEAR_ALL => {
+                self.notes_stash.clear_unpinned();
+                self.refresh()
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The shelf footer's chips for the selection (or everything): each op's label, or its result
@@ -3487,7 +3742,7 @@ impl App {
                 self.shelf_scroll = self.shelf_scroll.clamp(0.0, self.shelf_max_scroll());
             }
             CardAction::ShelfItemPin(i) => {
-                self.shelf.toggle(i);
+                self.shelf.toggle_pin(i);
                 self.shelf_scroll = self.shelf_scroll.clamp(0.0, self.shelf_max_scroll());
             }
             CardAction::ShelfClear => {
@@ -3549,6 +3804,46 @@ impl App {
                     );
                 }
                 return self.close_card();
+            }
+            CardAction::NoteClose => return self.close_card(),
+            CardAction::NotePin(id) => {
+                self.notes_stash.toggle_pin(id);
+            }
+            CardAction::NoteNew => return self.open_new_note(),
+            CardAction::NoteDelete(id) => {
+                self.notes_stash.remove(id);
+                if self.open == Some(OpenCard::Note(id)) {
+                    return self.close_card();
+                }
+            }
+            CardAction::NoteCopy(id) => {
+                if let Some(note) = self.notes_stash.get(id) {
+                    let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                    play_windows_sound("Windows Navigation Start");
+                }
+            }
+            CardAction::NoteShare(id) => {
+                if let Some(note) = self.notes_stash.get(id) {
+                    if let Some(img) = &note.record.image_path {
+                        let path = PathBuf::from(img);
+                        if path.exists() {
+                            crate::platform::share::prepare(vec![path], note.record.title.clone(), self.share_box.clone(), crate::platform::windows::post_shelf_tool);
+                        }
+                    } else {
+                        let _ = crate::platform::clipboard::set_text(self.main.hwnd, &note.record.text);
+                        play_windows_sound("Windows Navigation Start");
+                    }
+                }
+            }
+            CardAction::NoteOpen(id) => return self.open_note(id),
+            CardAction::NoteOpenList => {
+                return self.open_card(OpenCard::Activity(ActivityKind::Notes), false);
+            }
+            CardAction::NoteClearAll => {
+                self.notes_stash.clear_unpinned();
+            }
+            CardAction::NoteRemoveImage(id) => {
+                self.notes_stash.remove_image(id);
             }
         }
         self.refresh()
@@ -4750,9 +5045,10 @@ impl App {
         self.ui.morph.set_no_pill(card_accent(&content))?;
         let from = RectPx { y: to.y + s.px(PICKER_SLIDE_DIP) as i32, ..to };
         self.ui.morph.open(rel(from), to_r, rel(to), to_r)?;
-        if matches!(content, CardContent::Shelf(_) | CardContent::Clipboard(_)) {
+        if matches!(content, CardContent::Shelf(_) | CardContent::Clipboard(_) | CardContent::Note(_) | CardContent::NotesList(_)) {
             self.ui.morph.plain_accent()?;
         }
+        self.ui.card_window.set_opacity(1.0);
         self.ui.card_window.set_hit(to, to_r as i32)?;
         self.card_screen = to;
         self.card_pinned = false;
@@ -4763,7 +5059,7 @@ impl App {
         } else if by_pointer {
             self.arm_leave();
         }
-        if which == OpenCard::Question {
+        if which == OpenCard::Question || matches!(which, OpenCard::Note(_)) {
             self.question_caret = true;
             unsafe { SetTimer(Some(self.main.hwnd), TIMER_CARET, CARET_BLINK_MS, None) };
         }
@@ -4787,6 +5083,9 @@ impl App {
         if self.open.is_some_and(OpenCard::takes_keys) {
             self.ui.card_window.set_focusable(false);
         }
+        self.ui.card_window.set_opacity(1.0);
+        self.active_note_id = None;
+        self.active_note_field = None;
         self.card_hover = false;
         self.leave_question();
         self.leave_output_page();
@@ -4882,6 +5181,7 @@ impl App {
             MENU_WELLBEING => self.open_card(OpenCard::Wellbeing, false),
             MENU_MUSIC => self.open_card(OpenCard::Music, false),
             MENU_CLIPBOARD => self.open_card(OpenCard::Activity(ActivityKind::Clipboard), false),
+            MENU_NOTES => self.open_card(OpenCard::Activity(ActivityKind::Notes), false),
             MENU_QUESTION => self.open_question(),
             MENU_TIMER => {
                 self.picker.stopwatch_tab = false;
@@ -4994,13 +5294,12 @@ impl App {
                 }
             }
             UiEvent::Pill(PillEvent::MiddleClick) => match self.front_kind() {
-                Some(ActivityKind::Media(_)) if !settings::current().media_middle_click => Ok(()),
-                Some(ActivityKind::Media(_)) => self.media_command(MediaCommand::PlayPause),
-                Some(kind) => {
+                Some(ActivityKind::Media(_)) if settings::current().media_middle_click => self.media_command(MediaCommand::PlayPause),
+                Some(kind @ (ActivityKind::Timer | ActivityKind::Stopwatch)) => {
                     self.toggle_pause(kind);
                     self.refresh()
                 }
-                None => Ok(()),
+                _ => self.open_new_note(),
             },
             UiEvent::Media => self.take_media(),
             UiEvent::Clipboard => {
@@ -5151,6 +5450,12 @@ impl App {
                             self.refresh()?;
                         }
                     }
+                    Some(ActivityKind::Notes) => {
+                        if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                            self.notes_stash.clear_unpinned();
+                            self.refresh()?;
+                        }
+                    }
                     Some(ActivityKind::Shelf) => {
                         if crate::platform::tray::show_clear_menu(self.main.hwnd) {
                             self.shelf.clear_unpinned();
@@ -5183,8 +5488,8 @@ impl App {
             UiEvent::SettingsChanged => self.reload_settings(),
             UiEvent::Timer(TIMER_DEMO) => Ok(()),
             UiEvent::Foreground => {
-                // A pinned card stays while you work in other windows.
-                if !self.brief_auto && !self.card_pinned {
+                // A pinned card or floating sticky note stays while you work in other windows.
+                if !self.brief_auto && !self.card_pinned && !matches!(self.open, Some(OpenCard::Note(_))) {
                     self.close_card()?;
                 }
                 self.move_hook.follow_foreground();
@@ -5195,8 +5500,8 @@ impl App {
                 self.refresh()
             }
             UiEvent::ForegroundMoved => self.check_fullscreen(),
-            // A drag on a slider keeps the card open even when the mouse wanders off it.
-            UiEvent::Timer(TIMER_LEAVE) if self.volume_drag || self.app_volume_drag || self.clipboard_scroll_drag || self.seeking.is_some() || dragdrop::hover().is_some() => Ok(()),
+            // A drag on a slider or a floating sticky note keeps the card open even when the mouse wanders off it.
+            UiEvent::Timer(TIMER_LEAVE) if matches!(self.open, Some(OpenCard::Note(_))) || self.volume_drag || self.app_volume_drag || self.clipboard_scroll_drag || self.seeking.is_some() || dragdrop::hover().is_some() => Ok(()),
             UiEvent::Timer(TIMER_LEAVE) => self.close_card(),
             UiEvent::TaskbarCreated => {
                 log("taskbar: TaskbarCreated");
@@ -5239,9 +5544,10 @@ impl App {
             UiEvent::Download => self.take_download(),
             UiEvent::QuestionHotkey => self.open_question(),
             UiEvent::Char(unit) if self.open == Some(OpenCard::Question) => self.question_key(unit),
+            UiEvent::Char(unit) if matches!(self.open, Some(OpenCard::Note(_))) => self.note_char(unit),
             UiEvent::Question => self.take_question(),
             UiEvent::Timer(TIMER_CARET) => {
-                if self.open == Some(OpenCard::Question) && self.card_state != CardState::Closing {
+                if (self.open == Some(OpenCard::Question) || matches!(self.open, Some(OpenCard::Note(_)))) && self.card_state != CardState::Closing {
                     self.question_caret = !self.question_caret;
                     return self.refresh();
                 }
@@ -5266,13 +5572,16 @@ impl App {
                 self.ui.morph.set_blur(effects_enabled())?;
                 self.repaint()
             }
-            UiEvent::Timer(TIMER_OUTSIDE) if !self.card_pinned && self.clicked_outside() => self.close_card(),
+            UiEvent::Timer(TIMER_OUTSIDE) if !self.card_pinned && !matches!(self.open, Some(OpenCard::Note(_))) && self.clicked_outside() => self.close_card(),
             UiEvent::Pill(PillEvent::Hover(over)) | UiEvent::Card(CardEvent::Hover(over)) => {
                 let is_pill = matches!(e, UiEvent::Pill(_));
                 if is_pill {
                     self.pill_hover = over;
                 } else {
                     self.card_hover = over;
+                    if matches!(self.open, Some(OpenCard::Note(_))) {
+                        self.ui.card_window.set_opacity(if over { 1.0 } else { 0.50 });
+                    }
                 }
                 let marquee_on_hover = settings::current().marquee != settings::Marquee::Off;
                 if over && marquee_on_hover && is_pill && matches!(self.front_kind(), Some(ActivityKind::Media(_))) {
@@ -5351,6 +5660,22 @@ impl App {
                             crate::platform::fullscreen::focus_media_app(&app_id, &app_name);
                         }
                     }
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Right { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Notes)) => {
+                if let Some(i) = self.note_index_at(x, y) {
+                    return self.note_item_menu(i);
+                }
+                if crate::platform::tray::show_clear_menu(self.main.hwnd) {
+                    self.notes_stash.clear_unpinned();
+                    self.refresh()?;
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Right { .. }) if matches!(self.open, Some(OpenCard::Note(_))) => {
+                if let Some(OpenCard::Note(id)) = self.open {
+                    return self.note_menu_by_id(id);
                 }
                 Ok(())
             }
@@ -5566,6 +5891,7 @@ impl App {
                     Ok(())
                 }
             }
+            UiEvent::Key(vk) if matches!(self.open, Some(OpenCard::Note(_))) => self.note_key(vk),
             UiEvent::Key(0x1B) => {
                 if self.open.is_some() {
                     self.close_card()?;

@@ -99,7 +99,7 @@ fn shelf(n: usize, hover: Option<usize>, selected: &[usize], said: Option<(Shelf
             let (name, hue) = files[i % files.len()];
             let kind = file_kind(name, name == "Ekran görüntüleri");
             let thumb = hue.map(|h: usize| swatch(side, photo[h].0, photo[h].1));
-            ShelfTile { name: name.to_string(), thumb, kind, selected: selected.contains(&i) }
+            ShelfTile { name: name.to_string(), thumb, kind, selected: selected.contains(&i), pinned: false }
         })
         .collect::<Vec<_>>();
     let items: Vec<ShelfItem> = tiles.iter().map(|t| ShelfItem { path: format!(r"C:\Raf\{}", t.name).into(), name: t.name.clone(), kind: t.kind }).collect();
