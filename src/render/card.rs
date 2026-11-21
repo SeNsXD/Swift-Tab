@@ -3559,29 +3559,31 @@ impl Painter<'_, '_> {
         self.ink.text(display_title, rect(self.d(18.0), self.d(14.0), self.d(160.0), self.d(22.0)), &title_style)?;
 
         // Top right buttons: Pin, New (+), Close (X)
-        let btn_sz = self.d(22.0).round();
-        let btn_y = self.d(12.0).round();
+        let btn_sz = self.d(26.0).round();
+        let btn_y = self.d(10.0).round();
 
         // 1. Pin
-        let pin_btn = rect(self.w - self.d(18.0) - btn_sz * 3.0 - self.d(16.0), btn_y, btn_sz, btn_sz);
-        self.ink.rrect(pin_btn, self.d(4.0), white(if c.pinned { 0.18 } else { 0.08 }))?;
+        let pin_btn = rect(self.w - self.d(16.0) - btn_sz * 3.0 - self.d(14.0), btn_y, btn_sz, btn_sz);
+        self.ink.rrect(pin_btn, self.d(5.0), white(if c.pinned { 0.20 } else { 0.08 }))?;
         let pin_color = if c.pinned { rgba(ar, ag, ab, 1.0) } else { white(0.85) };
-        let pin_icon_r = rect(pin_btn.left + self.d(5.0), pin_btn.top + self.d(5.0), self.d(12.0), self.d(12.0));
+        let pin_icon_r = rect(pin_btn.left + self.d(6.5), pin_btn.top + self.d(6.5), self.d(13.0), self.d(13.0));
         self.ink.svg(PIN_SVG, pin_icon_r, pin_color)?;
         self.hits.push((pin_btn, CardAction::NotePin(c.id)));
 
-        // 2. New (+)
-        let add_btn = rect(self.w - self.d(18.0) - btn_sz * 2.0 - self.d(8.0), btn_y, btn_sz, btn_sz);
-        self.ink.rrect(add_btn, self.d(4.0), white(0.08))?;
-        let plus_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(13.0), white(0.85)).centered();
+        // 2. New (+) button
+        let add_btn = rect(self.w - self.d(16.0) - btn_sz * 2.0 - self.d(7.0), btn_y, btn_sz, btn_sz);
+        self.ink.rrect(add_btn, self.d(5.0), rgba(ar, ag, ab, 0.22))?;
+        self.ink.rrect_outline(rect(add_btn.left + 0.5, add_btn.top + 0.5, add_btn.right - add_btn.left - 1.0, add_btn.bottom - add_btn.top - 1.0), (self.d(5.0) - 0.5).max(1.0), 1.0, rgba(ar, ag, ab, 0.40))?;
+        let plus_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(16.0), white(1.0)).centered();
         self.ink.text("+", add_btn, &plus_style)?;
         self.hits.push((add_btn, CardAction::NoteNew));
 
-        // 3. Close (X)
-        let close_btn = rect(self.w - self.d(18.0) - btn_sz, btn_y, btn_sz, btn_sz);
-        self.ink.rrect(close_btn, self.d(4.0), white(0.08))?;
-        let x_style = TextStyle::new(Face::Icons, Weight::Regular, self.d(10.0), white(0.85)).centered();
-        self.ink.text(&glyph(Icon::Close).to_string(), close_btn, &x_style)?;
+        // 3. Close (X) button
+        let close_btn = rect(self.w - self.d(16.0) - btn_sz, btn_y, btn_sz, btn_sz);
+        self.ink.rrect(close_btn, self.d(5.0), white(0.12))?;
+        self.ink.rrect_outline(rect(close_btn.left + 0.5, close_btn.top + 0.5, close_btn.right - close_btn.left - 1.0, close_btn.bottom - close_btn.top - 1.0), (self.d(5.0) - 0.5).max(1.0), 1.0, white(0.16))?;
+        let x_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(12.5), white(0.95)).centered();
+        self.ink.text("\u{2715}", close_btn, &x_style)?;
         self.hits.push((close_btn, CardAction::NoteClose));
 
         let mut content_top = self.d(42.0);

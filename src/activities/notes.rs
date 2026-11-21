@@ -64,6 +64,9 @@ impl NotesStash {
         let mut max_id = 0u64;
         let mut notes = Vec::with_capacity(records.len());
         for record in records {
+            if record.text.trim().is_empty() && record.image_path.is_none() {
+                continue;
+            }
             if record.id > max_id {
                 max_id = record.id;
             }
@@ -80,13 +83,23 @@ impl NotesStash {
     pub fn save(&self) {
         let dir = notes_dir();
         let _ = std::fs::create_dir_all(&dir);
-        let records: Vec<&NoteRecord> = self.notes.iter().map(|n| &n.record).collect();
+        let records: Vec<&NoteRecord> = self.notes.iter().map(|n| &n.record)
+            .filter(|r| !r.text.trim().is_empty() || r.image_path.is_some())
+            .collect();
         if let Ok(json) = serde_json::to_string_pretty(&records) {
             let path = notes_path();
             let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
             if std::fs::write(&tmp, json.as_bytes()).is_ok() {
                 let _ = std::fs::rename(&tmp, &path);
             }
+        }
+    }
+
+    pub fn prune_empty(&mut self) {
+        let before = self.notes.len();
+        self.notes.retain(|n| !n.record.text.trim().is_empty() || n.record.image_path.is_some());
+        if self.notes.len() != before {
+            self.save();
         }
     }
 
@@ -106,7 +119,6 @@ impl NotesStash {
         // Insert after any pinned notes
         let insert_idx = self.notes.iter().position(|n| !n.record.pinned).unwrap_or(self.notes.len());
         self.notes.insert(insert_idx, NoteItem { record, thumb: None });
-        self.save();
         id
     }
 

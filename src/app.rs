@@ -1251,7 +1251,13 @@ impl App {
             self.ui.card_window.set_focusable(false);
         }
         self.ui.card_window.set_opacity(1.0);
-        self.active_note_id = None;
+        if let Some(id) = self.active_note_id.take() {
+            if let Some(note) = self.notes_stash.get(id) {
+                if note.record.text.trim().is_empty() && note.record.image_path.is_none() {
+                    self.notes_stash.remove(id);
+                }
+            }
+        }
         self.active_note_field = None;
         self.leave_question();
         self.leave_output_page();
@@ -2378,6 +2384,13 @@ impl App {
     }
 
     pub fn open_new_note(&mut self) -> Result<()> {
+        if let Some(prev_id) = self.active_note_id.take() {
+            if let Some(note) = self.notes_stash.get(prev_id) {
+                if note.record.text.trim().is_empty() && note.record.image_path.is_none() {
+                    self.notes_stash.remove(prev_id);
+                }
+            }
+        }
         let id = self.notes_stash.create_note();
         self.active_note_id = Some(id);
         self.active_note_field = Some(NoteField::new(String::new()));
@@ -2385,6 +2398,15 @@ impl App {
     }
 
     pub fn open_note(&mut self, id: u64) -> Result<()> {
+        if let Some(prev_id) = self.active_note_id.take() {
+            if prev_id != id {
+                if let Some(note) = self.notes_stash.get(prev_id) {
+                    if note.record.text.trim().is_empty() && note.record.image_path.is_none() {
+                        self.notes_stash.remove(prev_id);
+                    }
+                }
+            }
+        }
         let Some(note) = self.notes_stash.get(id) else { return Ok(()) };
         let text = note.record.text.clone();
         self.active_note_id = Some(id);
@@ -5095,7 +5117,13 @@ impl App {
             self.ui.card_window.set_focusable(false);
         }
         self.ui.card_window.set_opacity(1.0);
-        self.active_note_id = None;
+        if let Some(id) = self.active_note_id.take() {
+            if let Some(note) = self.notes_stash.get(id) {
+                if note.record.text.trim().is_empty() && note.record.image_path.is_none() {
+                    self.notes_stash.remove(id);
+                }
+            }
+        }
         self.active_note_field = None;
         self.card_hover = false;
         self.leave_question();
@@ -5869,12 +5897,31 @@ impl App {
                 self.refresh()
             }
             UiEvent::Card(CardEvent::Wheel { delta, .. })
-                if self.open == Some(OpenCard::Activity(ActivityKind::Notes))
-                    && self.notes_max_scroll() > 0.0 =>
+                if self.open == Some(OpenCard::Activity(ActivityKind::Notes)) =>
             {
                 let max_scroll = self.notes_max_scroll();
-                self.notes_scroll = (self.notes_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
-                self.refresh()
+                if max_scroll > 0.0 {
+                    self.notes_scroll = (self.notes_scroll - (delta as f32 / 120.0) * 41.0).clamp(0.0, max_scroll);
+                    self.refresh()?;
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::Wheel { delta, .. })
+                if matches!(self.open, Some(OpenCard::Note(_))) =>
+            {
+                let count = self.notes_stash.count();
+                if count > 1 {
+                    if let Some(id) = self.active_note_id {
+                        let ids: Vec<u64> = self.notes_stash.notes().iter().map(|n| n.record.id).collect();
+                        if let Some(pos) = ids.iter().position(|&x| x == id) {
+                            let step = if delta < 0 { 1 } else { -1 };
+                            let next_pos = ((pos as isize + step).rem_euclid(ids.len() as isize)) as usize;
+                            let next_id = ids[next_pos];
+                            self.open_note(next_id)?;
+                        }
+                    }
+                }
+                Ok(())
             }
             UiEvent::Card(CardEvent::Wheel { x, y, delta }) => {
                 if let (Some(OpenCard::Picker), Some(CardAction::PickerField(field))) = (self.open, self.ui.card.hit_test(x, y)) {
