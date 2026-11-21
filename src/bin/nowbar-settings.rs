@@ -965,9 +965,6 @@ struct Bridge {
 
 fn main() -> Result<(), slint::PlatformError> {
     register_app_identity();
-    unsafe {
-        let _ = windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(w!("xdNOTLabs.SwiftTab.Settings"));
-    }
     // Dev: NOWBAR_SETTINGS_SHOTS=<dir> draws every page with the real renderer, off-screen, into
     // <dir>, and quits without saving (and without touching a settings window that is open).
     let shots_dir = std::env::var("NOWBAR_SETTINGS_SHOTS").ok();

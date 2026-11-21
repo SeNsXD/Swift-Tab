@@ -394,7 +394,7 @@ export component AppearanceInspector inherits VerticalLayout {
             label: @tr("Opaklık");
             MiniSlider {
                 value <=> Store.pill-opacity;
-                minimum: 70;
+                minimum: 30;
                 maximum: 100;
                 text: Fmt.pct(Store.pill-opacity);
                 moved => { Ui.changed(); }

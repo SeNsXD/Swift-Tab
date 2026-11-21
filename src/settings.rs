@@ -365,7 +365,7 @@ impl Default for Settings {
             card_leave_close_ms: 600,
             pill_offset_dip: 0,
             pill_size: PillSize::Standard,
-            pill_opacity_pct: 92,
+            pill_opacity_pct: 72,
             pill_slivers: true,
             card_size: CardSize::Large,
             card_blur: true,
@@ -463,7 +463,7 @@ impl Settings {
         self.card_leave_close_ms = self.card_leave_close_ms.clamp(200, 3000);
         self.claude_ask_wait_s = self.claude_ask_wait_s.clamp(10, 300);
         self.pill_offset_dip = self.pill_offset_dip.clamp(-200, 200);
-        self.pill_opacity_pct = self.pill_opacity_pct.clamp(70, 100);
+        self.pill_opacity_pct = self.pill_opacity_pct.clamp(30, 100);
         self.material_darkness_pct = self.material_darkness_pct.clamp(10, 60);
         self.material_saturation_pct = self.material_saturation_pct.clamp(100, 250);
         self.marquee_speed_dip_s = self.marquee_speed_dip_s.clamp(15, 60);
@@ -686,7 +686,7 @@ mod tests {
         assert!(s.buds_ear_pause);
         assert_eq!(s.timer_presets_min, vec![1, 3, 5, 10, 15, 30]);
         assert_eq!(s.accent_color, "#5D57D2");
-        assert_eq!(s.pill_opacity_pct, 92);
+        assert_eq!(s.pill_opacity_pct, 72);
         assert_eq!(s.hotkey_picker, Hotkey::WinAltN);
         assert_eq!((s.match_show_before_min, s.match_keep_after_min), (60, 30));
         assert_eq!(s.match_goal_sound, "tada");
@@ -725,7 +725,7 @@ mod tests {
     fn out_of_range_values_are_clamped() {
         let s = parse(r#"{"card_leave_close_ms": 50, "pill_opacity_pct": 10, "buds_low_battery_pct": 99, "timer_presets_min": [0, 500]}"#);
         assert_eq!(s.card_leave_close_ms, 200);
-        assert_eq!(s.pill_opacity_pct, 70);
+        assert_eq!(s.pill_opacity_pct, 30);
         assert_eq!(s.buds_low_battery_pct, 50);
         assert_eq!(s.timer_presets_min, vec![1, 180]);
     }

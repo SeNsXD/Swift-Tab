@@ -170,15 +170,15 @@ const TITLE_RISE_DIP: f32 = 10.0;
 const TITLE_RISE_MS: f32 = 280.0;
 const MARQUEE_FADE_DIP: f32 = 14.0;
 
-/// Windows 11 Acrylic bar material: #202020 with configurable opacity (solid #202020 in fallback).
+/// Windows 11 Acrylic bar material: subtle fluent dark tint with configurable opacity (solid in fallback).
 pub fn pill_base() -> Color {
     let a = if crate::platform::os::solid_fallback() {
         255
     } else {
-        let pct = crate::settings::current().pill_opacity_pct.clamp(50, 100) as f32 / 100.0;
+        let pct = crate::settings::current().pill_opacity_pct.clamp(30, 100) as f32 / 100.0;
         (pct * 255.0).round() as u8
     };
-    Color { A: a, R: 0x20, G: 0x20, B: 0x20 }
+    Color { A: a, R: 0x16, G: 0x16, B: 0x1A }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1207,7 +1207,7 @@ fn paint_layer(
 fn paint_win11_row_chrome(ink: &Ink, w: f32, h: f32, _main_w: f32, s: &Scale) -> Result<()> {
     let d = |v: f32| v * s.0;
     let r = d(8.0).round();
-    ink.rrect(rect(0.0, 0.0, w, h), r, white(0.04))?;
+    ink.rrect(rect(0.0, 0.0, w, h), r, white(0.03))?;
     let (ar, ag, ab) = crate::platform::os::system_accent();
     let pill_w = d(3.0).round().max(2.0);
     let pill_h = d(14.0).round();
@@ -1216,7 +1216,7 @@ fn paint_win11_row_chrome(ink: &Ink, w: f32, h: f32, _main_w: f32, s: &Scale) ->
         d(1.5),
         rgba(ar, ag, ab, 0.95),
     )?;
-    let border_a = if crate::platform::os::solid_fallback() { 0.14 } else { 0.06 };
+    let border_a = if crate::platform::os::solid_fallback() { 0.14 } else { 0.07 };
     ink.rrect_outline(rect(0.5, 0.5, w - 1.0, h - 1.0), (r - 0.5).max(1.0), 1.0, white(border_a))
 }
 
@@ -2186,11 +2186,11 @@ fn paint_bar(ink: &Ink, bar: &BarInfo, w: f32, h: f32, s: &Scale) -> Result<()> 
     let bg_a = if crate::platform::os::solid_fallback() {
         1.0
     } else {
-        crate::settings::current().pill_opacity_pct.clamp(50, 100) as f32 / 100.0
+        crate::settings::current().pill_opacity_pct.clamp(30, 100) as f32 / 100.0
     };
-    ink.rrect(rect(0.0, 0.0, w, h), r, rgba(0x20, 0x20, 0x20, bg_a))?;
-    ink.rrect(rect(0.0, 0.0, w, h), r, white(0.04))?;
-    let border_a = if crate::platform::os::solid_fallback() { 0.14 } else { 0.06 };
+    ink.rrect(rect(0.0, 0.0, w, h), r, rgba(0x16, 0x16, 0x1A, bg_a))?;
+    ink.rrect(rect(0.0, 0.0, w, h), r, white(0.03))?;
+    let border_a = if crate::platform::os::solid_fallback() { 0.14 } else { 0.07 };
     ink.rrect_outline(rect(0.5, 0.5, w - 1.0, h - 1.0), (r - 0.5).max(1.0), 1.0, white(border_a))?;
     let icon_st = TextStyle::new(Face::Icons, Weight::Regular, d(16.0), neutral_icon()).centered();
     let label = TextStyle::new(Face::Text, Weight::SemiBold, d(13.0), white(1.0)).tabular();

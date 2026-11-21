@@ -5049,7 +5049,68 @@ impl App {
     /// `by_pointer`: opened with the mouse, so it also closes when the mouse goes elsewhere.
     fn open_card(&mut self, which: OpenCard, by_pointer: bool) -> Result<()> {
         if matches!(self.card_state, CardState::Open | CardState::Opening) {
-            return Ok(());
+            if self.open == Some(which) {
+                return Ok(());
+            }
+            if let Some(prev_id) = self.active_note_id {
+                if which != OpenCard::Note(prev_id) {
+                    if let Some(note) = self.notes_stash.get(prev_id) {
+                        if note.record.text.trim().is_empty() && note.record.image_path.is_none() {
+                            self.notes_stash.remove(prev_id);
+                        }
+                    }
+                    if !matches!(which, OpenCard::Note(_)) {
+                        self.active_note_id = None;
+                        self.active_note_field = None;
+                    }
+                }
+            }
+            let Some(content) = self.card_content(which, now_ms()) else { return Ok(()) };
+            self.open = Some(which);
+            let s = self.ui.card_scale;
+            let pill = self.pill_screen();
+            // The pill may have moved aside for the taskbar's buttons since the window was made.
+            let frame = Self::card_frame(&self.ui.info, &s, pill);
+            if frame != self.ui.card_window.frame {
+                self.ui.card_window.move_to(frame)?;
+            }
+            self.ui.card.set(&self.gfx, &content, &s)?;
+            self.sync_card_fx(&content);
+            let (wd, hd) = card_size_dip(&content);
+            let to = card_rect(&self.ui.info, pill.x + pill.w / 2, wd, hd, CARD_GAP_DIP, &s);
+            let f = self.ui.card_window.frame;
+            let rel = |r: RectPx| RectPx { x: r.x - f.x, y: r.y - f.y, ..r };
+            let to_r = s.px(card_radius_dip(&content));
+            self.ui.morph.set_card(&self.ui.card.surface)?;
+            self.card_tint_shown = card_tint(&content);
+            self.ui.morph.set_card_tint(self.card_tint_shown)?;
+            let old_r = s.px(36.0);
+            self.ui.morph.resize(rel(self.card_screen), old_r, rel(to), to_r)?;
+            self.ui.card_window.set_opacity(1.0);
+            self.ui.card_window.set_hit(to, to_r as i32)?;
+            self.card_screen = to;
+            if matches!(content, CardContent::Shelf(_) | CardContent::Clipboard(_) | CardContent::Note(_) | CardContent::NotesList(_)) {
+                self.ui.morph.plain_accent()?;
+            }
+            self.card_state = CardState::Open;
+            if which.takes_keys() {
+                self.ui.card_window.set_focusable(true);
+                if matches!(which, OpenCard::Note(_)) && !settings::current().notes_translucent_on_leave {
+                    self.arm_leave();
+                } else {
+                    self.disarm_leave();
+                }
+            } else {
+                self.ui.card_window.set_focusable(false);
+                if by_pointer {
+                    self.arm_leave();
+                }
+            }
+            if which == OpenCard::Question || matches!(which, OpenCard::Note(_)) {
+                self.question_caret = true;
+                unsafe { SetTimer(Some(self.main.hwnd), TIMER_CARET, CARET_BLINK_MS, None) };
+            }
+            return self.refresh();
         }
         let Some(content) = self.card_content(which, now_ms()) else { return Ok(()) };
         self.open = Some(which);
@@ -5820,6 +5881,19 @@ impl App {
                 self.card_ignore_until = now_ms() + 350;
                 if let Some(i) = self.ui.card.tile_at(x, y) {
                     self.open_clipboard_item(i);
+                }
+                Ok(())
+            }
+            UiEvent::Card(CardEvent::DoubleClick { x, y }) if self.open == Some(OpenCard::Activity(ActivityKind::Notes)) => {
+                self.tile_press = None;
+                self.card_last_click = None;
+                self.card_ignore_until = now_ms() + 350;
+                if let Some(CardAction::NoteOpen(id)) = self.ui.card.hit_test(x, y) {
+                    return self.open_note(id);
+                } else if let Some(i) = self.note_index_at(x, y) {
+                    if let Some(note) = self.notes_stash.notes().get(i) {
+                        return self.open_note(note.record.id);
+                    }
                 }
                 Ok(())
             }
