@@ -1477,7 +1477,7 @@ impl App {
             };
             p.push(Presence { kind: ActivityKind::Clipboard, state, changed_ms: self.clipboard_ms });
         }
-        if s.notes_enabled && (!self.notes_stash.is_empty() || s.notes_pinned) {
+        if s.notes_enabled && !s.notes_in_bar && (!self.notes_stash.is_empty() || s.notes_pinned) {
             p.push(Presence { kind: ActivityKind::Notes, state: PresenceState::Running, changed_ms: 0 });
         }
         // Games: a moment (updated, played) stands for its game while it plays. Like the matches,
@@ -1964,7 +1964,26 @@ impl App {
                     CardContent::Media(Box::new(card))
                 })
             }
-            OpenCard::Activity(ActivityKind::Buds) => self.buds.map(|(b, _)| CardContent::Buds(shown_buds(b))),
+            OpenCard::Activity(ActivityKind::Buds) => {
+                if let Some((b, _)) = self.buds {
+                    Some(CardContent::Buds(Box::new(crate::render::card::BudsCard {
+                        name: "Galaxy Buds2".into(),
+                        buds: Some(shown_buds(b)),
+                        battery: match (b.left, b.right) {
+                            (0, x) | (x, 0) => x,
+                            (l, r) => l.min(r),
+                        },
+                    })))
+                } else if let Some((h, _)) = self.headsets.iter().find(|(h, _)| (1..=100).contains(&h.pct)) {
+                    Some(CardContent::Buds(Box::new(crate::render::card::BudsCard {
+                        name: h.name.clone(),
+                        buds: None,
+                        battery: h.pct,
+                    })))
+                } else {
+                    None
+                }
+            }
             OpenCard::Activity(ActivityKind::Match(key)) => self.match_of(key).map(|m| CardContent::Match(Box::new(self.match_card(m, now)))),
             // A moment has no card.
             OpenCard::Activity(
@@ -2264,7 +2283,14 @@ impl App {
             .filter(|w| crate::activities::weather::shows_now(w.fetched_utc, unix_now()))
             .map(|w| (symbol(w.code, w.is_day).to_string(), crate::render::pill::weather_accent(fx_of(w.code, w.is_day)), format!("{}°", w.temp.round() as i32)));
         let battery = self.buds_chip_pct();
-        (weather.is_some() || battery.is_some()).then_some(crate::render::pill::BarInfo { weather, battery })
+        let note = if s.notes_enabled && s.notes_in_bar {
+            let count = self.notes_stash.count();
+            let label = self.notes_stash.notes().first().map(|n| n.record.title.clone()).unwrap_or_else(|| "Notes".to_string());
+            Some((label, count))
+        } else {
+            None
+        };
+        (weather.is_some() || battery.is_some() || note.is_some()).then_some(crate::render::pill::BarInfo { weather, battery, note })
     }
 
     fn buds_chip_pct(&self) -> Option<u8> {
@@ -3765,6 +3791,15 @@ impl App {
                     self.buds_worker.set_noise(mode);
                 }
             }
+            CardAction::BudsDisconnect => {
+                let name = self.active_bluetooth_device_name();
+                self.disconnect_bluetooth(&name);
+                return self.close_card();
+            }
+            CardAction::BudsSettings => {
+                self.open_bluetooth_settings();
+                return self.close_card();
+            }
             CardAction::ShelfRemove(i) => {
                 self.shelf.remove(i);
                 self.shelf_hover = None;
@@ -5231,6 +5266,14 @@ impl App {
             Some(ActivityKind::Clock) => self.toggle_card(OpenCard::Brief, true),
             Some(ActivityKind::Usage) => self.toggle_card(OpenCard::Wellbeing, true),
             Some(ActivityKind::Away) => self.toggle_card(OpenCard::Away, true),
+            Some(ActivityKind::Notes) => {
+                if self.notes_stash.is_empty() {
+                    self.open_new_note()
+                } else {
+                    self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
+                }
+            }
+            Some(ActivityKind::Buds) => self.toggle_card(OpenCard::Activity(ActivityKind::Buds), true),
             Some(ActivityKind::Transfer) => {
                 self.show_transfer();
                 Ok(())
@@ -5238,6 +5281,44 @@ impl App {
             Some(kind) => self.toggle_card(OpenCard::Activity(kind), true),
             None => Ok(()),
         }
+    }
+
+    fn active_bluetooth_device_name(&self) -> String {
+        if let Some((_b, _)) = &self.buds {
+            "Galaxy Buds2".to_string()
+        } else if let Some((h, _)) = self.headsets.iter().find(|(h, _)| (1..=100).contains(&h.pct)) {
+            h.name.clone()
+        } else {
+            "Bluetooth Device".to_string()
+        }
+    }
+
+    fn open_bluetooth_settings(&self) {
+        unsafe {
+            windows::Win32::UI::Shell::ShellExecuteW(
+                None,
+                windows::core::w!("open"),
+                windows::core::w!("ms-settings:bluetooth"),
+                None,
+                None,
+                windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            );
+        }
+    }
+
+    fn disconnect_bluetooth(&mut self, name: &str) {
+        if self.buds.is_some() {
+            self.buds = None;
+        }
+        let escaped_name = name.replace('"', "`\"");
+        let cmd = format!(
+            "Get-PnpDevice | Where-Object {{ $_.FriendlyName -like '*{}*' -and ($_.Class -in @('AudioEndpoint','MEDIA','Bluetooth')) }} | Disable-PnpDevice -Confirm:$false",
+            escaped_name
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
+            .spawn();
+        self.open_bluetooth_settings();
     }
 
     /// A mouse button is down somewhere other than the card or the pill.
@@ -5389,8 +5470,25 @@ impl App {
                     (_, Some(PillButton::PlayPause)) => self.media_command(MediaCommand::PlayPause),
                     (_, Some(PillButton::Next)) => self.media_command(MediaCommand::Next),
                     (_, Some(PillButton::Mute)) => self.toggle_media_mute(),
+                    (Some(ActivityKind::Notes), None) => {
+                        if self.notes_stash.is_empty() {
+                            self.open_new_note()
+                        } else {
+                            self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
+                        }
+                    }
+                    (Some(ActivityKind::Buds), None) => {
+                        self.toggle_card(OpenCard::Activity(ActivityKind::Buds), true)
+                    }
                     (_, None) => self.open_front_card(),
                     _ => Ok(()),
+                }
+            }
+            UiEvent::Pill(PillEvent::DoubleClick) => {
+                if self.front_kind() == Some(ActivityKind::Notes) || settings::current().notes_enabled {
+                    self.open_new_note()
+                } else {
+                    Ok(())
                 }
             }
             UiEvent::Pill(PillEvent::MiddleClick) => match self.front_kind() {
@@ -5530,7 +5628,69 @@ impl App {
                 }
                 Ok(())
             }
-            UiEvent::Pill(PillEvent::BarClick) => self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true),
+            UiEvent::Pill(PillEvent::BarClick { x }) => {
+                let x_dip = x as f32 / self.ui.pill_scale.0;
+                let seg = self.bar_info().as_ref().and_then(|b| crate::render::pill::bar_segment_at(b, x_dip));
+                match seg {
+                    Some(crate::render::pill::BarSegment::Weather) => self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true),
+                    Some(crate::render::pill::BarSegment::Battery) => self.toggle_card(OpenCard::Activity(ActivityKind::Buds), true),
+                    Some(crate::render::pill::BarSegment::Note) => {
+                        if self.notes_stash.is_empty() {
+                            self.open_new_note()
+                        } else {
+                            self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
+                        }
+                    }
+                    None => self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true),
+                }
+            }
+            UiEvent::Pill(PillEvent::BarDoubleClick { x }) => {
+                let x_dip = x as f32 / self.ui.pill_scale.0;
+                let seg = self.bar_info().as_ref().and_then(|b| crate::render::pill::bar_segment_at(b, x_dip));
+                match seg {
+                    Some(crate::render::pill::BarSegment::Note) => self.open_new_note(),
+                    _ => Ok(()),
+                }
+            }
+            UiEvent::Pill(PillEvent::BarRightClick { x }) => {
+                let x_dip = x as f32 / self.ui.pill_scale.0;
+                let seg = self.bar_info().as_ref().and_then(|b| crate::render::pill::bar_segment_at(b, x_dip));
+                match seg {
+                    Some(crate::render::pill::BarSegment::Battery) => {
+                        let name = self.active_bluetooth_device_name();
+                        let choice = crate::platform::tray::show_bluetooth_menu(self.main.hwnd, &name);
+                        match choice {
+                            crate::platform::tray::BT_DISCONNECT => self.disconnect_bluetooth(&name),
+                            crate::platform::tray::BT_SETTINGS => self.open_bluetooth_settings(),
+                            _ => {}
+                        }
+                        Ok(())
+                    }
+                    Some(crate::render::pill::BarSegment::Note) => {
+                        let in_bar = settings::current().notes_in_bar;
+                        let choice = crate::platform::tray::show_notes_bar_menu(self.main.hwnd, in_bar);
+                        match choice {
+                            crate::platform::tray::NOTE_NEW_CMD => self.open_new_note(),
+                            crate::platform::tray::NOTE_OPEN => self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true),
+                            crate::platform::tray::NOTE_TOGGLE_BAR => {
+                                let mut s = (*settings::current()).clone();
+                                s.notes_in_bar = !s.notes_in_bar;
+                                if let Err(e) = settings::save(&s) {
+                                    log(&format!("settings save: {e:?}"));
+                                }
+                                settings::install(s);
+                                self.refresh()
+                            }
+                            crate::platform::tray::NOTE_CLEAR_ALL => {
+                                self.notes_stash.clear_unpinned();
+                                self.refresh()
+                            }
+                            _ => Ok(()),
+                        }
+                    }
+                    _ => Ok(()),
+                }
+            }
             UiEvent::Timer(TIMER_BAR_OPEN) => {
                 unsafe {
                     let _ = KillTimer(Some(self.main.hwnd), TIMER_BAR_OPEN);
@@ -5552,9 +5712,38 @@ impl App {
                         }
                     }
                     Some(ActivityKind::Notes) => {
-                        if crate::platform::tray::show_clear_menu(self.main.hwnd) {
-                            self.notes_stash.clear_unpinned();
-                            self.refresh()?;
+                        let in_bar = settings::current().notes_in_bar;
+                        let choice = crate::platform::tray::show_notes_bar_menu(self.main.hwnd, in_bar);
+                        match choice {
+                            crate::platform::tray::NOTE_NEW_CMD => self.open_new_note()?,
+                            crate::platform::tray::NOTE_OPEN => self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)?,
+                            crate::platform::tray::NOTE_TOGGLE_BAR => {
+                                let mut s = (*settings::current()).clone();
+                                s.notes_in_bar = !s.notes_in_bar;
+                                if let Err(e) = settings::save(&s) {
+                                    log(&format!("settings save: {e:?}"));
+                                }
+                                settings::install(s);
+                                self.refresh()?;
+                            }
+                            crate::platform::tray::NOTE_CLEAR_ALL => {
+                                self.notes_stash.clear_unpinned();
+                                self.refresh()?;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(ActivityKind::Buds) => {
+                        let name = self.active_bluetooth_device_name();
+                        let choice = crate::platform::tray::show_bluetooth_menu(self.main.hwnd, &name);
+                        match choice {
+                            crate::platform::tray::BT_DISCONNECT => {
+                                self.disconnect_bluetooth(&name);
+                            }
+                            crate::platform::tray::BT_SETTINGS => {
+                                self.open_bluetooth_settings();
+                            }
+                            _ => {}
                         }
                     }
                     Some(ActivityKind::Shelf) => {
@@ -5590,7 +5779,7 @@ impl App {
             UiEvent::Timer(TIMER_DEMO) => Ok(()),
             UiEvent::Foreground => {
                 // A pinned card or floating sticky note stays while you work in other windows.
-                let note_stays = matches!(self.open, Some(OpenCard::Note(_))) && settings::current().notes_translucent_on_leave;
+                let note_stays = matches!(self.open, Some(OpenCard::Note(_) | OpenCard::Activity(ActivityKind::Notes))) && settings::current().notes_translucent_on_leave;
                 if !self.brief_auto && !self.card_pinned && !note_stays {
                     self.close_card()?;
                 }
@@ -5604,7 +5793,7 @@ impl App {
             UiEvent::ForegroundMoved => self.check_fullscreen(),
             // A drag on a slider or a floating sticky note keeps the card open even when the mouse wanders off it.
             UiEvent::Timer(TIMER_LEAVE)
-                if (matches!(self.open, Some(OpenCard::Note(_))) && settings::current().notes_translucent_on_leave)
+                if (matches!(self.open, Some(OpenCard::Note(_) | OpenCard::Activity(ActivityKind::Notes))) && settings::current().notes_translucent_on_leave)
                     || self.volume_drag
                     || self.app_volume_drag
                     || self.clipboard_scroll_drag
@@ -5682,7 +5871,7 @@ impl App {
             }
             UiEvent::Timer(TIMER_OUTSIDE)
                 if !self.card_pinned
-                    && (!matches!(self.open, Some(OpenCard::Note(_))) || !settings::current().notes_translucent_on_leave)
+                    && (!matches!(self.open, Some(OpenCard::Note(_) | OpenCard::Activity(ActivityKind::Notes))) || !settings::current().notes_translucent_on_leave)
                     && self.clicked_outside() => self.close_card(),
             UiEvent::Pill(PillEvent::Hover(over)) | UiEvent::Card(CardEvent::Hover(over)) => {
                 let is_pill = matches!(e, UiEvent::Pill(_));
@@ -5690,7 +5879,7 @@ impl App {
                     self.pill_hover = over;
                 } else {
                     self.card_hover = over;
-                    if matches!(self.open, Some(OpenCard::Note(_))) {
+                    if matches!(self.open, Some(OpenCard::Note(_) | OpenCard::Activity(ActivityKind::Notes))) {
                         if settings::current().notes_translucent_on_leave {
                             self.ui.card_window.set_opacity(if over { 1.0 } else { 0.50 });
                         } else {
@@ -5721,7 +5910,7 @@ impl App {
                 }
                 if over {
                     self.disarm_leave();
-                } else if !self.open.is_some_and(OpenCard::takes_keys) || (matches!(self.open, Some(OpenCard::Note(_))) && !settings::current().notes_translucent_on_leave) {
+                } else if !self.open.is_some_and(OpenCard::takes_keys) || (matches!(self.open, Some(OpenCard::Note(_) | OpenCard::Activity(ActivityKind::Notes))) && !settings::current().notes_translucent_on_leave) {
                     self.arm_leave();
                 }
                 Ok(())

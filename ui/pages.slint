@@ -1866,6 +1866,14 @@ export component NotesInspector inherits VerticalLayout {
                 toggled => { Ui.changed(); }
             }
         }
+        IRow {
+            label: @tr("Keep beside tab");
+            note: @tr("Show Sticky Notes in the corner bar beside the tab instead of the scrollable carousel");
+            Toggle {
+                checked <=> Store.notes-in-bar;
+                toggled => { Ui.changed(); }
+            }
+        }
     }
 }
 

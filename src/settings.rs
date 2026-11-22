@@ -157,6 +157,8 @@ pub struct Settings {
     /// true -> stay open and become translucent (50% opacity);
     /// false -> automatically close the note.
     pub notes_translucent_on_leave: bool,
+    /// If true, sticky notes is shown in the corner bar beside the tab (like weather), removed from the scrollable stack.
+    pub notes_in_bar: bool,
     /// The clipboard stays in the stack even when nothing is copied (while its history is on).
     pub clipboard_pinned: bool,
     /// The media pill stays in the stack even when nothing is playing.
@@ -350,6 +352,7 @@ impl Default for Settings {
             notes_enabled: true,
             notes_pinned: true,
             notes_translucent_on_leave: true,
+            notes_in_bar: false,
             clipboard_pinned: true,
             media_pinned: true,
             media_spotify_button: true,
@@ -678,7 +681,7 @@ mod tests {
     fn defaults_match_v1() {
         let s = Settings::default();
         assert!(s.enabled && s.autostart && s.card_blur && s.use_cover_color && s.fullscreen_hide);
-        assert!(s.notes_enabled && s.notes_pinned && s.notes_translucent_on_leave);
+        assert!(s.notes_enabled && s.notes_pinned && s.notes_translucent_on_leave && !s.notes_in_bar);
         assert_eq!(s.card_leave_close_ms, 600);
         assert_eq!(s.media_paused_keep_min, 10);
         assert_eq!(s.buds_low_battery_pct, 15);

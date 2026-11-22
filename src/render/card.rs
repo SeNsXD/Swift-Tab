@@ -268,6 +268,13 @@ pub struct DownloadCard {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct BudsCard {
+    pub name: String,
+    pub buds: Option<BudsSnapshot>,
+    pub battery: u8,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CardContent {
     Claude(Box<ClaudeCard>),
     App(Box<AppCard>),
@@ -276,7 +283,7 @@ pub enum CardContent {
     Stopwatch(StopwatchCard),
     Picker(PickerState),
     Media(Box<MediaCard>),
-    Buds(BudsSnapshot),
+    Buds(Box<BudsCard>),
     Match(Box<MatchCard>),
     Weather(Box<WeatherCard>),
     Shelf(ShelfCard),
@@ -1017,6 +1024,10 @@ pub enum CardAction {
     Pin,
     /// A segment of the Buds card's noise control (the mode's byte).
     BudsNoise(u8),
+    /// Disconnect Bluetooth device.
+    BudsDisconnect,
+    /// Open Windows Bluetooth Settings.
+    BudsSettings,
     /// A shelf tile's close button (its index, newest first).
     ShelfRemove(usize),
     /// Pin / unpin a specific shelf item.
@@ -1110,7 +1121,7 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
         CardContent::Media(m) if matches!(m.page, MediaPage::Output(_)) => (340.0, 350.0),
         CardContent::Media(_) => (340.0, 320.0),
         // The noise control row once the Buds have said their mode.
-        CardContent::Buds(b) if b.noise.is_some() => (370.0, 238.0),
+        CardContent::Buds(b) if b.buds.as_ref().is_some_and(|s| s.noise.is_some()) => (370.0, 238.0),
         CardContent::Buds(_) => (370.0, 150.0),
         CardContent::Weather(w) if w.alert.is_some() => (370.0, 196.0 + WEATHER_ALERT_ROW),
         CardContent::Weather(_) => (370.0, 196.0),
@@ -2047,21 +2058,43 @@ impl Painter<'_, '_> {
     }
 
     /// "Galaxy Buds2 / Connected to this PC", then a ring per bud and, while known, the case.
-    fn buds(&mut self, b: &BudsSnapshot) -> Result<()> {
+    fn buds(&mut self, b: &BudsCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         let (r, g, bl) = BUDS_ACCENT;
         let circle = d(46.0);
         let badge = rect(d(15.0), d(15.0), circle, circle);
         self.ink.rrect(badge, circle / 2.0, rgba(r, g, bl, 1.0))?;
         self.ink.text(&glyph(Icon::Headphones).to_string(), badge, &TextStyle::new(Face::Icons, Weight::Regular, d(24.0), white(1.0)).centered())?;
-        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(16.0), white(1.0)).top();
-        self.ink.text("Galaxy Buds2", rect(d(73.0), d(17.0), d(280.0), d(22.0)), &title)?;
-        let sub = TextStyle::new(Face::Text, Weight::Regular, d(13.0), white(0.8)).top();
-        self.ink.text("Connected to this PC", rect(d(73.0), d(40.0), d(280.0), d(20.0)), &sub)?;
 
-        let mut rings = vec![("Left", b.left), ("Right", b.right)];
-        if let Some(case) = b.case {
-            rings.push(("Case", case));
+        // Disconnect button at top-right
+        let btn_h = d(26.0);
+        let disc_w = d(78.0);
+        let disc_rect = rect(self.w - d(15.0) - disc_w, d(15.0), disc_w, btn_h);
+        self.ink.rrect(disc_rect, d(6.0), rgba(0xFF, 0x5A, 0x4F, 0.18))?;
+        self.ink.text("Disconnect", disc_rect, &TextStyle::new(Face::Text, Weight::Medium, d(11.5), rgba(0xFF, 0x6B, 0x6B, 1.0)).centered())?;
+        self.hits.push((disc_rect, CardAction::BudsDisconnect));
+
+        // Settings gear button left of Disconnect
+        let set_btn = rect(disc_rect.left - d(8.0) - btn_h, d(15.0), btn_h, btn_h);
+        self.ink.rrect(set_btn, d(6.0), white(0.06))?;
+        self.ink.text(&glyph(Icon::Settings).to_string(), set_btn, &TextStyle::new(Face::Icons, Weight::Regular, d(14.0), white(0.75)).centered())?;
+        self.hits.push((set_btn, CardAction::BudsSettings));
+
+        let title_w = (set_btn.left - d(73.0) - d(8.0)).max(d(80.0));
+        let title = TextStyle::new(Face::Text, Weight::SemiBold, d(15.0), white(1.0)).top().ellipsis();
+        self.ink.text(&b.name, rect(d(73.0), d(17.0), title_w, d(22.0)), &title)?;
+        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.8)).top();
+        self.ink.text("Connected to this PC", rect(d(73.0), d(40.0), title_w, d(20.0)), &sub)?;
+
+        let mut rings = Vec::new();
+        if let Some(buds) = &b.buds {
+            rings.push(("Left", buds.left));
+            rings.push(("Right", buds.right));
+            if let Some(case) = buds.case {
+                rings.push(("Case", case));
+            }
+        } else {
+            rings.push(("Battery", b.battery));
         }
         let (radius, cy, step) = (d(22.0), d(96.0), d(110.0));
         let n = rings.len() as f32;
@@ -2074,8 +2107,10 @@ impl Painter<'_, '_> {
             let st = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.7)).centered();
             self.ink.text(label, rect(cx - d(40.0), cy + radius + d(6.0), d(80.0), d(16.0)), &st)?;
         }
-        if let Some(mode) = b.noise {
-            self.noise_control(mode)?;
+        if let Some(buds) = &b.buds {
+            if let Some(mode) = buds.noise {
+                self.noise_control(mode)?;
+            }
         }
         Ok(())
     }
@@ -3684,17 +3719,23 @@ impl Painter<'_, '_> {
         let title_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(16.0), white(1.0)).top();
         self.ink.text("Sticky Notes", rect(self.d(18.0), self.d(16.0), self.d(140.0), self.d(24.0)), &title_style)?;
 
-        // New Note (+) button
+        // Close (X) button at top-right
+        let close_btn = rect(self.w - self.d(18.0) - self.d(24.0), self.d(14.0), self.d(24.0), self.d(24.0));
+        self.ink.rrect(close_btn, self.d(4.0), white(0.06))?;
+        self.ink.text("✕", close_btn, &TextStyle::new(Face::Text, Weight::Medium, self.d(12.0), white(0.7)).centered())?;
+        self.hits.push((close_btn, CardAction::NoteClose));
+
+        // New Note (+) button left of Close
         let btn_style = TextStyle::new(Face::Text, Weight::Medium, self.d(12.0), white(0.9));
         let nw = self.ink.measure("+ New Note", &btn_style).unwrap_or(self.d(60.0));
-        let new_btn = rect(self.w - self.d(18.0) - nw - self.d(18.0), self.d(14.0), nw + self.d(18.0), self.d(26.0));
+        let new_btn = rect(close_btn.left - self.d(8.0) - nw - self.d(18.0), self.d(14.0), nw + self.d(18.0), self.d(26.0));
         self.ink.rrect(new_btn, self.d(13.0), rgba(ar, ag, ab, 0.35))?;
         self.ink.text("+ New Note", D2D_RECT_F { left: new_btn.left + self.d(9.0), ..new_btn }, &btn_style)?;
         self.hits.push((new_btn, CardAction::NoteNew));
 
         if c.notes.is_empty() {
             let empty_style = TextStyle::new(Face::Text, Weight::Regular, self.d(13.5), white(0.45)).centered();
-            self.ink.text("No notes yet\nMiddle click the bar or tap + New Note", rect(self.d(20.0), self.d(100.0), self.w - self.d(40.0), self.d(60.0)), &empty_style)?;
+            self.ink.text("No notes yet\nDouble click the bar or tap + New Note", rect(self.d(20.0), self.d(100.0), self.w - self.d(40.0), self.d(60.0)), &empty_style)?;
             return Ok(());
         }
 

@@ -254,7 +254,12 @@ fn main() -> Result<()> {
     };
     sheet.card("card-weather", &CardContent::Weather(Box::new(weather)), &s)?;
     let buds = BudsSnapshot { left: 68, right: 74, case: Some(60), noise: Some(NoiseControl::Anc), worn: Default::default() };
-    sheet.card("card-buds", &CardContent::Buds(buds), &s)?;
+    let buds_card = nowbar::render::card::BudsCard {
+        name: "Galaxy Buds2".into(),
+        buds: Some(buds),
+        battery: 68,
+    };
+    sheet.card("card-buds", &CardContent::Buds(Box::new(buds_card)), &s)?;
     let claude = ClaudeCard {
         key: 1,
         title: "now-bar".into(),

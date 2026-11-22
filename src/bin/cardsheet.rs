@@ -293,7 +293,11 @@ fn main() -> Result<()> {
         CardContent::Media(Box::new(lyrics)),
         CardContent::Media(Box::new(moving)),
         CardContent::Media(Box::new(output)),
-        CardContent::Buds(buds),
+        CardContent::Buds(Box::new(nowbar::render::card::BudsCard {
+            name: "Galaxy Buds2".into(),
+            buds: Some(buds),
+            battery: 68,
+        })),
         CardContent::Weather(Box::new(weather)),
         CardContent::Weather(Box::new(windy)),
         CardContent::Wellbeing(Box::new(WellbeingCard {

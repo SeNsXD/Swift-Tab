@@ -27,13 +27,16 @@ use crate::render::layout::RectPx;
 pub enum PillEvent {
     /// Left click at `x` pixels from the pill's left edge.
     Click { x: i32 },
+    DoubleClick,
     Wheel(i32),
     MiddleClick,
     RightClick,
     Hover(bool),
     /// The pointer is over the small info bar beside the pill (or left it), and a click on it.
     BarHover(bool),
-    BarClick,
+    BarClick { x: i32 },
+    BarDoubleClick { x: i32 },
+    BarRightClick { x: i32 },
     /// The mouse went down on the pill and moved past the drag distance (no click follows).
     DragStart,
 }
@@ -373,14 +376,41 @@ extern "system" fn pill_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             // on any other pill a sloppy click is still a click.
             PILL_PRESS.with(|p| p.set(None));
             let x = x_of(lp);
-            if PILL_BAR.with(|b| b.get()).is_some_and(|(from, to)| x >= from && x < to) {
-                pill(PillEvent::BarClick)
+            if let Some((from, to)) = PILL_BAR.with(|b| b.get()) {
+                if x >= from && x < to {
+                    pill(PillEvent::BarClick { x: x - from })
+                } else {
+                    pill(PillEvent::Click { x: x - PILL_OFFSET_X.with(|o| o.get()) })
+                }
             } else {
                 pill(PillEvent::Click { x: x - PILL_OFFSET_X.with(|o| o.get()) })
             }
         }
+        WM_LBUTTONDBLCLK => {
+            let x = x_of(lp);
+            if let Some((from, to)) = PILL_BAR.with(|b| b.get()) {
+                if x >= from && x < to {
+                    pill(PillEvent::BarDoubleClick { x: x - from })
+                } else {
+                    pill(PillEvent::DoubleClick)
+                }
+            } else {
+                pill(PillEvent::DoubleClick)
+            }
+        }
         WM_MBUTTONUP => pill(PillEvent::MiddleClick),
-        WM_RBUTTONUP => pill(PillEvent::RightClick),
+        WM_RBUTTONUP => {
+            let x = x_of(lp);
+            if let Some((from, to)) = PILL_BAR.with(|b| b.get()) {
+                if x >= from && x < to {
+                    pill(PillEvent::BarRightClick { x: x - from })
+                } else {
+                    pill(PillEvent::RightClick)
+                }
+            } else {
+                pill(PillEvent::RightClick)
+            }
+        }
         // Vertical wheel, tilt wheel and touchpad two-finger swipes all move through the stack.
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => pill(PillEvent::Wheel(wheel_of(wp))),
         WM_MOUSEMOVE => {
@@ -590,7 +620,7 @@ fn register_classes() {
         let arrow = LoadCursorW(None, IDC_ARROW).unwrap_or_default();
         let classes: [(PCWSTR, WNDPROC, WNDCLASS_STYLES); 4] = [
             (PASSIVE_CLASS, Some(passive_proc), WNDCLASS_STYLES(0)),
-            (PILL_INPUT_CLASS, Some(pill_input_proc), WNDCLASS_STYLES(0)),
+            (PILL_INPUT_CLASS, Some(pill_input_proc), CS_DBLCLKS),
             (CARD_INPUT_CLASS, Some(card_input_proc), CS_DBLCLKS),
             (MAIN_CLASS, Some(main_proc), WNDCLASS_STYLES(0)),
         ];

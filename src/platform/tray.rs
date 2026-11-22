@@ -235,6 +235,10 @@ pub const NOTE_PIN: u32 = 3;
 pub const NOTE_SHARE: u32 = 4;
 pub const NOTE_DELETE: u32 = 5;
 pub const NOTE_CLEAR_ALL: u32 = 6;
+pub const NOTE_TOGGLE_BAR: u32 = 7;
+pub const NOTE_NEW_CMD: u32 = 8;
+pub const BT_DISCONNECT: u32 = 40;
+pub const BT_SETTINGS: u32 = 41;
 
 /// Initializes dark mode preferences globally in the process before windows are opened.
 pub fn init_dark_mode() {
@@ -367,6 +371,50 @@ pub fn show_note_item_menu(owner: HWND, _has_image: bool, is_pinned: bool) -> u3
         let _ = AppendMenuW(menu, MF_STRING, NOTE_DELETE as usize, &HSTRING::from("Delete Note"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let _ = AppendMenuW(menu, MF_STRING, NOTE_CLEAR_ALL as usize, &HSTRING::from("Clear All Notes"));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        destroy_dark_menu(menu);
+        chosen
+    }
+}
+
+/// Right-click menu for sticky notes in the bar or tab.
+pub fn show_notes_bar_menu(owner: HWND, in_bar: bool) -> u32 {
+    enable_dark_menu(owner);
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
+        let _ = AppendMenuW(menu, MF_STRING, NOTE_NEW_CMD as usize, &HSTRING::from("New Note"));
+        let _ = AppendMenuW(menu, MF_STRING, NOTE_OPEN as usize, &HSTRING::from("All Notes"));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+        let bar_label = if in_bar { "Move back to Tabs" } else { "Keep beside Tab" };
+        let _ = AppendMenuW(menu, MF_STRING, NOTE_TOGGLE_BAR as usize, &HSTRING::from(bar_label));
+        let _ = AppendMenuW(menu, MF_STRING, NOTE_CLEAR_ALL as usize, &HSTRING::from("Clear All Notes"));
+        let mut p = POINT::default();
+        let _ = GetCursorPos(&mut p);
+        let _ = SetForegroundWindow(owner);
+        let flags = TPM_RETURNCMD | TPM_RIGHTBUTTON;
+        let chosen = TrackPopupMenu(menu, flags, p.x, p.y, Some(0), owner, None).0 as u32;
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        destroy_dark_menu(menu);
+        chosen
+    }
+}
+
+/// Right-click menu for connected Bluetooth audio device with disconnect option.
+pub fn show_bluetooth_menu(owner: HWND, device_name: &str) -> u32 {
+    enable_dark_menu(owner);
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return 0 };
+        apply_dark_menu_style(menu);
+        let disconnect_label = format!("Disconnect {device_name}");
+        let _ = AppendMenuW(menu, MF_STRING, BT_DISCONNECT as usize, &HSTRING::from(disconnect_label.as_str()));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+        let _ = AppendMenuW(menu, MF_STRING, BT_SETTINGS as usize, &HSTRING::from("Bluetooth Settings"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         let _ = SetForegroundWindow(owner);

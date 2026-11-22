@@ -47,16 +47,51 @@ pub const MAX_SLIVERS: usize = 4;
 /// The Buds' battery chip beside the pill: its width, and the gap before it (after the slivers).
 pub const CHIP_W_DIP: f32 = 148.0;
 const CHIP_GAP_DIP: f32 = 6.0;
-/// The info bar's two halves: the weather (icon and degrees) and the earbuds' battery.
-const WEATHER_SEG_DIP: f32 = 72.0;
-const BATTERY_SEG_DIP: f32 = 76.0;
+/// The info bar's segments: the weather, the earbuds' battery and/or a sticky note.
+pub const WEATHER_SEG_DIP: f32 = 72.0;
+pub const BATTERY_SEG_DIP: f32 = 76.0;
+pub const NOTE_SEG_DIP: f32 = 74.0;
 
-/// What the small bar beside the pill shows: the weather and/or the earbuds' battery.
+/// What the small bar beside the pill shows: the weather, the earbuds' battery and/or a sticky note.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarInfo {
     /// Emoji, its colour and the degrees ("24°").
     pub weather: Option<(String, (u8, u8, u8), String)>,
     pub battery: Option<u8>,
+    /// Note title and total count.
+    pub note: Option<(String, usize)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarSegment {
+    Weather,
+    Battery,
+    Note,
+}
+
+pub fn bar_segment_at(b: &BarInfo, x_dip: f32) -> Option<BarSegment> {
+    let mut cursor = 0.0;
+    if let Some((_, _, deg)) = &b.weather {
+        let w = if deg.contains('·') && b.battery.is_none() && b.note.is_none() { CHIP_W_DIP } else { WEATHER_SEG_DIP };
+        if x_dip >= cursor && x_dip < cursor + w {
+            return Some(BarSegment::Weather);
+        }
+        cursor += w;
+    }
+    if b.battery.is_some() {
+        let w = BATTERY_SEG_DIP;
+        if x_dip >= cursor && x_dip < cursor + w {
+            return Some(BarSegment::Battery);
+        }
+        cursor += w;
+    }
+    if b.note.is_some() {
+        let w = NOTE_SEG_DIP;
+        if x_dip >= cursor && x_dip < cursor + w {
+            return Some(BarSegment::Note);
+        }
+    }
+    None
 }
 
 /// How far right of the pill's edge the bar starts, with `slivers` peeking out behind the pill.
@@ -66,12 +101,13 @@ pub fn bar_gap_dip(slivers: usize) -> f32 {
 
 pub fn bar_width_dip(b: &BarInfo) -> f32 {
     let weather = match &b.weather {
-        Some((_, _, deg)) if deg.contains('·') && b.battery.is_none() => CHIP_W_DIP,
+        Some((_, _, deg)) if deg.contains('·') && b.battery.is_none() && b.note.is_none() => CHIP_W_DIP,
         Some(_) => WEATHER_SEG_DIP,
         None => 0.0,
     };
     let battery = if b.battery.is_some() { BATTERY_SEG_DIP } else { 0.0 };
-    weather + battery
+    let note = if b.note.is_some() { NOTE_SEG_DIP } else { 0.0 };
+    weather + battery + note
 }
 
 /// The weather's colour as its pill had it.
@@ -1573,7 +1609,7 @@ fn paint_notes(ink: &Ink, label: &str, count: usize, thumb: Option<&Crest>, w: f
     let rx = x + head_w + d(8.0);
     let rest = TextStyle::new(Face::Text, Weight::Regular, d(12.5), sec_text()).ellipsis();
     let label_text = if count == 0 {
-        "Middle click to write".to_string()
+        "Double click to write".to_string()
     } else if count > 1 {
         format!("{} notes", count)
     } else {
@@ -2217,6 +2253,22 @@ fn paint_bar(ink: &Ink, bar: &BarInfo, w: f32, h: f32, s: &Scale) -> Result<()> 
     if let Some(pct) = bar.battery {
         ink.text(&glyph(Icon::Headphones).to_string(), rect(x + d(12.0), 0.0, d(18.0), h), &icon_st)?;
         ink.text(&percent(pct), rect(x + d(36.0), 0.0, (d(BATTERY_SEG_DIP) - d(40.0)).max(0.0), h), &label)?;
+        x += d(BATTERY_SEG_DIP);
+    }
+    if let Some((note_label, count)) = &bar.note {
+        if bar.weather.is_some() || bar.battery.is_some() {
+            ink.rrect(rect(x.round(), 1.0, 1.0, h - 2.0), 0.0, white(0.05))?;
+        }
+        let note_icon_st = TextStyle::new(Face::Icons, Weight::Regular, d(14.0), rgba(0xF5, 0x9E, 0x0B, 1.0)).centered();
+        ink.text(&glyph(Icon::Document).to_string(), rect(x + d(8.0), 0.0, d(18.0), h), &note_icon_st)?;
+        let text_to_show = if *count == 0 {
+            "Notes".to_string()
+        } else if *count == 1 {
+            note_label.clone()
+        } else {
+            format!("{} notes", count)
+        };
+        ink.text(&text_to_show, rect(x + d(28.0), 0.0, (d(NOTE_SEG_DIP) - d(32.0)).max(0.0), h), &label)?;
     }
     Ok(())
 }

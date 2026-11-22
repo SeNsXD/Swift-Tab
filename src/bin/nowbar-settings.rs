@@ -453,6 +453,7 @@ fn fill(ui: &SettingsWindow, s: &Settings, live_apps: &[String]) {
     st.set_notes_on(s.notes_enabled);
     st.set_notes_pinned(s.notes_pinned);
     st.set_notes_translucent_on_leave(s.notes_translucent_on_leave);
+    st.set_notes_in_bar(s.notes_in_bar);
     st.set_clipboard_pinned(s.clipboard_pinned);
     st.set_media_pinned(s.media_pinned);
     st.set_media_spotify_button(s.media_spotify_button);
@@ -591,6 +592,7 @@ fn read(ui: &SettingsWindow, base: &Settings) -> Settings {
         notes_enabled: st.get_notes_on(),
         notes_pinned: st.get_notes_pinned(),
         notes_translucent_on_leave: st.get_notes_translucent_on_leave(),
+        notes_in_bar: st.get_notes_in_bar(),
         clipboard_pinned: st.get_clipboard_pinned(),
         media_pinned: st.get_media_pinned(),
         media_spotify_button: st.get_media_spotify_button(),
