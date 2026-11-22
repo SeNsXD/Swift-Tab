@@ -272,6 +272,8 @@ pub struct BudsCard {
     pub name: String,
     pub buds: Option<BudsSnapshot>,
     pub battery: u8,
+    pub volume: Option<f32>,
+    pub muted: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1121,8 +1123,8 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
         CardContent::Media(m) if matches!(m.page, MediaPage::Output(_)) => (340.0, 350.0),
         CardContent::Media(_) => (340.0, 320.0),
         // The noise control row once the Buds have said their mode.
-        CardContent::Buds(b) if b.buds.as_ref().is_some_and(|s| s.noise.is_some()) => (370.0, 238.0),
-        CardContent::Buds(_) => (370.0, 150.0),
+        CardContent::Buds(b) if b.buds.as_ref().is_some_and(|s| s.noise.is_some()) => (370.0, 240.0),
+        CardContent::Buds(_) => (370.0, 168.0),
         CardContent::Weather(w) if w.alert.is_some() => (370.0, 196.0 + WEATHER_ALERT_ROW),
         CardContent::Weather(_) => (370.0, 196.0),
         CardContent::Brief(b) => (370.0, brief_height_dip(b)),
@@ -2057,56 +2059,160 @@ impl Painter<'_, '_> {
         Ok(())
     }
 
-    /// "Galaxy Buds2 / Connected to this PC", then a ring per bud and, while known, the case.
+    /// Modern Bluetooth audio device card:
+    /// - Header: Device badge + Name + "Connected to this PC" + Settings + Disconnect
+    /// - Subtle hairline separator
+    /// - Battery bar: horizontal progress bar (or side-by-side bars for multi-part earbuds)
+    /// - Volume slider: Mute button + volume bar with draggable thumb + percentage
+    /// - Noise control (if Galaxy Buds mode is available)
     fn buds(&mut self, b: &BudsCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let (r, g, bl) = BUDS_ACCENT;
-        let circle = d(46.0);
-        let badge = rect(d(15.0), d(15.0), circle, circle);
-        self.ink.rrect(badge, circle / 2.0, rgba(r, g, bl, 1.0))?;
-        self.ink.text(&glyph(Icon::Headphones).to_string(), badge, &TextStyle::new(Face::Icons, Weight::Regular, d(24.0), white(1.0)).centered())?;
+        let (ar, ag, ab) = crate::platform::os::system_accent();
+        let (br, bg, bb) = BUDS_ACCENT;
+
+        // Top Header
+        let circle = d(42.0);
+        let badge = rect(d(16.0), d(16.0), circle, circle);
+        self.ink.rrect(badge, circle / 2.0, rgba(br, bg, bb, 1.0))?;
+        self.ink.text(&glyph(Icon::Headphones).to_string(), badge, &TextStyle::new(Face::Icons, Weight::Regular, d(22.0), white(1.0)).centered())?;
 
         // Disconnect button at top-right
         let btn_h = d(26.0);
-        let disc_w = d(78.0);
-        let disc_rect = rect(self.w - d(15.0) - disc_w, d(15.0), disc_w, btn_h);
-        self.ink.rrect(disc_rect, d(6.0), rgba(0xFF, 0x5A, 0x4F, 0.18))?;
+        let disc_w = d(82.0);
+        let disc_rect = rect(self.w - d(16.0) - disc_w, d(16.0), disc_w, btn_h);
+        self.ink.rrect(disc_rect, d(6.0), rgba(0xFF, 0x5A, 0x4F, 0.16))?;
+        self.ink.rrect_outline(rect(disc_rect.left + 0.5, disc_rect.top + 0.5, disc_w - 1.0, btn_h - 1.0), d(5.5), 1.0, rgba(0xFF, 0x5A, 0x4F, 0.28))?;
         self.ink.text("Disconnect", disc_rect, &TextStyle::new(Face::Text, Weight::Medium, d(11.5), rgba(0xFF, 0x6B, 0x6B, 1.0)).centered())?;
         self.hits.push((disc_rect, CardAction::BudsDisconnect));
 
         // Settings gear button left of Disconnect
-        let set_btn = rect(disc_rect.left - d(8.0) - btn_h, d(15.0), btn_h, btn_h);
+        let set_btn = rect(disc_rect.left - d(6.0) - btn_h, d(16.0), btn_h, btn_h);
         self.ink.rrect(set_btn, d(6.0), white(0.06))?;
-        self.ink.text(&glyph(Icon::Settings).to_string(), set_btn, &TextStyle::new(Face::Icons, Weight::Regular, d(14.0), white(0.75)).centered())?;
+        self.ink.rrect_outline(rect(set_btn.left + 0.5, set_btn.top + 0.5, btn_h - 1.0, btn_h - 1.0), d(5.5), 1.0, white(0.08))?;
+        self.ink.text(&glyph(Icon::Settings).to_string(), set_btn, &TextStyle::new(Face::Icons, Weight::Regular, d(13.0), white(0.85)).centered())?;
         self.hits.push((set_btn, CardAction::BudsSettings));
 
-        let title_w = (set_btn.left - d(73.0) - d(8.0)).max(d(80.0));
+        let title_w = (set_btn.left - d(68.0) - d(8.0)).max(d(80.0));
         let title = TextStyle::new(Face::Text, Weight::SemiBold, d(15.0), white(1.0)).top().ellipsis();
-        self.ink.text(&b.name, rect(d(73.0), d(17.0), title_w, d(22.0)), &title)?;
-        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.5), white(0.8)).top();
-        self.ink.text("Connected to this PC", rect(d(73.0), d(40.0), title_w, d(20.0)), &sub)?;
+        self.ink.text(&b.name, rect(d(68.0), d(17.0), title_w, d(22.0)), &title)?;
+        let sub = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.65)).top();
+        self.ink.text("Connected to this PC", rect(d(68.0), d(39.0), title_w, d(18.0)), &sub)?;
 
-        let mut rings = Vec::new();
+        // Subtle divider hairline
+        let div_y = d(68.0);
+        self.ink.rrect(rect(d(16.0), div_y, self.w - d(32.0), 1.0), 0.0, white(0.06))?;
+
+        // Battery Bar Section
+        let mut bat_items = Vec::new();
         if let Some(buds) = &b.buds {
-            rings.push(("Left", buds.left));
-            rings.push(("Right", buds.right));
+            bat_items.push(("Left", buds.left));
+            bat_items.push(("Right", buds.right));
             if let Some(case) = buds.case {
-                rings.push(("Case", case));
+                bat_items.push(("Case", case));
             }
         } else {
-            rings.push(("Battery", b.battery));
+            bat_items.push(("Battery", b.battery));
         }
-        let (radius, cy, step) = (d(22.0), d(96.0), d(110.0));
-        let n = rings.len() as f32;
-        for (i, (label, value)) in rings.into_iter().enumerate() {
-            let cx = self.w / 2.0 + (i as f32 - (n - 1.0) / 2.0) * step;
-            let fill = if value > 0 && value < low_battery() { rgba(0xFF, 0x5A, 0x4F, 1.0) } else { rgba(r, g, bl, 1.0) };
-            self.ink.ring(cx, cy, radius, d(5.0), value as f32 / 100.0, white(0.14), fill)?;
-            let pct = TextStyle::new(Face::Display, Weight::SemiBold, d(13.0), white(1.0)).tabular().centered();
-            self.ink.text(&percent(value), rect(cx - radius, cy - radius, 2.0 * radius, 2.0 * radius), &pct)?;
-            let st = TextStyle::new(Face::Text, Weight::Regular, d(12.0), white(0.7)).centered();
-            self.ink.text(label, rect(cx - d(40.0), cy + radius + d(6.0), d(80.0), d(16.0)), &st)?;
+
+        if bat_items.len() == 1 {
+            let (_, pct) = bat_items[0];
+            let bat_y = d(77.0);
+            let lbl_style = TextStyle::new(Face::Text, Weight::Medium, d(12.0), white(0.80)).top();
+            self.ink.text("Battery", rect(d(16.0), bat_y, d(100.0), d(18.0)), &lbl_style)?;
+
+            let pct_style = TextStyle::new(Face::Text, Weight::SemiBold, d(12.0), white(1.0)).top().trailing();
+            self.ink.text(&format!("{pct}%"), rect(self.w - d(16.0) - d(60.0), bat_y, d(60.0), d(18.0)), &pct_style)?;
+
+            let track_y = d(97.0);
+            let track_h = d(6.0);
+            let track_w = self.w - d(32.0);
+            self.ink.rrect(rect(d(16.0), track_y, track_w, track_h), track_h / 2.0, white(0.12))?;
+
+            let fill_color = if pct > 0 && pct < low_battery() {
+                rgba(0xFF, 0x5A, 0x4F, 1.0)
+            } else if pct <= 40 {
+                rgba(0xF5, 0x9E, 0x0B, 1.0)
+            } else {
+                rgba(br, bg, bb, 1.0)
+            };
+            let fill_w = (track_w * (pct as f32 / 100.0).clamp(0.0, 1.0)).max(track_h);
+            self.ink.rrect(rect(d(16.0), track_y, fill_w, track_h), track_h / 2.0, fill_color)?;
+        } else {
+            // Multi-segment (Left, Right, Case)
+            let col_gap = d(10.0);
+            let n = bat_items.len() as f32;
+            let col_w = (self.w - d(32.0) - (n - 1.0) * col_gap) / n;
+            let bat_y = d(77.0);
+            let track_y = d(97.0);
+            let track_h = d(5.0);
+
+            for (i, (lbl, pct)) in bat_items.into_iter().enumerate() {
+                let x = d(16.0) + i as f32 * (col_w + col_gap);
+                let lbl_style = TextStyle::new(Face::Text, Weight::Medium, d(11.5), white(0.70)).top();
+                self.ink.text(lbl, rect(x, bat_y, col_w - d(32.0), d(18.0)), &lbl_style)?;
+
+                let pct_style = TextStyle::new(Face::Text, Weight::SemiBold, d(11.5), white(1.0)).top().trailing();
+                self.ink.text(&format!("{pct}%"), rect(x + col_w - d(36.0), bat_y, d(36.0), d(18.0)), &pct_style)?;
+
+                self.ink.rrect(rect(x, track_y, col_w, track_h), track_h / 2.0, white(0.12))?;
+                let fill_color = if pct > 0 && pct < low_battery() {
+                    rgba(0xFF, 0x5A, 0x4F, 1.0)
+                } else {
+                    rgba(br, bg, bb, 1.0)
+                };
+                let fill_w = (col_w * (pct as f32 / 100.0).clamp(0.0, 1.0)).max(track_h);
+                self.ink.rrect(rect(x, track_y, fill_w, track_h), track_h / 2.0, fill_color)?;
+            }
         }
+
+        // Volume Slider Section
+        let vol_val = b.volume.unwrap_or(0.80);
+        let vol_muted = b.muted;
+        let vol_cy = d(132.0);
+
+        // Speaker mute toggle button
+        let spk_box = rect(d(16.0), vol_cy - d(12.0), d(26.0), d(26.0));
+        self.ink.rrect(spk_box, d(6.0), white(0.06))?;
+        self.ink.rrect_outline(rect(spk_box.left + 0.5, spk_box.top + 0.5, d(26.0) - 1.0, d(26.0) - 1.0), d(5.5), 1.0, white(0.08))?;
+        let spk_icon = if vol_muted || vol_val <= 0.001 { Icon::Mute } else { Icon::Volume };
+        let spk_color = if vol_muted { white(0.40) } else { white(0.85) };
+        self.ink.text(&glyph(spk_icon).to_string(), spk_box, &TextStyle::new(Face::Icons, Weight::Regular, d(13.0), spk_color).centered())?;
+        self.hits.push((spk_box, CardAction::OutputMute));
+
+        let vx0 = d(50.0);
+        let vx1 = self.w - d(56.0);
+        let v_track_h = d(4.0);
+        let v_track_w = vx1 - vx0;
+        let v_xp = vx0 + vol_val.clamp(0.0, 1.0) * v_track_w;
+
+        // Volume track background
+        self.ink.rrect(rect(vx0, vol_cy - v_track_h / 2.0, v_track_w, v_track_h), v_track_h / 2.0, white(0.14))?;
+
+        // Filled volume track
+        if v_xp > vx0 {
+            let fill = if vol_muted { white(0.35) } else { rgba(ar, ag, ab, 1.0) };
+            self.ink.rrect(rect(vx0, vol_cy - v_track_h / 2.0, (v_xp - vx0).max(v_track_h), v_track_h), v_track_h / 2.0, fill)?;
+        }
+
+        // Draggable circular thumb handle
+        let thumb_r = d(6.0);
+        let thumb = rect(v_xp - thumb_r, vol_cy - thumb_r, 2.0 * thumb_r, 2.0 * thumb_r);
+        let thumb_fill = if vol_muted { white(0.60) } else { rgba(ar, ag, ab, 1.0) };
+        self.ink.rrect(thumb, thumb_r, thumb_fill)?;
+        self.ink.rrect_outline(rect(thumb.left + 0.5, thumb.top + 0.5, 2.0 * thumb_r - 1.0, 2.0 * thumb_r - 1.0), thumb_r - 0.5, 1.0, white(0.30))?;
+
+        // Percentage text
+        let pct_str = if vol_muted {
+            "Mute".to_string()
+        } else {
+            format!("{}%", (vol_val * 100.0).round() as i32)
+        };
+        let pct_style = TextStyle::new(Face::Text, Weight::Medium, d(11.5), sec_text()).tabular().trailing();
+        self.ink.text(&pct_str, rect(self.w - d(52.0), vol_cy - d(10.0), d(36.0), d(20.0)), &pct_style)?;
+
+        // Register slider target for volume dragging
+        *self.volume = Some((rect(vx0 - d(4.0), vol_cy - d(12.0), v_track_w + d(8.0), d(24.0)), vx0, vx1));
+
         if let Some(buds) = &b.buds {
             if let Some(mode) = buds.noise {
                 self.noise_control(mode)?;
@@ -3596,29 +3702,34 @@ impl Painter<'_, '_> {
         // Top right buttons: Pin, New (+), Close (X)
         let btn_sz = self.d(26.0).round();
         let btn_y = self.d(10.0).round();
+        let gap = self.d(6.0).round();
+        let btn_r = self.d(6.0);
 
         // 1. Pin
-        let pin_btn = rect(self.w - self.d(16.0) - btn_sz * 3.0 - self.d(14.0), btn_y, btn_sz, btn_sz);
-        self.ink.rrect(pin_btn, self.d(5.0), white(if c.pinned { 0.20 } else { 0.08 }))?;
-        let pin_color = if c.pinned { rgba(ar, ag, ab, 1.0) } else { white(0.85) };
+        let pin_btn = rect(self.w - self.d(16.0) - btn_sz * 3.0 - gap * 2.0, btn_y, btn_sz, btn_sz);
+        let pin_bg = if c.pinned { rgba(ar, ag, ab, 0.20) } else { white(0.06) };
+        let pin_border = if c.pinned { rgba(ar, ag, ab, 0.40) } else { white(0.08) };
+        self.ink.rrect(pin_btn, btn_r, pin_bg)?;
+        self.ink.rrect_outline(rect(pin_btn.left + 0.5, pin_btn.top + 0.5, btn_sz - 1.0, btn_sz - 1.0), btn_r - 0.5, 1.0, pin_border)?;
+        let pin_color = if c.pinned { rgba(ar, ag, ab, 1.0) } else { white(0.75) };
         let pin_icon_r = rect(pin_btn.left + self.d(6.5), pin_btn.top + self.d(6.5), self.d(13.0), self.d(13.0));
         self.ink.svg(PIN_SVG, pin_icon_r, pin_color)?;
         self.hits.push((pin_btn, CardAction::NotePin(c.id)));
 
         // 2. New (+) button
-        let add_btn = rect(self.w - self.d(16.0) - btn_sz * 2.0 - self.d(7.0), btn_y, btn_sz, btn_sz);
-        self.ink.rrect(add_btn, self.d(5.0), rgba(ar, ag, ab, 0.22))?;
-        self.ink.rrect_outline(rect(add_btn.left + 0.5, add_btn.top + 0.5, add_btn.right - add_btn.left - 1.0, add_btn.bottom - add_btn.top - 1.0), (self.d(5.0) - 0.5).max(1.0), 1.0, rgba(ar, ag, ab, 0.40))?;
-        let plus_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(16.0), white(1.0)).centered();
-        self.ink.text("+", add_btn, &plus_style)?;
+        let add_btn = rect(self.w - self.d(16.0) - btn_sz * 2.0 - gap, btn_y, btn_sz, btn_sz);
+        self.ink.rrect(add_btn, btn_r, white(0.06))?;
+        self.ink.rrect_outline(rect(add_btn.left + 0.5, add_btn.top + 0.5, btn_sz - 1.0, btn_sz - 1.0), btn_r - 0.5, 1.0, white(0.08))?;
+        let plus_style = TextStyle::new(Face::Icons, Weight::Regular, self.d(12.5), white(0.85)).centered();
+        self.ink.text(&glyph(Icon::Add).to_string(), add_btn, &plus_style)?;
         self.hits.push((add_btn, CardAction::NoteNew));
 
         // 3. Close (X) button
         let close_btn = rect(self.w - self.d(16.0) - btn_sz, btn_y, btn_sz, btn_sz);
-        self.ink.rrect(close_btn, self.d(5.0), white(0.12))?;
-        self.ink.rrect_outline(rect(close_btn.left + 0.5, close_btn.top + 0.5, close_btn.right - close_btn.left - 1.0, close_btn.bottom - close_btn.top - 1.0), (self.d(5.0) - 0.5).max(1.0), 1.0, white(0.16))?;
-        let x_style = TextStyle::new(Face::Text, Weight::SemiBold, self.d(12.5), white(0.95)).centered();
-        self.ink.text("\u{2715}", close_btn, &x_style)?;
+        self.ink.rrect(close_btn, btn_r, white(0.06))?;
+        self.ink.rrect_outline(rect(close_btn.left + 0.5, close_btn.top + 0.5, btn_sz - 1.0, btn_sz - 1.0), btn_r - 0.5, 1.0, white(0.08))?;
+        let x_style = TextStyle::new(Face::Icons, Weight::Regular, self.d(11.0), white(0.85)).centered();
+        self.ink.text(&glyph(Icon::Close).to_string(), close_btn, &x_style)?;
         self.hits.push((close_btn, CardAction::NoteClose));
 
         let mut content_top = self.d(42.0);
@@ -3720,16 +3831,21 @@ impl Painter<'_, '_> {
         self.ink.text("Sticky Notes", rect(self.d(18.0), self.d(16.0), self.d(140.0), self.d(24.0)), &title_style)?;
 
         // Close (X) button at top-right
-        let close_btn = rect(self.w - self.d(18.0) - self.d(24.0), self.d(14.0), self.d(24.0), self.d(24.0));
-        self.ink.rrect(close_btn, self.d(4.0), white(0.06))?;
-        self.ink.text("✕", close_btn, &TextStyle::new(Face::Text, Weight::Medium, self.d(12.0), white(0.7)).centered())?;
+        let btn_sz = self.d(26.0).round();
+        let btn_y = self.d(14.0).round();
+        let btn_r = self.d(6.0);
+        let close_btn = rect(self.w - self.d(18.0) - btn_sz, btn_y, btn_sz, btn_sz);
+        self.ink.rrect(close_btn, btn_r, white(0.06))?;
+        self.ink.rrect_outline(rect(close_btn.left + 0.5, close_btn.top + 0.5, btn_sz - 1.0, btn_sz - 1.0), btn_r - 0.5, 1.0, white(0.08))?;
+        self.ink.text(&glyph(Icon::Close).to_string(), close_btn, &TextStyle::new(Face::Icons, Weight::Regular, self.d(11.0), white(0.85)).centered())?;
         self.hits.push((close_btn, CardAction::NoteClose));
 
         // New Note (+) button left of Close
         let btn_style = TextStyle::new(Face::Text, Weight::Medium, self.d(12.0), white(0.9));
         let nw = self.ink.measure("+ New Note", &btn_style).unwrap_or(self.d(60.0));
-        let new_btn = rect(close_btn.left - self.d(8.0) - nw - self.d(18.0), self.d(14.0), nw + self.d(18.0), self.d(26.0));
-        self.ink.rrect(new_btn, self.d(13.0), rgba(ar, ag, ab, 0.35))?;
+        let new_btn = rect(close_btn.left - self.d(8.0) - nw - self.d(18.0), btn_y, nw + self.d(18.0), btn_sz);
+        self.ink.rrect(new_btn, btn_r, rgba(ar, ag, ab, 0.25))?;
+        self.ink.rrect_outline(rect(new_btn.left + 0.5, new_btn.top + 0.5, new_btn.right - new_btn.left - 1.0, btn_sz - 1.0), btn_r - 0.5, 1.0, rgba(ar, ag, ab, 0.40))?;
         self.ink.text("+ New Note", D2D_RECT_F { left: new_btn.left + self.d(9.0), ..new_btn }, &btn_style)?;
         self.hits.push((new_btn, CardAction::NoteNew));
 

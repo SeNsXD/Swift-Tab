@@ -1965,6 +1965,13 @@ impl App {
                 })
             }
             OpenCard::Activity(ActivityKind::Buds) => {
+                let (vol, muted) = if let Some(d) = self.current_output() {
+                    (crate::platform::audio::output_volume(&d.id), crate::platform::audio::output_muted(&d.id).unwrap_or(false))
+                } else if let Some((lvl, m)) = crate::platform::audio::default_output_level() {
+                    (Some(lvl), m)
+                } else {
+                    (None, false)
+                };
                 if let Some((b, _)) = self.buds {
                     Some(CardContent::Buds(Box::new(crate::render::card::BudsCard {
                         name: "Galaxy Buds2".into(),
@@ -1973,12 +1980,16 @@ impl App {
                             (0, x) | (x, 0) => x,
                             (l, r) => l.min(r),
                         },
+                        volume: vol,
+                        muted,
                     })))
                 } else if let Some((h, _)) = self.headsets.iter().find(|(h, _)| (1..=100).contains(&h.pct)) {
                     Some(CardContent::Buds(Box::new(crate::render::card::BudsCard {
                         name: h.name.clone(),
                         buds: None,
                         battery: h.pct,
+                        volume: vol,
+                        muted,
                     })))
                 } else {
                     None
@@ -5915,7 +5926,7 @@ impl App {
                 }
                 Ok(())
             }
-            UiEvent::Card(CardEvent::Down { x, y }) if self.output_page.is_some() => {
+            UiEvent::Card(CardEvent::Down { x, y }) if self.output_page.is_some() || matches!(self.open, Some(OpenCard::Activity(ActivityKind::Buds))) => {
                 if let (Some(fraction), Some(id)) = (self.ui.card.volume_fraction(x, y), self.current_output().map(|d| d.id.clone())) {
                     self.volume_drag = true;
                     let _ = set_output_volume(&id, fraction);
@@ -6205,12 +6216,12 @@ impl App {
                 }
                 // On the output page the wheel turns the volume over the slider and scrolls the list
                 // elsewhere; it never swipes to another activity.
-                if self.output_page.is_some() {
+                if self.output_page.is_some() || matches!(self.open, Some(OpenCard::Activity(ActivityKind::Buds))) {
                     let notches = if delta.abs() >= 120 { delta / 120 } else { delta.signum() };
                     if let (Some(_), Some(d)) = (self.ui.card.volume_fraction(x, y), self.current_output()) {
                         let v = output_volume(&d.id).unwrap_or(0.0) + 0.02 * notches as f32;
                         let _ = set_output_volume(&d.id, v);
-                    } else {
+                    } else if self.output_page.is_some() {
                         let others = self.output_rows().len().saturating_sub(1);
                         if let Some(ui) = self.output_page.as_mut() {
                             ui.scroll = clamp_scroll(ui.scroll as i32 - notches, others);

@@ -297,6 +297,8 @@ fn main() -> Result<()> {
             name: "Galaxy Buds2".into(),
             buds: Some(buds),
             battery: 68,
+            volume: Some(0.75),
+            muted: false,
         })),
         CardContent::Weather(Box::new(weather)),
         CardContent::Weather(Box::new(windy)),

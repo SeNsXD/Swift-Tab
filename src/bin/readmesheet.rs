@@ -258,6 +258,8 @@ fn main() -> Result<()> {
         name: "Galaxy Buds2".into(),
         buds: Some(buds),
         battery: 68,
+        volume: Some(0.75),
+        muted: false,
     };
     sheet.card("card-buds", &CardContent::Buds(Box::new(buds_card)), &s)?;
     let claude = ClaudeCard {

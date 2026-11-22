@@ -11,6 +11,7 @@ pub enum Icon {
     Shuffle,
     Repeat,
     Close,
+    Add,
     Timer,
     Stopwatch,
     Flag,
@@ -60,7 +61,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 48] = [
+    pub const ALL: [Icon; 49] = [
         Icon::Play,
         Icon::Pause,
         Icon::Prev,
@@ -68,6 +69,7 @@ impl Icon {
         Icon::Shuffle,
         Icon::Repeat,
         Icon::Close,
+        Icon::Add,
         Icon::Timer,
         Icon::Stopwatch,
         Icon::Flag,
@@ -123,6 +125,7 @@ pub fn glyph(i: Icon) -> char {
         Icon::Shuffle => '\u{E8B1}',
         Icon::Repeat => '\u{E8EE}',
         Icon::Close => '\u{E711}',
+        Icon::Add => '\u{E710}',
         Icon::Timer => '\u{E823}',
         Icon::Stopwatch => '\u{E916}',
         Icon::Flag => '\u{E7C1}',
