@@ -50,7 +50,7 @@ const CHIP_GAP_DIP: f32 = 6.0;
 /// The info bar's segments: the weather, the earbuds' battery and/or a sticky note.
 pub const WEATHER_SEG_DIP: f32 = 72.0;
 pub const BATTERY_SEG_DIP: f32 = 76.0;
-pub const NOTE_SEG_DIP: f32 = 74.0;
+pub const NOTE_SEG_DIP: f32 = 78.0;
 
 /// What the small bar beside the pill shows: the weather, the earbuds' battery and/or a sticky note.
 #[derive(Clone, Debug, PartialEq)]
@@ -2268,7 +2268,8 @@ fn paint_bar(ink: &Ink, bar: &BarInfo, w: f32, h: f32, s: &Scale) -> Result<()> 
         } else {
             format!("{} notes", count)
         };
-        ink.text(&text_to_show, rect(x + d(28.0), 0.0, (d(NOTE_SEG_DIP) - d(32.0)).max(0.0), h), &label)?;
+        let note_text_st = TextStyle::new(Face::Text, Weight::SemiBold, d(12.5), white(1.0)).ellipsis();
+        ink.text(&text_to_show, rect(x + d(28.0), 0.0, (d(NOTE_SEG_DIP) - d(32.0)).max(0.0), h), &note_text_st)?;
     }
     Ok(())
 }
