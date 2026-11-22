@@ -272,8 +272,6 @@ pub struct BudsCard {
     pub name: String,
     pub buds: Option<BudsSnapshot>,
     pub battery: u8,
-    pub volume: Option<f32>,
-    pub muted: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1123,8 +1121,8 @@ pub fn card_size_dip(c: &CardContent) -> (f32, f32) {
         CardContent::Media(m) if matches!(m.page, MediaPage::Output(_)) => (340.0, 350.0),
         CardContent::Media(_) => (340.0, 320.0),
         // The noise control row once the Buds have said their mode.
-        CardContent::Buds(b) if b.buds.as_ref().is_some_and(|s| s.noise.is_some()) => (370.0, 240.0),
-        CardContent::Buds(_) => (370.0, 168.0),
+        CardContent::Buds(b) if b.buds.as_ref().is_some_and(|s| s.noise.is_some()) => (370.0, 198.0),
+        CardContent::Buds(_) => (370.0, 122.0),
         CardContent::Weather(w) if w.alert.is_some() => (370.0, 196.0 + WEATHER_ALERT_ROW),
         CardContent::Weather(_) => (370.0, 196.0),
         CardContent::Brief(b) => (370.0, brief_height_dip(b)),
@@ -2063,11 +2061,9 @@ impl Painter<'_, '_> {
     /// - Header: Device badge + Name + "Connected to this PC" + Settings + Disconnect
     /// - Subtle hairline separator
     /// - Battery bar: horizontal progress bar (or side-by-side bars for multi-part earbuds)
-    /// - Volume slider: Mute button + volume bar with draggable thumb + percentage
     /// - Noise control (if Galaxy Buds mode is available)
     fn buds(&mut self, b: &BudsCard) -> Result<()> {
         let d = |v: f32| v * self.s.0;
-        let (ar, ag, ab) = crate::platform::os::system_accent();
         let (br, bg, bb) = BUDS_ACCENT;
 
         // Top Header
@@ -2165,57 +2161,9 @@ impl Painter<'_, '_> {
             }
         }
 
-        // Volume Slider Section
-        let vol_val = b.volume.unwrap_or(0.80);
-        let vol_muted = b.muted;
-        let vol_cy = d(132.0);
-
-        // Speaker mute toggle button
-        let spk_box = rect(d(16.0), vol_cy - d(12.0), d(26.0), d(26.0));
-        self.ink.rrect(spk_box, d(6.0), white(0.06))?;
-        self.ink.rrect_outline(rect(spk_box.left + 0.5, spk_box.top + 0.5, d(26.0) - 1.0, d(26.0) - 1.0), d(5.5), 1.0, white(0.08))?;
-        let spk_icon = if vol_muted || vol_val <= 0.001 { Icon::Mute } else { Icon::Volume };
-        let spk_color = if vol_muted { white(0.40) } else { white(0.85) };
-        self.ink.text(&glyph(spk_icon).to_string(), spk_box, &TextStyle::new(Face::Icons, Weight::Regular, d(13.0), spk_color).centered())?;
-        self.hits.push((spk_box, CardAction::OutputMute));
-
-        let vx0 = d(50.0);
-        let vx1 = self.w - d(56.0);
-        let v_track_h = d(4.0);
-        let v_track_w = vx1 - vx0;
-        let v_xp = vx0 + vol_val.clamp(0.0, 1.0) * v_track_w;
-
-        // Volume track background
-        self.ink.rrect(rect(vx0, vol_cy - v_track_h / 2.0, v_track_w, v_track_h), v_track_h / 2.0, white(0.14))?;
-
-        // Filled volume track
-        if v_xp > vx0 {
-            let fill = if vol_muted { white(0.35) } else { rgba(ar, ag, ab, 1.0) };
-            self.ink.rrect(rect(vx0, vol_cy - v_track_h / 2.0, (v_xp - vx0).max(v_track_h), v_track_h), v_track_h / 2.0, fill)?;
-        }
-
-        // Draggable circular thumb handle
-        let thumb_r = d(6.0);
-        let thumb = rect(v_xp - thumb_r, vol_cy - thumb_r, 2.0 * thumb_r, 2.0 * thumb_r);
-        let thumb_fill = if vol_muted { white(0.60) } else { rgba(ar, ag, ab, 1.0) };
-        self.ink.rrect(thumb, thumb_r, thumb_fill)?;
-        self.ink.rrect_outline(rect(thumb.left + 0.5, thumb.top + 0.5, 2.0 * thumb_r - 1.0, 2.0 * thumb_r - 1.0), thumb_r - 0.5, 1.0, white(0.30))?;
-
-        // Percentage text
-        let pct_str = if vol_muted {
-            "Mute".to_string()
-        } else {
-            format!("{}%", (vol_val * 100.0).round() as i32)
-        };
-        let pct_style = TextStyle::new(Face::Text, Weight::Medium, d(11.5), sec_text()).tabular().trailing();
-        self.ink.text(&pct_str, rect(self.w - d(52.0), vol_cy - d(10.0), d(36.0), d(20.0)), &pct_style)?;
-
-        // Register slider target for volume dragging
-        *self.volume = Some((rect(vx0 - d(4.0), vol_cy - d(12.0), v_track_w + d(8.0), d(24.0)), vx0, vx1));
-
         if let Some(buds) = &b.buds {
             if let Some(mode) = buds.noise {
-                self.noise_control(mode)?;
+                self.noise_control(mode, 116.0)?;
             }
         }
         Ok(())
@@ -3046,10 +2994,10 @@ impl Painter<'_, '_> {
 
     /// One UI 8's three modes: Samsung's icons on round buttons with their names under them, the
     /// current one filled with the Buds' blue (the quick panel's look, in the dark).
-    fn noise_control(&mut self, mode: NoiseControl) -> Result<()> {
+    fn noise_control(&mut self, mode: NoiseControl, top_dip: f32) -> Result<()> {
         let d = |v: f32| v * self.s.0;
         let (r, g, bl) = timer_accent();
-        let (size, top, step) = (d(44.0), d(158.0), d(110.0));
+        let (size, top, step) = (d(44.0), d(top_dip), d(110.0));
         let n = NoiseControl::ALL.len() as f32;
         for (i, m) in NoiseControl::ALL.into_iter().enumerate() {
             let cx = self.w / 2.0 + (i as f32 - (n - 1.0) / 2.0) * step;
