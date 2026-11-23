@@ -5,7 +5,7 @@
          IgnorableNamespaces="uap rescap">
   <Identity Name="xdNOTLabs.SwiftTab"
             Publisher="CN=3E0B8872-1816-4AC8-A1B0-79459B17761E"
-            Version="1.0.1.1"
+            Version="1.0.2.0"
             ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>Swift Tab</DisplayName>
