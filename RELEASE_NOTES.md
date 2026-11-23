@@ -2,7 +2,7 @@
 
 <img src="https://raw.githubusercontent.com/SeNsXD/Swift-Tab/main/assets/readme/swifttab-banner.png" width="760" alt="Swift Tab">
 
-# Swift Tab 1.0.0
+# Swift Tab 1.0.1
 
 **Everything you need, one glance away.**
 A sleek taskbar companion for Windows 11 & 10.
@@ -15,22 +15,33 @@ A sleek taskbar companion for Windows 11 & 10.
 
 | File | What it is |
 |---|---|
-| **`swifttab-setup.exe`** | **Recommended.** The installer. Per-user, no admin rights needed. |
-| `swifttab.exe` | The taskbar companion on its own. |
-| `swifttab-settings.exe` | The Control Center on its own. |
-| `SHA256SUMS.txt` | Checksums for the files above. |
+| **[`swifttab-setup.exe`](https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.1/swifttab-setup.exe)** | **Recommended.** The installer. Per-user, no admin rights needed. |
+| **[`SwiftTab-v1.0.1-portable.zip`](https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.1/SwiftTab-v1.0.1-portable.zip)** | Standalone portable ZIP. Extract and run anywhere. |
+| **[`SwiftTab.msix`](https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.1/SwiftTab.msix)** | Windows App Package (MSIX) for Windows 10/11. |
+| `swifttab.exe` | The taskbar companion on its own (used by auto-updater). |
+| `swifttab-settings.exe` | The Control Center on its own (used by auto-updater). |
+| `SHA256SUMS.txt` | Integrity checksums for all files. |
 
 Run **`swifttab-setup.exe`**, pick your options, and Swift Tab appears in your taskbar. Silent install: `swifttab-setup.exe --quiet`
 
-> Already running Swift Tab? It checks GitHub Releases for new versions and verifies each download against `SHA256SUMS.txt` before swapping itself in.
+> Already running Swift Tab? It checks GitHub Releases for new versions and verifies each download against `SHA256SUMS.txt` before swapping itself in automatically.
 
 ---
 
-## ✨ What's new in 1.0.0
+## ✨ What's new in 1.0.1
 
-<!-- Edit this list to match what actually changed in this version. -->
-
-- 
+- 🎧 **Overhauled Earbuds & Bluetooth Card**: Centered horizontal battery progress bar with dynamic color grading based on battery level, quick **Disconnect** button to unpair/disconnect Bluetooth devices in one click, and tightened card height.
+- 📝 **Corner Bar Note Pinning**: Keep an active note pinned beside the taskbar pill (just like weather) so important snippets and checklists stay visible without scrolling.
+- 👆 **Streamlined Note Controls**:
+  - Single-click opens your notes list (or straight to note creation if empty).
+  - Double-click to instantly create a new note when notes already exist.
+  - Harmonized note header buttons (`+`, `✕`, and `📌`) with consistent 26×26px sizing, 6px corner radius, and subtle glass outlines.
+  - Mouse wheel scrolling inside the note popover now scrolls the notes smoothly instead of dismissing the card.
+  - Discard empty notes automatically to avoid cluttering your list.
+- 🌙 **Windows 11 Dark Mode Context Menus**: Native Fluent dark mode styling for right-click context menus across shelf and clipboard items.
+- 🎨 **Taskbar Theme Blending**: Refined pill and corner borders to blend more naturally with Windows 11 taskbars.
+- 🖼️ **Taskbar App Icons**: Fixed SwiftTab Settings taskbar app icon and AppUserModelID identity handling.
+- 📁 **Shelf & Clipboard Fixes**: Fixed OLE drag-out copy handling, double-click to open shelf items and clipboard images directly, and eliminated DIB offsets.
 
 ---
 
@@ -41,6 +52,7 @@ Run **`swifttab-setup.exe`**, pick your options, and Swift Tab appears in your t
 - 📁 **Shelf**: drop files on the pill, drag them out later; Share, Copy text, Shrink and Zip in one click
 - 📋 **Clipboard history**: text, links and images
 - 🎧 **Earbuds & headphones**: battery level in the corner
+- 📝 **Sticky Notes**: quick notes right beside your weather and taskbar pills
 - ⬇️ **Downloads & file copies**: progress in the pill, even when Explorer is minimized
 - 📸 **Screenshots**: ShareX and Snipping Tool captures show in the pill and can go straight to the shelf
 - 🎮 **Game downloads**: Steam and Epic Games progress and speed, plus playtime
