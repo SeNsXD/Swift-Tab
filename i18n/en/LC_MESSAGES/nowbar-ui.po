@@ -3687,8 +3687,8 @@ msgid "Ana sayfa"
 msgstr "Home"
 
 #: src/settings_ui.rs
-msgid "Küçük (%78), Normal (%88), Büyük (%100)"
-msgstr "Small (78%), Normal (88%), Large (100%)"
+msgid "Küçük (%78), Normal (%88)"
+msgstr "Small (78%), Normal (88%)"
 
 #: src/settings_ui.rs
 msgid "Pilin saydamlığı"

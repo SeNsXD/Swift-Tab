@@ -324,10 +324,10 @@ export component AppearanceBody inherits VerticalLayout {
     spacing: 6px;
     H4 {
         title: @tr("Pil boyutu");
-        count: @tr("3 seçenek · eski Normal artık Büyük");
+        count: @tr("2 seçenek");
     }
     Tiles {
-        for o[i] in [{ t: @tr("Küçük"), s: "234 × 34 · %78", h: 24px, w: 116px }, { t: @tr("Normal"), s: "264 × 38 · %88", h: 28px, w: 136px }, { t: @tr("Büyük"), s: "300 × 44 · %100", h: 33px, w: 158px }]: Tile {
+        for o[i] in [{ t: @tr("Küçük"), s: "234 × 34 · %78", h: 24px, w: 116px }, { t: @tr("Normal"), s: "264 × 38 · %88", h: 28px, w: 136px }]: Tile {
             width: parent.tw;
             title: o.t;
             sub: o.s;
@@ -1863,14 +1863,6 @@ export component NotesInspector inherits VerticalLayout {
             note: @tr("Include Sticky Notes in the pill and wheel cycle even when empty");
             Toggle {
                 checked <=> Store.notes-pinned;
-                toggled => { Ui.changed(); }
-            }
-        }
-        IRow {
-            label: @tr("Keep beside tab");
-            note: @tr("Show Sticky Notes in the corner bar beside the tab instead of the scrollable carousel");
-            Toggle {
-                checked <=> Store.notes-in-bar;
                 toggled => { Ui.changed(); }
             }
         }

@@ -424,7 +424,7 @@ fn speak(p: LanguagePick) {
 fn fill(ui: &SettingsWindow, s: &Settings, live_apps: &[String]) {
     let st = ui.global::<Store>();
     st.set_enabled(s.enabled);
-    st.set_pill_size(index_of(&[PillSize::Compact, PillSize::Standard, PillSize::Large], &s.pill_size, 1));
+    st.set_pill_size(index_of(&[PillSize::Compact, PillSize::Standard], &s.pill_size, 1));
     st.set_pill_offset(s.pill_offset_dip as f32);
     st.set_pill_opacity(s.pill_opacity_pct as f32);
     st.set_pill_slivers(s.pill_slivers);
@@ -453,7 +453,6 @@ fn fill(ui: &SettingsWindow, s: &Settings, live_apps: &[String]) {
     st.set_notes_on(s.notes_enabled);
     st.set_notes_pinned(s.notes_pinned);
     st.set_notes_translucent_on_leave(s.notes_translucent_on_leave);
-    st.set_notes_in_bar(s.notes_in_bar);
     st.set_clipboard_pinned(s.clipboard_pinned);
     st.set_media_pinned(s.media_pinned);
     st.set_media_spotify_button(s.media_spotify_button);
@@ -565,7 +564,7 @@ fn read(ui: &SettingsWindow, base: &Settings) -> Settings {
     let presets: Vec<i32> = st.get_presets().iter().collect();
     Settings {
         enabled: st.get_enabled(),
-        pill_size: pick(&[PillSize::Compact, PillSize::Standard, PillSize::Large], st.get_pill_size(), PillSize::Standard),
+        pill_size: pick(&[PillSize::Compact, PillSize::Standard], st.get_pill_size(), PillSize::Standard),
         pill_offset_dip: st.get_pill_offset().round() as i32,
         pill_opacity_pct: st.get_pill_opacity().round() as u8,
         pill_slivers: st.get_pill_slivers(),
@@ -592,7 +591,7 @@ fn read(ui: &SettingsWindow, base: &Settings) -> Settings {
         notes_enabled: st.get_notes_on(),
         notes_pinned: st.get_notes_pinned(),
         notes_translucent_on_leave: st.get_notes_translucent_on_leave(),
-        notes_in_bar: st.get_notes_in_bar(),
+        notes_in_bar: false,
         clipboard_pinned: st.get_clipboard_pinned(),
         media_pinned: st.get_media_pinned(),
         media_spotify_button: st.get_media_spotify_button(),

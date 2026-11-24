@@ -462,6 +462,10 @@ impl Default for Settings {
 impl Settings {
     /// Values pulled into their allowed ranges (a hand-edited file can hold anything).
     pub fn sanitized(mut self) -> Self {
+        if self.pill_size == PillSize::Large {
+            self.pill_size = PillSize::Standard;
+        }
+        self.notes_in_bar = false;
         self.brief_name = self.brief_name.trim().chars().take(24).collect::<String>().trim_end().to_string();
         self.card_leave_close_ms = self.card_leave_close_ms.clamp(200, 3000);
         self.claude_ask_wait_s = self.claude_ask_wait_s.clamp(10, 300);
@@ -701,7 +705,7 @@ mod tests {
         assert_eq!(parse("{}"), Settings::default());
         let s = parse(r#"{"card_blur": false, "pill_size": "large"}"#);
         assert!(!s.card_blur);
-        assert_eq!(s.pill_size, PillSize::Large);
+        assert_eq!(s.pill_size, PillSize::Standard, "large pill size sanitizes to standard (normal)");
         assert_eq!(s.card_leave_close_ms, 600);
     }
 

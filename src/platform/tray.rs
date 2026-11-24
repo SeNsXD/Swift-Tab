@@ -235,7 +235,6 @@ pub const NOTE_PIN: u32 = 3;
 pub const NOTE_SHARE: u32 = 4;
 pub const NOTE_DELETE: u32 = 5;
 pub const NOTE_CLEAR_ALL: u32 = 6;
-pub const NOTE_TOGGLE_BAR: u32 = 7;
 pub const NOTE_NEW_CMD: u32 = 8;
 pub const BT_DISCONNECT: u32 = 40;
 pub const BT_SETTINGS: u32 = 41;
@@ -382,8 +381,8 @@ pub fn show_note_item_menu(owner: HWND, _has_image: bool, is_pinned: bool) -> u3
     }
 }
 
-/// Right-click menu for sticky notes in the bar or tab.
-pub fn show_notes_bar_menu(owner: HWND, in_bar: bool) -> u32 {
+/// Right-click menu for sticky notes in the tab.
+pub fn show_notes_menu(owner: HWND) -> u32 {
     enable_dark_menu(owner);
     unsafe {
         let Ok(menu) = CreatePopupMenu() else { return 0 };
@@ -391,8 +390,6 @@ pub fn show_notes_bar_menu(owner: HWND, in_bar: bool) -> u32 {
         let _ = AppendMenuW(menu, MF_STRING, NOTE_NEW_CMD as usize, &HSTRING::from("New Note"));
         let _ = AppendMenuW(menu, MF_STRING, NOTE_OPEN as usize, &HSTRING::from("All Notes"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-        let bar_label = if in_bar { "Move back to Tabs" } else { "Keep beside Tab" };
-        let _ = AppendMenuW(menu, MF_STRING, NOTE_TOGGLE_BAR as usize, &HSTRING::from(bar_label));
         let _ = AppendMenuW(menu, MF_STRING, NOTE_CLEAR_ALL as usize, &HSTRING::from("Clear All Notes"));
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);

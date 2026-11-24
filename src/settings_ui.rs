@@ -26,7 +26,7 @@ const fn e(page: u8, row: &'static str, section: &'static str, title: &'static s
 
 /// Every setting row, in page order.
 pub const INDEX: &[Entry] = &[
-    e(0, "pill-size", n_("Pil"), n_("Pil boyutu"), n_("Küçük (%78), Normal (%88), Büyük (%100)"), "büyük küçük normal boyut"),
+    e(0, "pill-size", n_("Pil"), n_("Pil boyutu"), n_("Küçük (%78), Normal (%88)"), "küçük normal boyut"),
     e(0, "pill-offset", n_("Pil"), n_("Konum"), n_("Görev çubuğunun ortasından sola ya da sağa"), "ortala kaydır sol sağ yer"),
     e(0, "pill-opacity", n_("Pil"), n_("Zemin opaklığı"), n_("Pilin saydamlığı"), "saydamlık şeffaflık opacity zemin"),
     e(0, "card-size", n_("Kart"), n_("Kart boyutu"), n_("Kompakt ya da büyük"), "kompakt büyük boyut"),

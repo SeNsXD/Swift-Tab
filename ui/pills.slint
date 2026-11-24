@@ -6,8 +6,8 @@ import { Store } from "store.slint";
 import { Theme } from "theme.slint";
 
 export global Pills {
-    /// Pill scale for the size setting (Compact 0.78 / Normal 0.88 / Large 1.0).
-    out property <float> k: Store.pill-size == 0 ? 0.78 : Store.pill-size == 2 ? 1.0 : 0.88;
+    /// Pill scale for the size setting (Compact 0.78 / Normal 0.88).
+    out property <float> k: Store.pill-size == 0 ? 0.78 : 0.88;
     public pure function base-w(kind: int) -> length {
         return kind == 0 ? 300px : kind == 12 || kind == 13 ? 196px : kind == 1 || kind == 2 || kind == 4 ? 176px : kind == 9 ? 220px : kind >= 10 ? 260px : 200px;
     }

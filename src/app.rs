@@ -552,8 +552,7 @@ fn visible_outputs() -> Vec<OutputDevice> {
 fn pill_size_factor(size: PillSize) -> f32 {
     match size {
         PillSize::Compact => 0.78,
-        PillSize::Standard => 0.88,
-        PillSize::Large => 1.0,
+        PillSize::Standard | PillSize::Large => 0.88,
     }
 }
 
@@ -1477,7 +1476,7 @@ impl App {
             };
             p.push(Presence { kind: ActivityKind::Clipboard, state, changed_ms: self.clipboard_ms });
         }
-        if s.notes_enabled && !s.notes_in_bar && (!self.notes_stash.is_empty() || s.notes_pinned) {
+        if s.notes_enabled && (!self.notes_stash.is_empty() || s.notes_pinned) {
             p.push(Presence { kind: ActivityKind::Notes, state: PresenceState::Running, changed_ms: 0 });
         }
         // Games: a moment (updated, played) stands for its game while it plays. Like the matches,
@@ -2283,14 +2282,7 @@ impl App {
             .filter(|w| crate::activities::weather::shows_now(w.fetched_utc, unix_now()))
             .map(|w| (symbol(w.code, w.is_day).to_string(), crate::render::pill::weather_accent(fx_of(w.code, w.is_day)), format!("{}°", w.temp.round() as i32)));
         let battery = self.buds_chip_pct();
-        let note = if s.notes_enabled && s.notes_in_bar {
-            let count = self.notes_stash.count();
-            let label = self.notes_stash.notes().first().map(|n| n.record.title.clone()).unwrap_or_else(|| "Notes".to_string());
-            Some((label, count))
-        } else {
-            None
-        };
-        (weather.is_some() || battery.is_some() || note.is_some()).then_some(crate::render::pill::BarInfo { weather, battery, note })
+        (weather.is_some() || battery.is_some()).then_some(crate::render::pill::BarInfo { weather, battery })
     }
 
     fn buds_chip_pct(&self) -> Option<u8> {
@@ -5644,13 +5636,6 @@ impl App {
                 match seg {
                     Some(crate::render::pill::BarSegment::Weather) => self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true),
                     Some(crate::render::pill::BarSegment::Battery) => self.toggle_card(OpenCard::Activity(ActivityKind::Buds), true),
-                    Some(crate::render::pill::BarSegment::Note) => {
-                        if self.notes_stash.is_empty() {
-                            self.open_new_note()
-                        } else {
-                            self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
-                        }
-                    }
                     None => {
                         let has_weather = self.bar_info().as_ref().map_or(false, |b| b.weather.is_some());
                         if has_weather {
@@ -5661,14 +5646,7 @@ impl App {
                     }
                 }
             }
-            UiEvent::Pill(PillEvent::BarDoubleClick { x }) => {
-                let x_dip = x as f32 / self.ui.pill_scale.0;
-                let seg = self.bar_info().as_ref().and_then(|b| crate::render::pill::bar_segment_at(b, x_dip));
-                match seg {
-                    Some(crate::render::pill::BarSegment::Note) => self.open_new_note(),
-                    _ => Ok(()),
-                }
-            }
+            UiEvent::Pill(PillEvent::BarDoubleClick { .. }) => Ok(()),
             UiEvent::Pill(PillEvent::BarRightClick { x }) => {
                 let x_dip = x as f32 / self.ui.pill_scale.0;
                 let seg = self.bar_info().as_ref().and_then(|b| crate::render::pill::bar_segment_at(b, x_dip));
@@ -5682,28 +5660,6 @@ impl App {
                             _ => {}
                         }
                         Ok(())
-                    }
-                    Some(crate::render::pill::BarSegment::Note) => {
-                        let in_bar = settings::current().notes_in_bar;
-                        let choice = crate::platform::tray::show_notes_bar_menu(self.main.hwnd, in_bar);
-                        match choice {
-                            crate::platform::tray::NOTE_NEW_CMD => self.open_new_note(),
-                            crate::platform::tray::NOTE_OPEN => self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true),
-                            crate::platform::tray::NOTE_TOGGLE_BAR => {
-                                let mut s = (*settings::current()).clone();
-                                s.notes_in_bar = !s.notes_in_bar;
-                                if let Err(e) = settings::save(&s) {
-                                    log(&format!("settings save: {e:?}"));
-                                }
-                                settings::install(s);
-                                self.refresh()
-                            }
-                            crate::platform::tray::NOTE_CLEAR_ALL => {
-                                self.notes_stash.clear_unpinned();
-                                self.refresh()
-                            }
-                            _ => Ok(()),
-                        }
                     }
                     _ => Ok(()),
                 }
@@ -5729,20 +5685,10 @@ impl App {
                         }
                     }
                     Some(ActivityKind::Notes) => {
-                        let in_bar = settings::current().notes_in_bar;
-                        let choice = crate::platform::tray::show_notes_bar_menu(self.main.hwnd, in_bar);
+                        let choice = crate::platform::tray::show_notes_menu(self.main.hwnd);
                         match choice {
                             crate::platform::tray::NOTE_NEW_CMD => self.open_new_note()?,
                             crate::platform::tray::NOTE_OPEN => self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)?,
-                            crate::platform::tray::NOTE_TOGGLE_BAR => {
-                                let mut s = (*settings::current()).clone();
-                                s.notes_in_bar = !s.notes_in_bar;
-                                if let Err(e) = settings::save(&s) {
-                                    log(&format!("settings save: {e:?}"));
-                                }
-                                settings::install(s);
-                                self.refresh()?;
-                            }
                             crate::platform::tray::NOTE_CLEAR_ALL => {
                                 self.notes_stash.clear_unpinned();
                                 self.refresh()?;
