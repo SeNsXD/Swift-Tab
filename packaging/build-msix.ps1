@@ -5,13 +5,18 @@ $root  = Split-Path -Parent $PSScriptRoot
 $stage = Join-Path $root "target\msix-stage"
 $out   = Join-Path $root "dist\SwiftTab.msix"
 
-cargo build --release --bin swifttab --bin swifttab-settings
-if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+$exeSrc = if (Test-Path (Join-Path $root "dist\swifttab.exe")) {
+    Join-Path $root "dist"
+} else {
+    cargo build --release --bin swifttab --bin swifttab-settings
+    if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+    Join-Path $root "target\release"
+}
 
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
-Copy-Item (Join-Path $root "target\release\swifttab.exe")          $stage
-Copy-Item (Join-Path $root "target\release\swifttab-settings.exe") $stage
+Copy-Item (Join-Path $exeSrc "swifttab.exe")          $stage
+Copy-Item (Join-Path $exeSrc "swifttab-settings.exe") $stage
 Copy-Item (Join-Path $PSScriptRoot "AppxManifest.xml") $stage
 Copy-Item (Join-Path $PSScriptRoot "Assets") (Join-Path $stage "Assets") -Recurse
 
