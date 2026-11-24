@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     // A 1920 × 1080 "monitor" far off every screen: DWM still composes it, nobody sees it.
     let monitor = RectPx { x: -20_000, y: -20_000, w: 1920, h: 1080 };
     let mut island = Island::new(&g)?;
-    let ask = PillContent::Live { key: 1, title: "now-bar".into(), status: "İzin istiyor".into(), claude: true, state: LiveState::Wait, action: "Bash".into() };
+    let ask = PillContent::Live { key: 1, title: "SwiftTab".into(), status: "İzin istiyor".into(), claude: true, state: LiveState::Wait, action: "Bash".into() };
     island.show(&g, &ask, &s, monitor)?;
     shoot(&island, &dir, "in", &[0, 60, 120, 200, 320, 600])?;
     let wind = PillContent::WeatherAlert { kind: AlertKind::Wind, head: "Kuvvetli rüzgâr".into(), detail: "65 km/sa · 21:00".into() };

@@ -6282,7 +6282,7 @@ mod tests {
         let (w, h) = card_size_dip(&CardContent::Brief(Box::new(full.clone())));
         assert!(w <= CARD_FRAME_W_DIP && h <= CARD_FRAME_H_DIP, "a full brief is {w}×{h}");
         // The away row takes the screen time's place.
-        let back = BriefCard { screen: None, away: Some(("Sen yokken · 4 şey".into(), "Claude bitti · now-bar".into())), ..full };
+        let back = BriefCard { screen: None, away: Some(("Sen yokken · 4 şey".into(), "Claude bitti · SwiftTab".into())), ..full };
         assert_eq!(card_size_dip(&CardContent::Brief(Box::new(back))).1, h);
         let row = || AwayRow { kind: AwayKind::Timer, text: "Zamanlayıcı bitti".into(), time: "17:05".into(), crest: None };
         let card = AwayCard { span: "14:02 – 17:14 · 3 sa 12 dk".into(), rows: (0..away::CARD_ROWS).map(|_| row()).collect(), more: 14 };

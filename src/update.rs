@@ -134,11 +134,11 @@ mod tests {
 
     fn answer() -> Value {
         serde_json::json!({
-            "tag_name": "v0.3.0", "html_url": "https://github.com/k/nowbar/releases/tag/v0.3.0",
+            "tag_name": "v1.0.2", "html_url": "https://github.com/SeNsXD/Swift-Tab/releases/tag/v1.0.2",
             "draft": false, "prerelease": false,
             "assets": [
-                {"name": "swifttab.exe", "browser_download_url": "https://github.com/k/nowbar/releases/download/v0.3.0/swifttab.exe", "size": 9000000},
-                {"name": "SHA256SUMS.txt", "browser_download_url": "https://github.com/k/nowbar/releases/download/v0.3.0/SHA256SUMS.txt"}
+                {"name": "swifttab.exe", "browser_download_url": "https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.2/swifttab.exe", "size": 9000000},
+                {"name": "SHA256SUMS.txt", "browser_download_url": "https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.2/SHA256SUMS.txt"}
             ]
         })
     }
@@ -146,9 +146,9 @@ mod tests {
     #[test]
     fn release_reads_tag_page_and_assets() {
         let r = parse_release(&answer()).unwrap();
-        assert_eq!((r.version, r.tag.as_str()), ((0, 3, 0), "v0.3.0"));
-        assert_eq!(r.page, "https://github.com/k/nowbar/releases/tag/v0.3.0");
-        assert_eq!(r.asset("swifttab.exe"), Some("https://github.com/k/nowbar/releases/download/v0.3.0/swifttab.exe"));
+        assert_eq!((r.version, r.tag.as_str()), ((1, 0, 2), "v1.0.2"));
+        assert_eq!(r.page, "https://github.com/SeNsXD/Swift-Tab/releases/tag/v1.0.2");
+        assert_eq!(r.asset("swifttab.exe"), Some("https://github.com/SeNsXD/Swift-Tab/releases/download/v1.0.2/swifttab.exe"));
         assert_eq!(r.asset("swifttab-settings.exe"), None);
         let mut draft = answer();
         draft["draft"] = true.into();
@@ -157,7 +157,7 @@ mod tests {
         pre["prerelease"] = true.into();
         assert_eq!(parse_release(&pre), None);
         assert_eq!(parse_release(&serde_json::json!({"message": "Not Found", "status": "404"})), None);
-        assert_eq!(latest_url("k/nowbar"), "https://api.github.com/repos/k/nowbar/releases/latest");
+        assert_eq!(latest_url("SeNsXD/Swift-Tab"), "https://api.github.com/repos/SeNsXD/Swift-Tab/releases/latest");
     }
 
     #[test]

@@ -425,7 +425,7 @@ mod tests {
     use super::*;
 
     fn msg(id: &str, state: LiveState) -> LiveMsg {
-        LiveMsg { id: id.into(), title: "now-bar".into(), text: String::new(), progress: None, state, claude: None, app: None }
+        LiveMsg { id: id.into(), title: "SwiftTab".into(), text: String::new(), progress: None, state, claude: None, app: None }
     }
 
     /// An app's item (`owner` stands for its caller's key) living `life` ms, if a notification.

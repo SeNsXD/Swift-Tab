@@ -111,7 +111,7 @@ pub fn hhmm(local: i64) -> String {
     format!("{:02}:{:02}", secs / 3600, secs % 3600 / 60)
 }
 
-/// "Claude bitti · now-bar"
+/// "Claude bitti · SwiftTab"
 pub fn claude_done(project: &str) -> String {
     trf("Claude bitti · {}", &[&project])
 }
@@ -206,11 +206,11 @@ mod tests {
         let mut log = AwayLog::default();
         log.lock(0);
         log.note(item("match:1", "GS 1–0 FB · 12′", 100));
-        log.note(item("claude:7", "Claude bitti · now-bar", 200));
+        log.note(item("claude:7", "Claude bitti · SwiftTab", 200));
         log.note(item("match:1", "GS 2–0 FB · 67′", 300));
         let r = log.unlock(1_000).unwrap();
         let texts: Vec<&str> = r.items.iter().map(|i| i.text.as_str()).collect();
-        assert_eq!(texts, ["GS 2–0 FB · 67′", "Claude bitti · now-bar"], "the later goal replaces the row and leads");
+        assert_eq!(texts, ["GS 2–0 FB · 67′", "Claude bitti · SwiftTab"], "the later goal replaces the row and leads");
     }
 
     #[test]

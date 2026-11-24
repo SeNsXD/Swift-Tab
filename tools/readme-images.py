@@ -95,7 +95,7 @@ def hero(sheets):
     text = ImageFont.truetype(os.path.join(FONTS, 'SegUIVar.ttf'), 24)
     d = ImageDraw.Draw(canvas)
     right = w - 44
-    for line, y in (('20:42', h - bar + 22), ('24.10.2026', h - bar + 52)):
+    for line, y in (('20:42', h - bar + 22), ('10/24/2026', h - bar + 52)):
         d.text((right, y), line, font=text, fill=(255, 255, 255, 235), anchor='ra')
     x = right - 150
     for glyph in ('\uE767', '\uE701', '\uE70E'):
@@ -106,7 +106,7 @@ def hero(sheets):
     cx = 160 + card.width // 2
     paste(canvas, pill, cx - pill.width // 2, h - bar + (bar - pill.height) // 2)
     drop(canvas, card, 160, h - bar - 24 - card.height, blur=36, alpha=0.55, dy=24)
-    names = ['claude', 'match', 'timer', 'buds', 'weather', 'power']
+    names = ['notes', 'claude', 'match', 'timer', 'buds', 'weather']
     pills = [Image.open(os.path.join(sheets, f'pill-{n}.png')) for n in names]
     gap = 40
     top = (h - bar - 24 - card.height) + (card.height - (sum(p.height for p in pills) + gap * (len(pills) - 1))) // 2
@@ -150,7 +150,7 @@ def music(sheets):
 
 def pills(sheets):
     """Two columns of pills, from their left edges, on the taskbar's colour."""
-    names = ['media', 'claude', 'match', 'timer', 'weather', 'rain', 'power', 'buds', 'privacy', 'game', 'shelf', 'usage', 'clock', 'volume']
+    names = ['media', 'notes', 'claude', 'match', 'timer', 'weather', 'rain', 'power', 'buds', 'privacy', 'game', 'shelf', 'usage', 'clock', 'volume', 'alert']
     ims = [Image.open(os.path.join(sheets, f'pill-{n}.png')) for n in names]
     col_w, row_h, gap, margin = max(p.width for p in ims), ims[0].height, 32, 64
     rows = (len(ims) + 1) // 2
@@ -179,7 +179,7 @@ def main():
     pictures = {
         'hero': hero(sheets),
         'music': music(sheets),
-        'day': columns(sheets, ['brief', 'timer'], ['weather', 'wellbeing'], DEEP),
+        'day': columns(sheets, ['brief', 'notes'], ['weather', 'wellbeing'], DEEP),
         'live': columns(sheets, ['match', 'buds'], ['claude', 'shelf'], DUSK),
         'pills': pills(sheets),
         # The settings window and the setup are shot at 125 %: their corners are 8 DIP.

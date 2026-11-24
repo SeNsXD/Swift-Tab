@@ -343,7 +343,7 @@ pub struct AwayCard {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwayRow {
     pub kind: AwayKind,
-    /// "Claude bitti · now-bar"
+    /// "Claude bitti · SwiftTab"
     pub text: String,
     /// "17:05"
     pub time: String,
@@ -903,7 +903,7 @@ pub struct BriefCard {
     pub music: Option<BriefMusic>,
     /// Dijital Denge's row: ("Ekran süresi · 3 sa 40 dk", "Bugün · VS Code 1 sa 50 dk").
     pub screen: Option<(String, String)>,
-    /// Just back from a lock: ("Sen yokken · 4 şey", "Claude bitti · now-bar").
+    /// Just back from a lock: ("Sen yokken · 4 şey", "Claude bitti · SwiftTab").
     pub away: Option<(String, String)>,
 }
 
@@ -3901,7 +3901,7 @@ mod tests {
     #[test]
     fn the_away_row_is_the_screen_rows_shape() {
         let h = |b: BriefCard| card_size_dip(&CardContent::Brief(Box::new(b))).1;
-        let back = BriefCard { away: Some(("Sen yokken · 4 şey".into(), "Claude bitti · now-bar".into())), ..brief(false, false, 0, false, false) };
+        let back = BriefCard { away: Some(("Sen yokken · 4 şey".into(), "Claude bitti · SwiftTab".into())), ..brief(false, false, 0, false, false) };
         assert_eq!(h(back), 84.0 + 68.0);
     }
 
@@ -4079,7 +4079,7 @@ mod tests {
     fn claude(ask: bool, focus: bool) -> ClaudeCard {
         ClaudeCard {
             key: 1,
-            title: "now-bar".into(),
+            title: "SwiftTab".into(),
             state: if ask { LiveState::Wait } else { LiveState::Run },
             status: "Çalışıyor · 3:12".into(),
             steps: vec![],

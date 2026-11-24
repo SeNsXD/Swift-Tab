@@ -147,7 +147,7 @@ fn away_card() -> AwayCard {
     AwayCard {
         span: away::span_text(14 * 3600 + 120, 17 * 3600 + 14 * 60),
         rows: vec![
-            row(AwayKind::Claude, away::claude_done("now-bar"), "17:09"),
+            row(AwayKind::Claude, away::claude_done("SwiftTab"), "17:09"),
             row(AwayKind::Match, away::goal_text("GS", "FB", (1, 0), "67′"), "16:52"),
             row(AwayKind::Rain { snow: false }, away::rain_text(false).into(), "16:20"),
             row(AwayKind::Game(Store::Epic), away::download_done("Rocket League"), "15:41"),
@@ -170,7 +170,7 @@ fn claude_card(state: LiveState, thinking: bool, ask: bool, focus: bool) -> Clau
     };
     ClaudeCard {
         key: 1,
-        title: "now-bar".into(),
+        title: "SwiftTab".into(),
         state,
         status: match state {
             LiveState::Run => "Çalışıyor · 3:12".into(),
@@ -275,7 +275,7 @@ fn main() -> Result<()> {
         ],
         music: Some(BriefMusic { title: "GEM DELÍRIO (Slowed)".into(), artist: "ZXVRF".into(), art: Some(cover.px.clone()), art_size: cover.size, playing: false }),
         screen: None,
-        away: Some((format!("{} · {}", nowbar::i18n::tr("Sen yokken"), nowbar::activities::away::count_text(4)), nowbar::activities::away::claude_done("now-bar"))),
+        away: Some((format!("{} · {}", nowbar::i18n::tr("Sen yokken"), nowbar::activities::away::count_text(4)), nowbar::activities::away::claude_done("SwiftTab"))),
     };
     let short = BriefCard {
         greeting: "İyi akşamlar".into(),
