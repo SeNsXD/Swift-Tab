@@ -720,6 +720,7 @@ pub struct App {
     stack: Vec<ActivityKind>,
     user_front: Option<(ActivityKind, u64)>,
     card_state: CardState,
+    card_opened_ms: u64,
     open: Option<OpenCard>,
     card_screen: RectPx,
     pill_hover: bool,
@@ -1033,6 +1034,7 @@ impl App {
                 _ => Some((ActivityKind::Clipboard, now_ms())),
             },
             card_state: CardState::Closed,
+            card_opened_ms: 0,
             open: None,
             card_screen: RectPx { x: 0, y: 0, w: 0, h: 0 },
             pill_hover: false,
@@ -5126,6 +5128,7 @@ impl App {
                 self.ui.morph.plain_accent()?;
             }
             self.card_state = CardState::Open;
+            self.card_opened_ms = now_ms();
             if which.takes_keys() {
                 self.ui.card_window.set_focusable(true);
                 if matches!(which, OpenCard::Note(_)) && !settings::current().notes_translucent_on_leave {
@@ -5177,6 +5180,7 @@ impl App {
         self.card_screen = to;
         self.card_pinned = false;
         self.card_state = CardState::Opening;
+        self.card_opened_ms = now_ms();
         unsafe { SetTimer(Some(self.ui.card_window.timer_owner()), TIMER_OUTSIDE, OUTSIDE_POLL_MS, None) };
         if which.takes_keys() {
             self.ui.card_window.set_focusable(true);
@@ -5246,7 +5250,13 @@ impl App {
         match self.card_state {
             CardState::Closed => self.open_card(which, by_pointer),
             CardState::Closing => Ok(()),
-            CardState::Open | CardState::Opening => self.close_card(),
+            CardState::Open | CardState::Opening => {
+                // If opened by clicking/tapping very recently (< 400ms), ignore rapid accidental double-taps.
+                if by_pointer && now_ms().saturating_sub(self.card_opened_ms) < 400 {
+                    return Ok(());
+                }
+                self.close_card()
+            }
         }
     }
 
@@ -5488,7 +5498,15 @@ impl App {
             }
             UiEvent::Pill(PillEvent::DoubleClick) => {
                 if self.front_kind() == Some(ActivityKind::Notes) && settings::current().notes_enabled {
-                    self.open_new_note()
+                    if self.card_state == CardState::Closed {
+                        if self.notes_stash.is_empty() {
+                            self.open_new_note()
+                        } else {
+                            self.open_card(OpenCard::Activity(ActivityKind::Notes), true)
+                        }
+                    } else {
+                        Ok(())
+                    }
                 } else {
                     Ok(())
                 }

@@ -281,6 +281,7 @@ thread_local! {
     static HOVER_CARD: RefCell<bool> = const { RefCell::new(false) };
     /// Where the left button went down on the pill, and whether that press became a drag.
     static PILL_PRESS: std::cell::Cell<Option<(i32, i32, bool)>> = const { std::cell::Cell::new(None) };
+    static PILL_DBLCLK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The info bar's span in the input window (x from, x to), and where the pointer is now:
     /// None outside, Some(false) on the pill, Some(true) on the bar.
     static PILL_BAR: std::cell::Cell<Option<(i32, i32)>> = const { std::cell::Cell::new(None) };
@@ -364,6 +365,7 @@ extern "system" fn pill_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
     match msg {
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE),
         WM_LBUTTONDOWN => {
+            PILL_DBLCLK.with(|d| d.set(false));
             PILL_PRESS.with(|p| p.set(Some((x_of(lp), y_of(lp), false))));
             unsafe { SetCapture(hwnd) };
             LRESULT(0)
@@ -375,6 +377,11 @@ extern "system" fn pill_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             // A press that became a shelf drag ends inside OLE's loop, which takes this release;
             // on any other pill a sloppy click is still a click.
             PILL_PRESS.with(|p| p.set(None));
+            // In Windows Win32, a double-click generates WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK, WM_LBUTTONUP.
+            // Suppress the trailing WM_LBUTTONUP so it doesn't emit a second click and toggle-close the card.
+            if PILL_DBLCLK.with(|d| d.replace(false)) {
+                return LRESULT(0);
+            }
             let x = x_of(lp);
             if let Some((from, to)) = PILL_BAR.with(|b| b.get()) {
                 if x >= from && x < to {
@@ -387,6 +394,7 @@ extern "system" fn pill_input_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             }
         }
         WM_LBUTTONDBLCLK => {
+            PILL_DBLCLK.with(|d| d.set(true));
             let x = x_of(lp);
             if let Some((from, to)) = PILL_BAR.with(|b| b.get()) {
                 if x >= from && x < to {
