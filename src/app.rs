@@ -5485,7 +5485,7 @@ impl App {
                 }
             }
             UiEvent::Pill(PillEvent::DoubleClick) => {
-                if self.front_kind() == Some(ActivityKind::Notes) || settings::current().notes_enabled {
+                if self.front_kind() == Some(ActivityKind::Notes) {
                     self.open_new_note()
                 } else {
                     Ok(())
@@ -5497,7 +5497,7 @@ impl App {
                     self.toggle_pause(kind);
                     self.refresh()
                 }
-                _ if settings::current().notes_enabled => self.open_new_note(),
+                Some(ActivityKind::Notes) if settings::current().notes_enabled => self.open_new_note(),
                 _ => Ok(()),
             },
             UiEvent::Media => self.take_media(),
