@@ -395,6 +395,52 @@ impl NoteField {
         }
     }
 
+    pub fn move_up(&mut self) {
+        let chars: Vec<char> = self.text.chars().collect();
+        let caret = self.caret.min(chars.len());
+        let mut line_start = caret;
+        while line_start > 0 && chars[line_start - 1] != '\n' {
+            line_start -= 1;
+        }
+        let col = caret - line_start;
+        if line_start == 0 {
+            self.caret = 0;
+            return;
+        }
+        let prev_line_end = line_start - 1;
+        let mut prev_line_start = prev_line_end;
+        while prev_line_start > 0 && chars[prev_line_start - 1] != '\n' {
+            prev_line_start -= 1;
+        }
+        let prev_line_len = prev_line_end - prev_line_start;
+        self.caret = prev_line_start + col.min(prev_line_len);
+    }
+
+    pub fn move_down(&mut self) {
+        let chars: Vec<char> = self.text.chars().collect();
+        let caret = self.caret.min(chars.len());
+        let mut line_start = caret;
+        while line_start > 0 && chars[line_start - 1] != '\n' {
+            line_start -= 1;
+        }
+        let col = caret - line_start;
+        let mut line_end = caret;
+        while line_end < chars.len() && chars[line_end] != '\n' {
+            line_end += 1;
+        }
+        if line_end >= chars.len() {
+            self.caret = chars.len();
+            return;
+        }
+        let next_line_start = line_end + 1;
+        let mut next_line_end = next_line_start;
+        while next_line_end < chars.len() && chars[next_line_end] != '\n' {
+            next_line_end += 1;
+        }
+        let next_line_len = next_line_end - next_line_start;
+        self.caret = next_line_start + col.min(next_line_len);
+    }
+
     pub fn move_home(&mut self) {
         self.caret = 0;
     }

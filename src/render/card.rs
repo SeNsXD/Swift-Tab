@@ -709,7 +709,7 @@ pub fn shelf_categorized_card_height(pinned: usize, unpinned: usize) -> f32 {
 }
 
 pub fn shelf_card_height_dip(c: &ShelfCard) -> f32 {
-    let pinned = c.tiles.iter().filter(|t| t.selected).count();
+    let pinned = c.tiles.iter().filter(|t| t.pinned).count();
     let unpinned = c.tiles.len().saturating_sub(pinned);
     shelf_categorized_card_height(pinned, unpinned)
 }
@@ -1208,7 +1208,7 @@ pub fn card_accent(c: &CardContent) -> (u8, u8, u8) {
         CardContent::Live(_) => timer_accent(),
         CardContent::Media(card) => (card.m.accent[0], card.m.accent[1], card.m.accent[2]),
         CardContent::Buds(_) => BUDS_ACCENT,
-        CardContent::Weather(_) => (0x8A, 0x8A, 0x8A),
+        CardContent::Weather(w) => fx_accent(w.fx),
         CardContent::Brief(b) => b.weather.as_ref().map_or((0x8A, 0x8A, 0x8A), |w| fx_accent(w.fx)),
         CardContent::Match(m) => (m.home.palette.tint[0], m.home.palette.tint[1], m.home.palette.tint[2]),
         CardContent::Game(g) => store_accent(g.store),

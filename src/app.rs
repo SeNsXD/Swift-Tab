@@ -2457,12 +2457,18 @@ impl App {
 
     pub fn note_key(&mut self, vk: u16) -> Result<()> {
         let Some(field) = self.active_note_field.as_mut() else { return Ok(()) };
-        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RIGHT};
+        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RIGHT, VK_UP};
         if vk == VK_LEFT.0 {
             field.move_left();
             self.refresh()
         } else if vk == VK_RIGHT.0 {
             field.move_right();
+            self.refresh()
+        } else if vk == VK_UP.0 {
+            field.move_up();
+            self.refresh()
+        } else if vk == VK_DOWN.0 {
+            field.move_down();
             self.refresh()
         } else if vk == VK_HOME.0 {
             field.move_home();
@@ -5471,10 +5477,14 @@ impl App {
                     (_, Some(PillButton::Next)) => self.media_command(MediaCommand::Next),
                     (_, Some(PillButton::Mute)) => self.toggle_media_mute(),
                     (Some(ActivityKind::Notes), None) => {
-                        if self.notes_stash.is_empty() {
-                            self.open_new_note()
+                        if settings::current().notes_enabled {
+                            if self.notes_stash.is_empty() {
+                                self.open_new_note()
+                            } else {
+                                self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
+                            }
                         } else {
-                            self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
+                            Ok(())
                         }
                     }
                     (Some(ActivityKind::Buds), None) => {
@@ -5485,7 +5495,7 @@ impl App {
                 }
             }
             UiEvent::Pill(PillEvent::DoubleClick) => {
-                if self.front_kind() == Some(ActivityKind::Notes) {
+                if self.front_kind() == Some(ActivityKind::Notes) && settings::current().notes_enabled {
                     self.open_new_note()
                 } else {
                     Ok(())
@@ -5641,7 +5651,14 @@ impl App {
                             self.toggle_card(OpenCard::Activity(ActivityKind::Notes), true)
                         }
                     }
-                    None => self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true),
+                    None => {
+                        let has_weather = self.bar_info().as_ref().map_or(false, |b| b.weather.is_some());
+                        if has_weather {
+                            self.toggle_card(OpenCard::Activity(ActivityKind::Weather), true)
+                        } else {
+                            Ok(())
+                        }
+                    }
                 }
             }
             UiEvent::Pill(PillEvent::BarDoubleClick { x }) => {

@@ -73,18 +73,37 @@ fn hkcu_dword(subkey: windows::core::PCWSTR, value: windows::core::PCWSTR) -> Op
     status.is_ok().then_some(data)
 }
 
+static CACHED_ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static LAST_ACCENT_CHECK_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Windows 11 system accent colour (lighter variant in dark mode: `color-mix(AccentColor 62%, white)`,
-/// fallback `#60CDFF`).
+/// fallback `#60CDFF`). Cached for 1 second to avoid hammering HKCU on paint ticks.
 pub fn system_accent() -> (u8, u8, u8) {
-    // DWM AccentColor is 0xAABBGGRR in HKCU\Software\Microsoft\Windows\DWM.
-    if let Some(abgr) = hkcu_dword(w!(r"Software\Microsoft\Windows\DWM"), w!("AccentColor")) {
-        let r = (abgr & 0xFF) as f32;
-        let g = ((abgr >> 8) & 0xFF) as f32;
-        let b = ((abgr >> 16) & 0xFF) as f32;
-        let mix = |c: f32| (c * 0.62 + 255.0 * 0.38).round().clamp(0.0, 255.0) as u8;
-        return (mix(r), mix(g), mix(b));
+    let now = unsafe { windows::Win32::System::SystemInformation::GetTickCount64() };
+    let last = LAST_ACCENT_CHECK_MS.load(std::sync::atomic::Ordering::Relaxed);
+    let cached = CACHED_ACCENT.load(std::sync::atomic::Ordering::Relaxed);
+    if cached != 0 && now.saturating_sub(last) < 1000 {
+        return (
+            (cached & 0xFF) as u8,
+            ((cached >> 8) & 0xFF) as u8,
+            ((cached >> 16) & 0xFF) as u8,
+        );
     }
-    (0x60, 0xCD, 0xFF)
+    let res = (|| {
+        // DWM AccentColor is 0xAABBGGRR in HKCU\Software\Microsoft\Windows\DWM.
+        if let Some(abgr) = hkcu_dword(w!(r"Software\Microsoft\Windows\DWM"), w!("AccentColor")) {
+            let r = (abgr & 0xFF) as f32;
+            let g = ((abgr >> 8) & 0xFF) as f32;
+            let b = ((abgr >> 16) & 0xFF) as f32;
+            let mix = |c: f32| (c * 0.62 + 255.0 * 0.38).round().clamp(0.0, 255.0) as u8;
+            return (mix(r), mix(g), mix(b));
+        }
+        (0x60, 0xCD, 0xFF)
+    })();
+    let packed = (res.0 as u32) | ((res.1 as u32) << 8) | ((res.2 as u32) << 16);
+    CACHED_ACCENT.store(packed, std::sync::atomic::Ordering::Relaxed);
+    LAST_ACCENT_CHECK_MS.store(now, std::sync::atomic::Ordering::Relaxed);
+    res
 }
 
 /// True when Windows Transparency effects are enabled in Personalization > Colors.

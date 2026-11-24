@@ -108,7 +108,8 @@ impl Island {
         let h = self.rect.map_or(0, |r| r.h) as f32;
         let batch = c.CreateScopedBatch(CompositionBatchTypes::Animation)?;
         let up = c.CreateScalarKeyFrameAnimation()?;
-        up.InsertKeyFrame(1.0, -h)?;
+        let ease = c.CreateCubicBezierEasingFunction(Vector2 { X: 0.3, Y: 0.0 }, Vector2 { X: 0.8, Y: 0.15 })?;
+        up.InsertKeyFrameWithEasingFunction(1.0, -h, &ease)?;
         up.SetDuration(windows::Foundation::TimeSpan { Duration: scaled_ticks(OUT_MS) })?;
         self.stage.StartAnimation(h!("Offset.Y"), &up)?;
         self.fade_to(0.0, OUT_MS)?;

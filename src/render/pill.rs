@@ -7,9 +7,10 @@ use windows::core::{h, Interface, Result, HSTRING};
 use windows::Foundation::{TimeSpan, TypedEventHandler};
 use windows::UI::Color;
 use windows::UI::Composition::{
-    CompositionBrush, CompositionColorGradientStop, CompositionDrawingSurface, CompositionMappingMode, CompositionMaskBrush,
-    CompositionObject, CompositionPropertySet, CompositionRoundedRectangleGeometry, CompositionStretch, CompositionSurfaceBrush,
-    CompositionBatchTypes, Compositor, ContainerVisual, ShapeVisual, SpriteVisual, Visual,
+    CompositionBatchTypes, CompositionBrush, CompositionColorBrush, CompositionColorGradientStop, CompositionDrawingSurface,
+    CompositionMappingMode, CompositionMaskBrush, CompositionObject, CompositionPropertySet,
+    CompositionRoundedRectangleGeometry, CompositionStretch, CompositionSurfaceBrush, Compositor,
+    ContainerVisual, ShapeVisual, SpriteVisual, Visual,
 };
 use windows_numerics::Vector2;
 
@@ -560,6 +561,7 @@ struct Layer {
     /// The media pill's 4 equalizer bars (hidden for other activities and when the setting is off).
     bars: ShapeVisual,
     bar_geos: [CompositionRoundedRectangleGeometry; 4],
+    accent_brush: CompositionColorBrush,
 }
 
 impl Layer {
@@ -612,6 +614,7 @@ impl Layer {
             width: 0.0,
             bars,
             bar_geos,
+            accent_brush,
         })
     }
 }
@@ -879,8 +882,8 @@ impl PillVisual {
             let (old, new) = (&self.layers[self.active].root, &self.layers[target].root);
             fade_layer(&self.c, old, 1.0, 0.0, 0, FADE_OUT_MS)?;
             scale_layer(&self.c, old, 1.0, SWAP_SCALE, 0, FADE_OUT_MS)?;
-            fade_layer(&self.c, new, 0.0, 1.0, 0, FADE_IN_MS)?;
-            scale_layer(&self.c, new, SWAP_SCALE, 1.0, 0, FADE_IN_MS)?;
+            fade_layer(&self.c, new, 0.0, 1.0, FADE_OUT_MS, FADE_IN_MS)?;
+            scale_layer(&self.c, new, SWAP_SCALE, 1.0, FADE_OUT_MS, FADE_IN_MS)?;
             self.active = target;
         }
         if new_track && crate::settings::current().marquee == crate::settings::Marquee::ChangeHover {
@@ -962,6 +965,10 @@ impl PillVisual {
                 stop.StopAnimation(h!("Color"))?;
                 stop.SetColor(colour)?;
             }
+        }
+        let sys_acc = crate::platform::os::system_accent();
+        for layer in &self.layers {
+            let _ = layer.accent_brush.SetColor(color(255, sys_acc));
         }
         Ok(())
     }
